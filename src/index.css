@@ -1,0 +1,188 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: transparent;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+  transition: all 150ms var(--ease-out);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-light);
+  border-radius: 999px;
+  transition: background 200ms var(--ease-out);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-surface-hover);
+}
+
+@layer components {
+  .option-card {
+    @apply w-full px-4 py-3 text-sm text-text-primary bg-surface-2 border border-border rounded-btn text-left relative;
+    transition: all 150ms var(--ease-out);
+  }
+  .option-card:hover {
+    @apply bg-surface-hover border-border-light;
+    transform: translateY(-1px);
+  }
+  .option-card.selected {
+    @apply bg-brand-soft border-brand;
+    border-left-width: 3px;
+    padding-left: 13px;
+  }
+  .option-card.selected::before {
+    content: '';
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    background: var(--color-brand);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .option-card.selected::after {
+    content: '✓';
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    z-index: 1;
+  }
+  .primary-btn {
+    @apply bg-brand text-white rounded-btn font-medium;
+    box-shadow: 0 2px 8px var(--color-brand-glow);
+    transition: all 150ms var(--ease-out);
+  }
+  .primary-btn:hover {
+    @apply bg-brand-hover;
+    box-shadow: 0 4px 16px var(--color-brand-glow);
+    transform: translateY(-1px);
+  }
+  .primary-btn:active {
+    transform: translateY(0) scale(0.98);
+  }
+  .ghost-btn {
+    @apply bg-surface-2 border border-border text-text-secondary rounded-btn;
+    transition: all 150ms var(--ease-out);
+  }
+  .ghost-btn:hover {
+    @apply bg-surface-hover border-border-light text-text-primary;
+  }
+  .tag-chip {
+    @apply inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-chip;
+    background: var(--color-brand-soft-light);
+    color: #A78BFA;
+    border: 1px solid transparent;
+    transition: all 150ms var(--ease-out);
+  }
+  .tag-chip:hover {
+    background: var(--color-brand-soft);
+    color: var(--color-brand);
+  }
+  .progress-dot {
+    @apply w-2 h-2 rounded-full transition-all duration-300;
+  }
+}
+
+@layer utilities {
+  .transition-fsm {
+    transition: all 200ms var(--ease-out);
+  }
+  .transition-pop {
+    transition: transform 300ms var(--ease-out), opacity 200ms var(--ease-out);
+  }
+  .transition-spring {
+    transition: all 300ms var(--ease-spring);
+  }
+  .drag-region {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+  .glass-card {
+    background: rgba(18, 18, 28, 0.92);
+    backdrop-filter: blur(24px) saturate(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}

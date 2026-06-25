@@ -1,0 +1,85 @@
+/* src/styles/tokens.css
+ * 视觉 token CSS 变量 - 按UI美学审查报告重构
+ * 参考 Linear 暗色表面阶梯 + 紫色品牌色克制使用策略
+ */
+:root {
+  /* ========== 表面阶梯系统（建议1） ========== */
+  /* Level 0: 最深画布 */
+  --color-canvas: #0a0a0f;
+  /* Level 1: 面板/卡片背景 */
+  --color-surface-1: #12121c;
+  /* Level 2: 输入框/悬浮项 */
+  --color-surface-2: #1a1a28;
+  /* Level 3: 弹出层/下拉菜单 */
+  --color-surface-3: #222233;
+  /* Hover 态 */
+  --color-surface-hover: #252538;
+  /* 选中态底色 */
+  --color-surface-selected: rgba(139, 92, 246, 0.12);
+
+  /* ========== 边框系统 ========== */
+  --color-border: #1f1f2e;
+  --color-border-light: #2d2d42;
+  --color-border-selected: #8B5CF6;
+
+  /* ========== 品牌紫色（建议2：收束使用范围） ========== */
+  /* 品牌紫 - CTA按钮、品牌标识 */
+  --color-brand: #8B5CF6;
+  /* 功能紫 - 进度条、焦点环 */
+  --color-brand-strong: #7C3AED;
+  /* 信息紫 - 标签背景、选中态底色 */
+  --color-brand-soft: rgba(139, 92, 246, 0.15);
+  --color-brand-soft-light: rgba(139, 92, 246, 0.08);
+  --color-brand-glow: rgba(139, 92, 246, 0.35);
+
+  /* ========== 语义色彩（建议3） ========== */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+  --color-accent-yellow: #ffd580;
+
+  /* ========== 文字层级（建议4：WCAG AA 对比度） ========== */
+  /* 主文字 ~15:1 */
+  --color-text-primary: #F0F0F5;
+  /* 次级文字 ~6.5:1 AA */
+  --color-text-secondary: #A0A0B8;
+  /* 三级文字 ~4.5:1 AA */
+  --color-text-tertiary: #7B7B92;
+  /* 禁用文字 */
+  --color-text-disabled: #4A4A5C;
+
+  /* ========== 圆角系统 ========== */
+  --radius-sm: 6px;
+  --radius-btn: 8px;
+  --radius-card: 14px;
+  --radius-lg: 18px;
+  --radius-chip: 999px;
+
+  /* ========== 间距系统（建议6：4px基准） ========== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ========== 阴影 ========== */
+  /* 暗色模式下阴影要减弱，靠表面阶梯传达深度 */
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card-hover: 0 12px 40px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--color-border);
+  --shadow-ball: 0 6px 24px rgba(139, 92, 246, 0.4);
+  --shadow-ball-hover: 0 10px 36px rgba(139, 92, 246, 0.55);
+
+  /* ========== 动效曲线 ========== */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ========== 字体（建议5） ========== */
+  --font-sans: 'Inter', 'PingFang SC', 'HarmonyOS Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --font-display: 'Inter', 'PingFang SC', -apple-system, sans-serif;
+}

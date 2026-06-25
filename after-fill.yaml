@@ -1,0 +1,18 @@
+- generic [ref=e7]:
+  - generic [ref=e8]:
+    - generic [ref=e11]: 灵感大王
+    - generic [ref=e12]:
+      - button "设置" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+      - button "收起" [ref=e17] [cursor=pointer]:
+        - img [ref=e18]
+  - generic [ref=e21]:
+    - textbox "说一句你现在想做的事…" [active] [ref=e22]: 卡片太挤
+    - button "开始提问 →" [ref=e24] [cursor=pointer]
+  - generic [ref=e27]: 粘贴截图（Ctrl+V）或拖入图片文件
+  - generic [ref=e28]:
+    - generic [ref=e29]: 起点模板
+    - generic [ref=e30]:
+      - button "修一个看不顺眼的 UI" [ref=e31] [cursor=pointer]
+      - button "加一个细节" [ref=e32] [cursor=pointer]
+      - button "复制一个产品的特性" [ref=e33] [cursor=pointer]

@@ -1,0 +1,408 @@
+# 灵感大王形容词簇配置 v1
+# 用于本地规则引擎：把用户的模糊形容词输入映射到具体的维度标签
+# 设计原则：
+#   1. 多个 surface_forms（同一含义的不同说法）归为一个 cluster
+#   2. 每个 cluster 关联多个 dimension_tags，按 weight 排序表示倾向
+#   3. 可选 clarification_question：当 cluster 命中但有多个候选时，动态生成澄清题
+#   4. 可选 magnitude：程度词，影响后续规格阶段的数值倾向
+schema_version: "1.0"
+total_clusters: 0
+
+# ─────────── 视觉感受类 ───────────
+clusters:
+  # --- 好看/漂亮/舒服（积极正向） ---
+  - id: "好看"
+    surface_forms: ["好看", "漂亮", "美", "顺眼", "和谐", "舒服", "耐看", "精致"]
+    dimension_tags:
+      - { tag: "痛点: 视觉丑", weight: 0.9 }
+      - { tag: "维度: 配色", weight: 0.5 }
+      - { tag: "维度: 留白", weight: 0.4 }
+      - { tag: "维度: 对齐错位", weight: 0.3 }
+    clarification_question: "你觉得现在哪一点最影响好看？"
+    clarification_options:
+      - { label: "颜色搭配", target_tag: "维度: 配色" }
+      - { label: "整体留白", target_tag: "维度: 留白" }
+      - { label: "对齐错位", target_tag: "维度: 对齐错位" }
+
+  # --- 丑/难看（负向核心词） ---
+  - id: "丑"
+    surface_forms: ["丑", "难看", "土", "low", "廉价", "俗气", "掉档次", "不上台面"]
+    dimension_tags:
+      - { tag: "痛点: 视觉丑", weight: 1.0 }
+      - { tag: "维度: 配色", weight: 0.6 }
+      - { tag: "维度: 圆角描边", weight: 0.4 }
+      - { tag: "维度: 字体", weight: 0.3 }
+      - { tag: "维度: 留白", weight: 0.4 }
+    clarification_question: "丑主要体现在哪方面？"
+    clarification_options:
+      - { label: "颜色搭配", target_tag: "维度: 配色" }
+      - { label: "圆角/描边", target_tag: "维度: 圆角描边" }
+      - { label: "字体选择", target_tag: "维度: 字体" }
+      - { label: "整体留白", target_tag: "维度: 留白" }
+
+  # --- 高级/质感/精致（核心正向） ---
+  - id: "高级感"
+    surface_forms: ["高级", "高大上", "高端", "大气", "上档次", "有质感", "精致", "轻奢", "考究"]
+    dimension_tags:
+      - { tag: "痛点: 不够高级", weight: 1.0 }
+      - { tag: "维度: 留白不足", weight: 0.6 }
+      - { tag: "维度: 对比度不足", weight: 0.5 }
+      - { tag: "维度: 缺动效", weight: 0.4 }
+      - { tag: "维度: 配色扁平", weight: 0.4 }
+    clarification_question: "你说的'高级'，更偏向哪种感觉？"
+    clarification_options:
+      - { label: "留白更有呼吸感", target_tag: "维度: 留白不足" }
+      - { label: "色彩对比更强烈", target_tag: "维度: 对比度不足" }
+      - { label: "加入细腻的动效", target_tag: "维度: 缺动效" }
+      - { label: "配色更克制专业", target_tag: "维度: 配色扁平" }
+
+  # --- 厉害（程度副词，叠加权重而非直接映射） ---
+  - id: "厉害"
+    surface_forms: ["厉害", "厉害点", "整厉害点", "牛x", "牛逼", "炸裂", "猛"]
+    dimension_tags:
+      - { tag: "痛点: 不够高级", weight: 0.8 }
+      - { tag: "维度: 缺动效", weight: 0.5 }
+      - { tag: "维度: 配色扁平", weight: 0.6 }
+    magnitude_modifier: 1.5
+    clarification_question: "你说的'厉害'，更偏向哪种感觉？"
+    clarification_options:
+      - { label: "整体高级感", target_tag: "痛点: 不够高级" }
+      - { label: "色彩冲击力", target_tag: "维度: 配色扁平" }
+      - { label: "动效抓眼球", target_tag: "维度: 缺动效" }
+
+  # --- 科技感 ---
+  - id: "科技感"
+    surface_forms: ["科技感", "未来感", "赛博", "数字感", "冷峻", "硬核", "极客", "程序员"]
+    dimension_tags:
+      - { tag: "维度: 配色", weight: 0.9 }
+      - { tag: "维度: 圆角描边", weight: 0.6 }
+      - { tag: "维度: 缺动效", weight: 0.5 }
+      - { tag: "痛点: 不够高级", weight: 0.4 }
+    clarification_question: "科技感主要体现在哪方面？"
+    clarification_options:
+      - { label: "冷色调 + 霓虹", target_tag: "维度: 配色" }
+      - { label: "硬朗锐利的圆角", target_tag: "维度: 圆角描边" }
+      - { label: "细腻过渡动效", target_tag: "维度: 缺动效" }
+
+  # --- 温馨/亲切 ---
+  - id: "温馨"
+    surface_forms: ["温馨", "亲切", "柔和", "治愈", "温暖", "人性化", "友好"]
+    dimension_tags:
+      - { tag: "维度: 配色", weight: 0.7 }
+      - { tag: "维度: 留白", weight: 0.5 }
+      - { tag: "维度: 圆角描边", weight: 0.6 }
+    clarification_question: "温柔感主要靠什么？"
+    clarification_options:
+      - { label: "暖色调配色", target_tag: "维度: 配色" }
+      - { label: "加大圆角", target_tag: "维度: 圆角描边" }
+      - { label: "增加留白", target_tag: "维度: 留白" }
+
+  # --- 冷淡/极简 ---
+  - id: "极简"
+    surface_forms: ["冷淡", "极简", "简约", "克制", "干净", "清爽", "少即是多", "性冷淡"]
+    dimension_tags:
+      - { tag: "维度: 留白不足", weight: 0.7 }
+      - { tag: "维度: 配色", weight: 0.6 }
+      - { tag: "维度: 圆角描边", weight: 0.3 }
+    clarification_question: "极简方向，优先减少什么？"
+    clarification_options:
+      - { label: "颜色种类", target_tag: "维度: 配色" }
+      - { label: "装饰元素", target_tag: "维度: 圆角描边" }
+      - { label: "信息密度", target_tag: "维度: 留白不足" }
+
+  # --- 花哨/杂乱 ---
+  - id: "花哨"
+    surface_forms: ["花哨", "杂乱", "太满", "元素多", "装饰多", "信息过载", "臃肿"]
+    dimension_tags:
+      - { tag: "痛点: 视觉乱", weight: 0.9 }
+      - { tag: "维度: 颜色太多", weight: 0.7 }
+      - { tag: "维度: 间距不统一", weight: 0.4 }
+    clarification_question: "花哨是因为什么？"
+    clarification_options:
+      - { label: "颜色太多", target_tag: "维度: 颜色太多" }
+      - { label: "装饰元素太多", target_tag: "维度: 圆角描边" }
+      - { label: "间距不统一", target_tag: "维度: 间距不统一" }
+
+  # --- 单调/平淡 ---
+  - id: "单调"
+    surface_forms: ["单调", "平淡", "平庸", "没亮点", "太素", "没记忆点", "千篇一律"]
+    dimension_tags:
+      - { tag: "维度: 配色扁平", weight: 0.8 }
+      - { tag: "维度: 缺动效", weight: 0.5 }
+      - { tag: "痛点: 不够高级", weight: 0.4 }
+    clarification_question: "想增加亮点，优先哪个方向？"
+    clarification_options:
+      - { label: "色彩层次", target_tag: "维度: 配色扁平" }
+      - { label: "动效反馈", target_tag: "维度: 缺动效" }
+      - { label: "细节质感", target_tag: "痛点: 不够高级" }
+
+  # --- 惊艳/酷炫 ---
+  - id: "惊艳"
+    surface_forms: ["惊艳", "酷炫", "炸裂", "抓眼球", "视觉冲击", "出彩", "出圈"]
+    dimension_tags:
+      - { tag: "痛点: 视觉丑", weight: 0.5 }
+      - { tag: "维度: 配色", weight: 0.7 }
+      - { tag: "维度: 缺动效", weight: 0.7 }
+      - { tag: "痛点: 不够高级", weight: 0.5 }
+    magnitude_modifier: 1.3
+    clarification_question: "惊艳感来自静态视觉还是动态效果？"
+    clarification_options:
+      - { label: "静态配色冲击", target_tag: "维度: 配色" }
+      - { label: "动态动效", target_tag: "维度: 缺动效" }
+      - { label: "整体高级感", target_tag: "痛点: 不够高级" }
+
+  # --- 专业/可信 ---
+  - id: "专业"
+    surface_forms: ["专业", "可信", "商务", "严肃", "正式", "稳重", "权威", "官方"]
+    dimension_tags:
+      - { tag: "痛点: 不够高级", weight: 0.8 }
+      - { tag: "维度: 配色", weight: 0.6 }
+      - { tag: "维度: 字体", weight: 0.5 }
+    clarification_question: "专业感更偏向哪个维度？"
+    clarification_options:
+      - { label: "克制配色", target_tag: "维度: 配色" }
+      - { label: "字体选择", target_tag: "维度: 字体" }
+      - { label: "整体高级感", target_tag: "痛点: 不够高级" }
+
+  # --- 刺眼/亮 ---
+  - id: "刺眼"
+    surface_forms: ["亮", "刺眼", "晃眼", "太艳", "饱和度太高", "辣眼睛", "过曝"]
+    dimension_tags:
+      - { tag: "痛点: 配色刺眼", weight: 1.0 }
+      - { tag: "维度: 配色", weight: 0.7 }
+    clarification_question: "刺眼是哪里太亮？"
+    clarification_options:
+      - { label: "背景过亮", target_tag: "维度: 配色" }
+      - { label: "主色太艳", target_tag: "痛点: 配色刺眼" }
+
+  # --- 暗/压抑 ---
+  - id: "暗"
+    surface_forms: ["暗", "压抑", "沉闷", "灰蒙蒙", "不透亮", "灰头土脸"]
+    dimension_tags:
+      - { tag: "痛点: 对比度不足", weight: 0.8 }
+      - { tag: "维度: 配色", weight: 0.6 }
+    clarification_question: "暗是因为整体太黑还是对比不够？"
+    clarification_options:
+      - { label: "背景太深", target_tag: "维度: 配色" }
+      - { label: "对比度不足", target_tag: "痛点: 对比度不足" }
+
+  # --- 现代/时尚 ---
+  - id: "现代"
+    surface_forms: ["现代", "时尚", "潮流", "前沿", "当代", "新潮", "in", "洋气"]
+    dimension_tags:
+      - { tag: "痛点: 不够高级", weight: 0.6 }
+      - { tag: "维度: 配色", weight: 0.6 }
+      - { tag: "维度: 圆角描边", weight: 0.5 }
+    clarification_question: "现代感主要体现在哪？"
+    clarification_options:
+      - { label: "现代配色", target_tag: "维度: 配色" }
+      - { label: "现代圆角", target_tag: "维度: 圆角描边" }
+      - { label: "整体高级感", target_tag: "痛点: 不够高级" }
+
+  # --- 复古/古典 ---
+  - id: "复古"
+    surface_forms: ["复古", "古典", "怀旧", "老派", "传统", "古风", "国风"]
+    dimension_tags:
+      - { tag: "维度: 配色", weight: 0.8 }
+      - { tag: "维度: 字体", weight: 0.7 }
+      - { tag: "维度: 圆角描边", weight: 0.4 }
+    clarification_question: "复古主要靠什么？"
+    clarification_options:
+      - { label: "复古配色", target_tag: "维度: 配色" }
+      - { label: "古典字体", target_tag: "维度: 字体" }
+      - { label: "传统元素", target_tag: "维度: 圆角描边" }
+
+  # --- 商务/SaaS ---
+  - id: "商务"
+    surface_forms: ["商务", "saas", "b端", "企业级", "工具感", "理性"]
+    dimension_tags:
+      - { tag: "痛点: 不够高级", weight: 0.7 }
+      - { tag: "维度: 配色", weight: 0.5 }
+      - { tag: "维度: 字体", weight: 0.4 }
+      - { tag: "维度: 留白", weight: 0.3 }
+    clarification_question: "B 端风格更注重哪个？"
+    clarification_options:
+      - { label: "信息密度", target_tag: "维度: 留白" }
+      - { label: "专业配色", target_tag: "维度: 配色" }
+      - { label: "整体克制", target_tag: "痛点: 不够高级" }
+
+  # --- 消费级/C端 ---
+  - id: "C端"
+    surface_forms: ["消费级", "c端", "大众", "友好", "易用", "亲民", "接地气"]
+    dimension_tags:
+      - { tag: "维度: 圆角描边", weight: 0.7 }
+      - { tag: "维度: 配色", weight: 0.5 }
+      - { tag: "维度: 留白", weight: 0.4 }
+    clarification_question: "C 端友好感靠什么？"
+    clarification_options:
+      - { label: "加大圆角", target_tag: "维度: 圆角描边" }
+      - { label: "活泼配色", target_tag: "维度: 配色" }
+      - { label: "留白节奏", target_tag: "维度: 留白" }
+
+  # --- 游戏/娱乐 ---
+  - id: "游戏"
+    surface_forms: ["游戏", "娱乐", "年轻化", "炫酷", "活力", "激情"]
+    dimension_tags:
+      - { tag: "维度: 配色", weight: 0.7 }
+      - { tag: "维度: 缺动效", weight: 0.7 }
+      - { tag: "维度: 圆角描边", weight: 0.4 }
+    clarification_question: "游戏化主要靠什么？"
+    clarification_options:
+      - { label: "高饱和配色", target_tag: "维度: 配色" }
+      - { label: "夸张动效", target_tag: "维度: 缺动效" }
+      - { label: "锐利/异形圆角", target_tag: "维度: 圆角描边" }
+
+  # --- 复杂/繁琐（与极简对立） ---
+  - id: "复杂"
+    surface_forms: ["复杂", "繁琐", "啰嗦", "信息过载", "臃肿", "看不懂", "费劲"]
+    dimension_tags:
+      - { tag: "痛点: 视觉乱", weight: 0.7 }
+      - { tag: "维度: 颜色太多", weight: 0.5 }
+      - { tag: "维度: 字号层级缺失", weight: 0.5 }
+    clarification_question: "复杂是因为什么？"
+    clarification_options:
+      - { label: "颜色太多", target_tag: "维度: 颜色太多" }
+      - { label: "层级不清", target_tag: "维度: 字号层级缺失" }
+      - { label: "信息太多", target_tag: "痛点: 视觉乱" }
+
+  # ─────────── 结构/布局类 ───────────
+
+  # --- 乱 ---
+  - id: "乱"
+    surface_forms: ["乱", "凌乱", "杂乱", "没主次", "分不清", "没条理"]
+    dimension_tags:
+      - { tag: "痛点: 视觉乱", weight: 1.0 }
+      - { tag: "维度: 间距不统一", weight: 0.6 }
+      - { tag: "维度: 字号层级缺失", weight: 0.6 }
+      - { tag: "维度: 颜色太多", weight: 0.4 }
+      - { tag: "维度: 对齐错位", weight: 0.5 }
+    clarification_question: "乱主要是因为什么？"
+    clarification_options:
+      - { label: "间距不统一", target_tag: "维度: 间距不统一" }
+      - { label: "字号没层级", target_tag: "维度: 字号层级缺失" }
+      - { label: "颜色太多", target_tag: "维度: 颜色太多" }
+      - { label: "对齐错位", target_tag: "维度: 对齐错位" }
+
+  # --- 整齐/清晰 ---
+  - id: "整齐"
+    surface_forms: ["整齐", "清晰", "干净", "有条理", "主次分明", "规整"]
+    dimension_tags:
+      - { tag: "维度: 对齐错位", weight: 0.5 }
+      - { tag: "维度: 字号层级缺失", weight: 0.5 }
+      - { tag: "维度: 间距不统一", weight: 0.4 }
+    clarification_question: "现在哪里还不够清晰？"
+    clarification_options:
+      - { label: "对齐", target_tag: "维度: 对齐错位" }
+      - { label: "字号层级", target_tag: "维度: 字号层级缺失" }
+      - { label: "间距", target_tag: "维度: 间距不统一" }
+
+  # --- 挤/密 ---
+  - id: "挤"
+    surface_forms: ["挤", "密", "紧凑", "局促", "喘不过气", "贴太近", "逼仄"]
+    dimension_tags:
+      - { tag: "痛点: 间距太挤", weight: 1.0 }
+      - { tag: "维度: 留白不足", weight: 0.6 }
+    clarification_question: "挤是整体还是某个区域？"
+    clarification_options:
+      - { label: "整体", target_tag: "痛点: 间距太挤" }
+      - { label: "组件内边距", target_tag: "维度: 留白不足" }
+
+  # --- 空/疏 ---
+  - id: "空"
+    surface_forms: ["空", "疏", "松散", "留白太多", "太空旷", "稀", "孤"]
+    dimension_tags:
+      - { tag: "维度: 留白不足", weight: 0.7 }
+      - { tag: "痛点: 间距太挤", weight: 0.3 }
+    clarification_question: "空是因为什么？"
+    clarification_options:
+      - { label: "内容太少", target_tag: "维度: 留白不足" }
+      - { label: "间距过大", target_tag: "痛点: 间距太挤" }
+
+  # --- 歪/偏 ---
+  - id: "歪"
+    surface_forms: ["歪", "偏", "没对齐", "不齐", "错位", "错开"]
+    dimension_tags:
+      - { tag: "维度: 对齐错位", weight: 1.0 }
+      - { tag: "痛点: 视觉乱", weight: 0.4 }
+
+  # --- 看不清/模糊 ---
+  - id: "看不清"
+    surface_forms: ["看不清", "模糊", "淡", "虚", "费劲", "读不动", "小"]
+    dimension_tags:
+      - { tag: "痛点: 对比度不足", weight: 1.0 }
+      - { tag: "维度: 文字对比度低", weight: 0.7 }
+      - { tag: "维度: 图标过细", weight: 0.5 }
+      - { tag: "维度: 字号过小", weight: 0.5 }
+    clarification_question: "看不清的是什么？"
+    clarification_options:
+      - { label: "文字", target_tag: "维度: 文字对比度低" }
+      - { label: "图标", target_tag: "维度: 图标过细" }
+      - { label: "整体太淡", target_tag: "痛点: 对比度不足" }
+
+  # ─────────── 交互/动态类 ───────────
+
+  # --- 呆板/死板 ---
+  - id: "呆板"
+    surface_forms: ["呆板", "死板", "生硬", "没生气", "静态", "僵硬", "死气沉沉"]
+    dimension_tags:
+      - { tag: "痛点: 缺乏动效", weight: 1.0 }
+      - { tag: "维度: 圆角描边", weight: 0.3 }
+      - { tag: "维度: 配色扁平", weight: 0.3 }
+    clarification_question: "想加哪种动效？"
+    clarification_options:
+      - { label: "进入/离开", target_tag: "维度: 进出动效" }
+      - { label: "hover 反馈", target_tag: "维度: hover 反馈" }
+      - { label: "状态过渡", target_tag: "维度: 状态过渡" }
+
+  # --- 灵动/生动 ---
+  - id: "灵动"
+    surface_forms: ["灵动", "生动", "活泼", "流畅", "丝滑", "有反馈", "跟手"]
+    dimension_tags:
+      - { tag: "痛点: 缺乏动效", weight: 0.7 }
+      - { tag: "维度: hover 反馈", weight: 0.5 }
+      - { tag: "维度: 状态过渡", weight: 0.5 }
+    clarification_question: "现在哪个交互最缺反馈？"
+    clarification_options:
+      - { label: "hover 状态", target_tag: "维度: hover 反馈" }
+      - { label: "状态切换", target_tag: "维度: 状态过渡" }
+
+  # --- 卡顿/突兀 ---
+  - id: "卡顿"
+    surface_forms: ["卡顿", "突兀", "猛地一下", "瞬移", "跳变", "不自然"]
+    dimension_tags:
+      - { tag: "动效: 缓动", weight: 1.0 }
+      - { tag: "痛点: 缺乏动效", weight: 0.4 }
+    clarification_question: "是动画时长还是缓动曲线的问题？"
+    clarification_options:
+      - { label: "时长", target_tag: "动效: 缓动" }
+      - { label: "曲线", target_tag: "动效: 缓动" }
+
+  # --- 反馈弱 ---
+  - id: "反馈弱"
+    surface_forms: ["反馈弱", "点了没反应", "不知道点了", "没状态", "没变化"]
+    dimension_tags:
+      - { tag: "维度: hover 反馈", weight: 1.0 }
+      - { tag: "维度: 状态过渡", weight: 0.5 }
+
+  # ─────────── 力度/程度类（叠加而非映射） ───────────
+
+  # --- 重/浓 ---
+  - id: "重"
+    surface_forms: ["重", "浓", "厚", "强烈", "oversized", "大"]
+    dimension_tags:
+      - { tag: "痛点: 不够高级", weight: 0.4 }
+    magnitude_modifier: 1.4
+
+  # --- 轻/弱 ---
+  - id: "轻"
+    surface_forms: ["轻", "弱", "淡", "subtle", "一点点", "稍微", "微"]
+    dimension_tags:
+      - { tag: "痛点: 不够高级", weight: 0.3 }
+    magnitude_modifier: 0.6
+
+  # --- 太X了（反向识别） ---
+  - id: "太过"
+    surface_forms: ["太", "过于", "过分", "过头"]
+    # 注意：这个簇只作为反向识别标志，dimension_tags 在匹配具体词时由其它簇提供
+    dimension_tags: []
+    is_modifier_only: true

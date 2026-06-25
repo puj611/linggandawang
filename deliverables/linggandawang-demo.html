@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>灵感大王 · Demo</title>
+<style>
+  :root {
+    --bg-main: #0F0F12;
+    --bg-card: #16161D;
+    --border: #2A2A32;
+    --brand: #7C5CFF;
+    --brand-hover: #6B4DFF;
+    --text-primary: #E8E8EE;
+    --text-secondary: #8A8A96;
+    --radius-card: 14px;
+    --radius-btn: 8px;
+    --shadow: 0 12px 48px rgba(0,0,0,0.5);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: radial-gradient(circle at 50% 30%, #1A1A24 0%, #0F0F12 70%);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    overflow: hidden;
+  }
+  /* 居中容器 */
+  .stage {
+    position: fixed;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 420px;
+    max-width: 92vw;
+    max-height: 88vh;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 9999;
+  }
+  /* 顶部标题栏 */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar .title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
+  .topbar .actions { display: flex; gap: 6px; }
+  .icon-btn {
+    background: transparent; border: none; cursor: pointer;
+    padding: 6px; border-radius: 6px;
+    color: var(--text-secondary);
+    transition: all .15s;
+  }
+  .icon-btn:hover { background: #1F1F25; color: var(--text-primary); }
+  /* 主体内容 */
+  .body { padding: 16px; overflow-y: auto; flex: 1; }
+  .body textarea {
+    width: 100%;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-btn);
+    padding: 10px 12px;
+    color: var(--text-primary);
+    font-size: 13px;
+    resize: none;
+    outline: none;
+    transition: border-color .15s;
+    font-family: inherit;
+  }
+  .body textarea:focus { border-color: var(--brand); }
+  .body textarea::placeholder { color: var(--text-secondary); }
+  .submit-row { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .btn-primary {
+    background: var(--brand); color: #fff;
+    border: none; cursor: pointer;
+    padding: 6px 14px; font-size: 12px;
+    border-radius: var(--radius-btn);
+    transition: background .15s;
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--brand-hover); }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  /* 模板 */
+  .templates { margin-top: 12px; }
+  .templates .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+  .templates .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: var(--bg-main); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; color: var(--text-secondary);
+    cursor: pointer; transition: all .15s;
+  }
+  .chip:hover { border-color: var(--brand); color: var(--text-primary); }
+  /* 进度条 */
+  .progress { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .progress .bars { display: flex; gap: 4px; margin-bottom: 6px; }
+  .progress .bar { flex: 1; height: 3px; border-radius: 2px; background: #2A2A32; transition: background .2s; }
+  .progress .bar.done { background: var(--brand); }
+  .progress .bar.cur { background: var(--brand-hover); }
+  .progress .meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); }
+  /* 问题区 */
+  .question-area { padding: 24px 16px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .question-text { font-size: 15px; font-weight: 500; line-height: 1.6; margin-bottom: 20px; }
+  .options { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .option {
+    width: 100%; text-align: left;
+    background: var(--bg-main); border: 1px solid var(--border);
+    padding: 10px 14px; border-radius: var(--radius-btn);
+    color: var(--text-primary); font-size: 13px;
+    cursor: pointer; transition: all .15s;
+    font-family: inherit;
+  }
+  .option:hover { border-color: var(--brand); background: #1A1A20; }
+  .custom-form { width: 100%; margin-top: 12px; display: flex; gap: 8px; }
+  .custom-form input {
+    flex: 1; background: var(--bg-main); border: 1px solid var(--border);
+    border-radius: var(--radius-btn); padding: 8px 12px;
+    color: var(--text-primary); font-size: 13px; outline: none;
+    font-family: inherit;
+  }
+  .custom-form input:focus { border-color: var(--brand); }
+  .skip-btn {
+    margin-top: 12px; background: transparent; border: none;
+    color: var(--text-secondary); font-size: 12px;
+    cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+  }
+  .skip-btn:hover { color: var(--text-primary); }
+  /* 标签 */
+  .tags { padding: 10px 16px; border-top: 1px solid var(--border); }
+  .tags .tag-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+  .tags .tag-list { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag {
+    background: rgba(124,92,255,0.15); color: #B8A6FF;
+    padding: 2px 8px; border-radius: 4px; font-size: 11px;
+  }
+  /* 结果 */
+  .result-body { padding: 12px 16px; overflow-y: auto; flex: 1; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+  .section { background: var(--bg-main); border: 1px solid var(--border); border-radius: var(--radius-btn); padding: 10px 12px; margin-bottom: 10px; }
+  .section .sec-title { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .section .sec-content { color: var(--text-primary); line-height: 1.6; white-space: pre-wrap; }
+  .result-actions { display: flex; gap: 6px; }
+  .btn-ghost {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-primary); padding: 4px 10px;
+    font-size: 11px; border-radius: var(--radius-btn);
+    cursor: pointer; transition: all .15s;
+  }
+  .btn-ghost:hover { background: #1F1F25; }
+  /* 顶部品牌横幅 */
+  .banner {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    text-align: center; z-index: 1;
+  }
+  .banner h1 { font-size: 13px; font-weight: 400; color: var(--text-secondary); letter-spacing: 2px; }
+  .banner h1 b { color: var(--brand); font-weight: 500; }
+  /* 底部提示 */
+  .footer-tip {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: var(--text-secondary);
+    text-align: center; z-index: 1;
+  }
+  .footer-tip kbd {
+    background: #1F1F25; border: 1px solid var(--border);
+    padding: 1px 6px; border-radius: 4px; font-size: 10px;
+    font-family: ui-monospace, monospace;
+  }
+  /* 复制提示 */
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--brand); color: #fff;
+    padding: 6px 14px; border-radius: 6px;
+    font-size: 12px; z-index: 99999;
+    opacity: 0; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <div class="banner"><h1>灵感大王 · <b>反向提问</b> 把模糊想法挤压成精准提示词</h1></div>
+
+  <!-- 输入态 -->
+  <div id="stage-input" class="stage">
+    <div class="topbar">
+      <div class="title"><span class="dot"></span>灵感大王</div>
+      <div class="actions">
+        <button class="icon-btn" title="设置" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="body">
+      <textarea id="seed-input" rows="3" placeholder="说一句你现在想做的事…&#10;例如：我的个人博客首页看起来有点土，想让它显得高级一点，但不要太花哨。"></textarea>
+      <div class="submit-row">
+        <button id="start-btn" class="btn-primary" disabled>开始提问 →</button>
+      </div>
+      <div class="templates">
+        <div class="label">或从常用模板开始</div>
+        <div class="chips">
+          <span class="chip" data-tpl="我的个人博客首页看起来有点土，想让它显得高级一点，但不要太花哨。">博客首页太土</span>
+          <span class="chip" data-tpl="后台管理系统的列表页太挤了，想让它透气一点。">列表页太挤</span>
+          <span class="chip" data-tpl="我想给按钮加一个 hover 反馈，现在看起来很呆板。">按钮呆板没反馈</span>
+          <span class="chip" data-tpl="导航栏配色太刺眼，想换成深色系。">导航配色刺眼</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提问态 -->
+  <div id="stage-question" class="stage" style="display:none;">
+    <div class="progress">
+      <div class="bars" id="progress-bars"></div>
+      <div class="meta">
+        <span id="stage-label">感知阶段（1/5）</span>
+        <span id="tag-count">已挤出 0 个标签</span>
+      </div>
+    </div>
+    <div class="question-area">
+      <p id="question-text" class="question-text"></p>
+      <div id="options" class="options"></div>
+      <form id="custom-form" class="custom-form" style="display:none;">
+        <input id="custom-input" type="text" placeholder="或自己描述…" />
+        <button type="submit" class="btn-primary">提交</button>
+      </form>
+      <button id="skip-btn" class="skip-btn">跳过</button>
+    </div>
+    <div class="tags">
+      <div class="tag-label">意图标签清单</div>
+      <div id="tag-list" class="tag-list"></div>
+    </div>
+  </div>
+
+  <!-- 结果态 -->
+  <div id="stage-result" class="stage" style="display:none; height: 80vh; width: 480px;">
+    <div class="topbar">
+      <span class="title">你的提示词</span>
+      <div class="result-actions">
+        <button id="copy-btn" class="btn-primary">复制 Markdown</button>
+        <button id="restart-btn" class="btn-ghost">重新提问</button>
+      </div>
+    </div>
+    <div id="result-body" class="result-body"></div>
+    <div class="tags">
+      <div class="tag-label">意图标签清单（<span id="result-tag-count">0</span> 个）</div>
+      <div id="result-tag-list" class="tag-list"></div>
+    </div>
+  </div>
+
+  <div class="footer-tip">桌面端按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> 唤起悬浮窗 · 本 Demo 为网页版</div>
+  <div id="toast" class="toast"></div>
+
+<script>
+// ───────── 问题库（精简版，来自 bank.yaml）─────────
+const QUESTIONS = [
+  { id:"p-001", stage:"perceive", text:"你今天想看到什么变化？", options:[
+    {label:"修一个看不顺眼的 UI", value:"fix-ui", tags:["场景: 修UI"]},
+    {label:"给现有功能加一个细节", value:"add-detail", tags:["场景: 加细节"]},
+    {label:"复制一个我喜欢的产品的小特性", value:"copy-feature", tags:["场景: 复制特性"]}
+  ], allow_custom:true, placeholder:"或自己描述..." },
+  { id:"p-002", stage:"perceive", text:"你最看不顺眼的是哪一块？", options:[
+    {label:"卡片/列表区域", value:"card-list", tags:["目标: 卡片列表"]},
+    {label:"导航/侧边栏", value:"nav", tags:["目标: 导航"]},
+    {label:"表单/输入区", value:"form", tags:["目标: 表单"]},
+    {label:"整体配色", value:"color", tags:["目标: 配色"]}
+  ], allow_custom:true, placeholder:"或描述具体位置..." },
+  { id:"p-005", stage:"perceive", text:"用一句话形容你现在的感觉？", options:[
+    {label:"看起来太挤", value:"crowded", tags:["痛点: 间距太挤"]},
+    {label:"不够高级", value:"not-premium", tags:["痛点: 不够高级"]},
+    {label:"对不齐", value:"misaligned", tags:["痛点: 对齐错位"]},
+    {label:"配色刺眼", value:"harsh-color", tags:["痛点: 配色刺眼"]}
+  ], allow_custom:true, placeholder:"如：看起来太挤、不够高级、对不齐..." },
+  { id:"n-001", stage:"name", text:'你说"乱"，主要是指哪一种？', options:[
+    {label:"间距不统一", value:"spacing-inconsistent", tags:["维度: 间距不统一"]},
+    {label:"字号层级缺失", value:"font-hierarchy", tags:["维度: 字号层级缺失"]},
+    {label:"颜色太多", value:"color-too-many", tags:["维度: 颜色太多"]},
+    {label:"对齐错位", value:"alignment", tags:["维度: 对齐错位"]}
+  ], allow_custom:true, placeholder:"或自己描述..." },
+  { id:"n-003", stage:"name", text:'你说"不够高级"，主要差在哪里？', options:[
+    {label:"留白不够", value:"whitespace", tags:["维度: 留白不足"]},
+    {label:"对比度不够", value:"contrast", tags:["维度: 对比度不足"]},
+    {label:"缺少动效", value:"motion", tags:["维度: 缺动效"]},
+    {label:"颜色太平", value:"flat-color", tags:["维度: 配色扁平"]}
+  ], allow_custom:true, placeholder:"或自己描述..." },
+  { id:"s-001", stage:"spec", text:"你希望间距密度是哪种？", options:[
+    {label:"紧凑（内边距 8px / 行距 12px）", value:"compact", tags:["布局: 紧凑","内边距: 8px","行距: 12px"]},
+    {label:"标准（内边距 16px / 行距 20px）", value:"standard", tags:["布局: 标准","内边距: 16px","行距: 20px"]},
+    {label:"宽松（内边距 24px / 行距 32px）", value:"loose", tags:["布局: 宽松","内边距: 24px","行距: 32px"]}
+  ], allow_custom:true, placeholder:"或输入具体像素值..." },
+  { id:"s-002", stage:"spec", text:"圆角偏好哪种？", options:[
+    {label:"锐利 0px（直角）", value:"0", tags:["圆角: 0px"]},
+    {label:"微圆 4px", value:"4", tags:["圆角: 4px"]},
+    {label:"标准 8px", value:"8", tags:["圆角: 8px"]},
+    {label:"大圆 12px", value:"12", tags:["圆角: 12px"]}
+  ], allow_custom:true, placeholder:"或输入像素值..." },
+  { id:"s-004", stage:"spec", text:"字号层级希望是？", options:[
+    {label:"3 级：标题 18 / 副标题 14 / 正文 12", value:"3-level", tags:["字号: 3级","标题: 18px","正文: 12px"]},
+    {label:"4 级：H1 24 / H2 18 / H3 14 / 正文 12", value:"4-level", tags:["字号: 4级","H1: 24px","正文: 12px"]},
+    {label:"5 级：H1 32 / H2 24 / H3 18 / H4 14 / 正文 12", value:"5-level", tags:["字号: 5级","H1: 32px","正文: 12px"]}
+  ], allow_custom:true, placeholder:"或输入自定义层级..." },
+  { id:"s-005", stage:"spec", text:"配色希望走哪种调性？", options:[
+    {label:"深色暗夜（背景 #0F0F12 + 紫主色）", value:"dark", tags:["配色: 深色","背景: #0F0F12"]},
+    {label:"浅色简洁（背景 #FFFFFF + 蓝主色）", value:"light", tags:["配色: 浅色","背景: #FFFFFF"]},
+    {label:"暖色（米黄背景 + 橙主色）", value:"warm", tags:["配色: 暖色"]},
+    {label:"冷色（灰蓝背景 + 青主色）", value:"cool", tags:["配色: 冷色"]}
+  ], allow_custom:true, placeholder:"或输入参考色值..." },
+  { id:"e-001", stage:"execute", text:"改动优先落在哪一层？", options:[
+    {label:"Tailwind class 调整", value:"tailwind", tags:["执行: Tailwind"]},
+    {label:"组件 props / 内联样式", value:"component", tags:["执行: 组件 props"]},
+    {label:"全局 CSS / tokens 文件", value:"global-css", tags:["执行: 全局 CSS"]},
+    {label:"设计 token 配置文件", value:"design-token", tags:["执行: 设计 token"]}
+  ], allow_custom:true, placeholder:"或描述你的技术栈..." },
+  { id:"e-004", stage:"execute", text:"改动是否会破坏现有交互逻辑？", options:[
+    {label:"纯视觉，不影响逻辑", value:"visual-only", tags:["影响: 仅视觉"]},
+    {label:"需要调整交互边界", value:"adjust-interaction", tags:["影响: 交互调整"]},
+    {label:"需要重构组件结构", value:"refactor", tags:["影响: 组件重构"]}
+  ], allow_custom:true, placeholder:"或自己描述..." },
+  { id:"v-001", stage:"verify", text:'改完后你怎么判断"对了"？', options:[
+    {label:"截图对比前后", value:"screenshot-diff", tags:["验证: 截图对比"]},
+    {label:"肉眼对照参考产品", value:"visual-ref", tags:["验证: 视觉对照"]},
+    {label:"走查清单逐项打勾", value:"checklist", tags:["验证: 清单走查"]}
+  ], allow_custom:true, placeholder:"或描述你的验收方式..." },
+  { id:"v-005", stage:"verify", text:"如果没达标，希望怎么回退？", options:[
+    {label:"git revert 回退", value:"revert", tags:["回退: git revert"]},
+    {label:"保留改动但注释掉", value:"comment", tags:["回退: 注释"]},
+    {label:"在原分支上继续迭代", value:"iterate", tags:["回退: 继续迭代"]}
+  ], allow_custom:true, placeholder:"或描述你的回退策略..." }
+];
+
+const STAGE_LABEL = { perceive:"感知阶段", name:"命名阶段", spec:"规格阶段", execute:"执行阶段", verify:"验证阶段" };
+const STAGES = ["perceive","name","spec","execute","verify"];
+
+// ───────── 状态 ────────
+let state = {
+  seed: "",
+  qIdx: 0,
+  answers: {},   // questionId -> {value, raw, tags}
+  tags: []       // [{label, value, stage}]
+};
+
+// ───────── DOM ────────
+const $ = (id) => document.getElementById(id);
+const stageInput = $("stage-input");
+const stageQuestion = $("stage-question");
+const stageResult = $("stage-result");
+const seedInput = $("seed-input");
+const startBtn = $("start-btn");
+const toast = $("toast");
+
+// ───────── 输入态 ────────
+seedInput.addEventListener("input", () => {
+  startBtn.disabled = !seedInput.value.trim();
+});
+startBtn.addEventListener("click", () => {
+  state.seed = seedInput.value.trim();
+  goQuestion();
+});
+document.querySelectorAll(".chip").forEach(c => {
+  c.addEventListener("click", () => {
+    seedInput.value = c.dataset.tpl;
+    startBtn.disabled = false;
+    seedInput.focus();
+  });
+});
+
+// ───────── 提问态 ────────
+function goQuestion() {
+  stageInput.style.display = "none";
+  stageResult.style.display = "none";
+  stageQuestion.style.display = "flex";
+  renderQuestion();
+}
+
+function renderQuestion() {
+  const q = QUESTIONS[state.qIdx];
+  if (!q) { goResult(); return; }
+
+  // 进度条
+  const stageIdx = STAGES.indexOf(q.stage);
+  const bars = $("progress-bars");
+  bars.innerHTML = STAGES.map((s,i) =>
+    `<div class="bar ${i < stageIdx ? 'done' : i === stageIdx ? 'cur' : ''}"></div>`
+  ).join("");
+  $("stage-label").textContent = `${STAGE_LABEL[q.stage]}（${stageIdx + 1}/5）`;
+  $("tag-count").textContent = `已挤出 ${state.tags.length} 个标签`;
+
+  // 问题
+  $("question-text").textContent = q.text;
+
+  // 选项
+  const optsEl = $("options");
+  optsEl.innerHTML = "";
+  q.options.forEach(opt => {
+    const btn = document.createElement("button");
+    btn.className = "option";
+    btn.textContent = opt.label;
+    btn.onclick = () => answer(q, opt.value, opt.label, opt.tags);
+    optsEl.appendChild(btn);
+  });
+
+  // 自定义输入
+  const customForm = $("custom-form");
+  customForm.style.display = q.allow_custom ? "flex" : "none";
+  if (q.allow_custom) {
+    $("custom-input").placeholder = q.placeholder || "或自己描述…";
+    customForm.onsubmit = (e) => {
+      e.preventDefault();
+      const v = $("custom-input").value.trim();
+      if (!v) return;
+      answer(q, v, v, []);
+    };
+    $("custom-input").value = "";
+  }
+
+  // 跳过
+  $("skip-btn").onclick = () => {
+    state.answers[q.id] = { value:"__skipped__", raw:"__skipped__", tags:[], skipped:true };
+    next();
+  };
+
+  renderTags("tag-list");
+}
+
+function answer(q, value, raw, tags) {
+  state.answers[q.id] = { value, raw, tags, questionId: q.id };
+  // 收集标签
+  tags.forEach(t => {
+    const [label, val] = t.split(": ");
+    state.tags.push({ label, value: val, stage: q.stage });
+  });
+  // 关键词提取（简化版）
+  extractKeywords(raw, q.stage);
+  next();
+}
+
+function extractKeywords(text, stage) {
+  const map = [
+    { kw:"挤", tag:{label:"痛点", value:"间距太挤", stage} },
+    { kw:"丑", tag:{label:"痛点", value:"视觉丑", stage} },
+    { kw:"乱", tag:{label:"痛点", value:"视觉乱", stage} },
+    { kw:"高级", tag:{label:"痛点", value:"不够高级", stage} },
+    { kw:"看不清", tag:{label:"痛点", value:"对比度不足", stage} },
+    { kw:"呆板", tag:{label:"痛点", value:"缺乏动效", stage} },
+    { kw:"不统一", tag:{label:"痛点", value:"风格不一致", stage} },
+    { kw:"刺眼", tag:{label:"痛点", value:"配色刺眼", stage} },
+    { kw:"对不齐", tag:{label:"痛点", value:"对齐错位", stage} }
+  ];
+  map.forEach(m => {
+    if (text.includes(m.kw) && !state.tags.some(t => t.label===m.tag.label && t.value===m.tag.value)) {
+      state.tags.push(m.tag);
+    }
+  });
+}
+
+function next() {
+  state.qIdx++;
+  if (state.qIdx >= QUESTIONS.length) {
+    goResult();
+  } else {
+    renderQuestion();
+  }
+}
+
+function renderTags(elId) {
+  const el = $(elId);
+  el.innerHTML = state.tags.length === 0
+    ? '<span style="color:var(--text-secondary);font-size:11px;">暂无</span>'
+    : state.tags.map(t => `<span class="tag">${t.label}: ${t.value}</span>`).join("");
+}
+
+// ───────── 结果态 ────────
+function goResult() {
+  stageQuestion.style.display = "none";
+  stageResult.style.display = "flex";
+
+  const result = generatePrompt();
+  const body = $("result-body");
+  body.innerHTML = `
+    <div class="section">
+      <div class="sec-title">要做什么（动作段）</div>
+      <div class="sec-content">${escapeHtml(result.action.content)}</div>
+    </div>
+    <div class="section">
+      <div class="sec-title">怎么做（规格段）</div>
+      <div class="sec-content">${escapeHtml(result.spec.content)}</div>
+    </div>
+    <div class="section">
+      <div class="sec-title">不能怎么（约束段）</div>
+      <div class="sec-content">${escapeHtml(result.constraint.content)}</div>
+    </div>
+    <div class="section">
+      <div class="sec-title">怎么算做好了（验证段）</div>
+      <div class="sec-content">${escapeHtml(result.verify.content)}</div>
+    </div>
+  `;
+  $("result-tag-count").textContent = state.tags.length;
+  renderTags("result-tag-list");
+
+  // 存到全局供复制
+  window.__lastResult = result;
+}
+
+function generatePrompt() {
+  const tags = state.tags;
+  const seed = state.seed;
+  const answers = state.answers;
+
+  // 动作段
+  const sceneTag = tags.find(t => t.label === "场景");
+  const targetTag = tags.find(t => t.label === "目标" || t.label === "维度");
+  let action = "";
+  if (sceneTag?.value === "修UI") {
+    action = `将${targetTag?.value ?? "目标 UI 元素"}按以下规格调整`;
+  } else if (sceneTag?.value === "加细节") {
+    action = `给${targetTag?.value ?? "现有功能"}加入以下细节`;
+  } else if (sceneTag?.value === "复制特性") {
+    action = `参考${targetTag?.value ?? "其他产品"}复制以下特性`;
+  } else if (seed) {
+    action = `完成以下需求：${seed}`;
+  } else {
+    action = "按以下规格调整 UI";
+  }
+
+  // 规格段
+  const specLines = [];
+  tags.filter(t => t.stage === "spec").forEach(t => specLines.push(`${t.label}: ${t.value}`));
+  Object.values(answers).forEach(a => {
+    if (a.skipped || !a.raw || a.value === a.raw) return;
+    const q = QUESTIONS.find(x => x.id === a.questionId);
+    if (q && q.stage === "spec") specLines.push(`自定义规格: ${a.raw}`);
+  });
+  if (specLines.length === 0) specLines.push("（请补充具体规格：间距/圆角/字号/配色等数值）");
+  const specContent = specLines.join("\n");
+
+  // 约束段
+  const cLines = [];
+  const respTag = tags.find(t => t.label === "响应式");
+  if (respTag) {
+    if (respTag.value === "桌面优先，移动端自适应") cLines.push("不得破坏移动端自适应");
+    if (respTag.value === "移动优先，桌面端扩展") cLines.push("保持移动优先的断点顺序");
+  }
+  const impactTag = tags.find(t => t.label === "影响");
+  if (impactTag?.value === "纯视觉，不影响逻辑") cLines.push("不得改动任何交互逻辑代码");
+  cLines.push('不要使用"现代化、美观、流畅"等空话，必须给出可量化规格');
+  cLines.push("不得引入新的 npm 依赖");
+  Object.values(answers).forEach(a => {
+    if (a.value === "revert") cLines.push("未达标时使用 git revert 回退");
+  });
+
+  // 验证段
+  const vLines = [];
+  const methodTag = tags.find(t => t.label === "验证");
+  if (methodTag) {
+    if (methodTag.value === "截图对比前后") vLines.push("截图对比改动前后视觉效果");
+    if (methodTag.value === "肉眼对照参考产品") vLines.push("肉眼对照参考产品逐项核对");
+    if (methodTag.value === "走查清单逐项打勾") vLines.push("走查清单逐项打勾验收");
+  }
+  const contrastTag = tags.find(t => t.label === "对比度");
+  if (contrastTag) vLines.push(`文字与背景对比度 ≥ ${contrastTag.value.includes("AAA") ? "7.0" : "4.5"}:1`);
+  if (vLines.length === 0) vLines.push("改动后截图，肉眼确认符合上述规格段全部数值");
+
+  return {
+    action: { title:"要做什么", content: action },
+    spec: { title:"怎么做", content: specContent },
+    constraint: { title:"不能怎么", content: cLines.join("\n") },
+    verify: { title:"怎么算做好了", content: vLines.join("\n") },
+    intent_tags: tags,
+    generated_at: new Date().toISOString()
+  };
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// 复制
+$("copy-btn").addEventListener("click", () => {
+  const r = window.__lastResult;
+  if (!r) return;
+  const md = toMarkdown(r);
+  navigator.clipboard.writeText(md).then(() => {
+    showToast("已复制到剪贴板 ✓");
+  }).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = md; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy");
+    document.body.removeChild(ta);
+    showToast("已复制到剪贴板 ✓");
+  });
+});
+
+$("restart-btn").addEventListener("click", () => {
+  state = { seed:"", qIdx:0, answers:{}, tags:[] };
+  seedInput.value = "";
+  startBtn.disabled = true;
+  stageResult.style.display = "none";
+  stageInput.style.display = "flex";
+});
+
+function toMarkdown(r) {
+  const lines = [];
+  lines.push("# 你的提示词");
+  lines.push("");
+  lines.push(`> 生成于 ${r.generated_at}`);
+  lines.push("");
+  lines.push("## 1. 要做什么（动作段）");
+  lines.push(r.action.content);
+  lines.push("");
+  lines.push("## 2. 怎么做（规格段）");
+  lines.push("```yaml");
+  lines.push(r.spec.content);
+  lines.push("```");
+  lines.push("");
+  lines.push("## 3. 不能怎么（约束段）");
+  lines.push(r.constraint.content);
+  lines.push("");
+  lines.push("## 4. 怎么算做好了（验证段）");
+  lines.push(r.verify.content);
+  if (r.intent_tags.length > 0) {
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    lines.push(`**意图标签清单（${r.intent_tags.length} 个）：**`);
+    r.intent_tags.forEach(t => lines.push(`- \`${t.label}: ${t.value}\`（来自 ${STAGE_LABEL[t.stage]}阶段）`));
+  }
+  return lines.join("\n");
+}
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 1500);
+}
+
+// 自动聚焦
+seedInput.focus();
+</script>
+</body>
+</html>

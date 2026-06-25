@@ -1,0 +1,229 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LinggandawangQuestionBank",
+  "description": "灵感大王问题库 schema 定义。问题库以 YAML 文件形式存在（bank.yaml），本 schema 用于校验。前端 QuestionLoader 加载 YAML 后转 JSON 按本 schema 校验。",
+  "type": "object",
+  "required": ["schema_version", "bank_id", "scene", "stages", "questions"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema 版本，向后兼容判断"
+    },
+    "bank_id": {
+      "type": "string",
+      "description": "问题库唯一 ID，用于热更新时合并覆盖",
+      "example": "frontend-ui-v1"
+    },
+    "scene": {
+      "type": "string",
+      "description": "问题库覆盖场景，Demo 阶段仅 frontend-ui",
+      "enum": ["frontend-ui", "backend-api", "fullstack"]
+    },
+    "total_questions": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "问题总数，PM 维护，用于启动时校验"
+    },
+    "stages": {
+      "type": "array",
+      "description": "5 个阶段定义，顺序固定",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "order"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": ["perceive", "name", "spec", "execute", "verify"]
+          },
+          "name": { "type": "string" },
+          "order": { "type": "integer", "minimum": 1, "maximum": 5 }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "description": "问题列表，至少 30 条（PM D3 决策）",
+      "items": { "$ref": "#/$defs/Question" }
+    }
+  },
+  "$defs": {
+    "Question": {
+      "type": "object",
+      "description": "单条问题定义",
+      "required": ["id", "stage", "order", "text", "type", "allow_custom", "required"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[pnsev]-\\d{3}$",
+          "description": "问题 ID，阶段前缀(p/n/s/e/v) + 三位序号"
+        },
+        "stage": {
+          "type": "string",
+          "enum": ["perceive", "name", "spec", "execute", "verify"]
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "阶段内顺序"
+        },
+        "text": {
+          "type": "string",
+          "description": "问题文本，最多 2 行",
+          "maxLength": 100
+        },
+        "type": {
+          "type": "string",
+          "enum": ["single-choice", "multi-choice", "open", "scale"],
+          "description": "问题类型：单选/多选/开放/量表"
+        },
+        "options": {
+          "type": "array",
+          "description": "选项列表，type 为 open 时为空",
+          "items": { "$ref": "#/$defs/Option" }
+        },
+        "allow_custom": {
+          "type": "boolean",
+          "description": "是否允许自定义输入",
+          "default": true
+        },
+        "placeholder": {
+          "type": "string",
+          "description": "自定义输入框 placeholder"
+        },
+        "trigger_tags": {
+          "type": "array",
+          "description": "命中已有意图标签时优先选本题",
+          "items": { "type": "string" }
+        },
+        "jumps": {
+          "type": "array",
+          "description": "跳转规则，根据当前回答跳到指定问题",
+          "items": { "$ref": "#/$defs/JumpRule" }
+        },
+        "intent_extraction": {
+          "type": "object",
+          "description": "自定义输入的意图提取规则",
+          "properties": {
+            "keywords": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["keyword", "extract_tag"],
+                "properties": {
+                  "keyword": { "type": "string" },
+                  "extract_tag": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "required": {
+          "type": "boolean",
+          "description": "是否必答",
+          "default": false
+        },
+        "timeout_sec": {
+          "type": ["integer", "null"],
+          "description": "超时自动跳过秒数，Demo 阶段不启用",
+          "default": null
+        }
+      }
+    },
+    "Option": {
+      "type": "object",
+      "required": ["label", "value"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "选项展示文本"
+        },
+        "value": {
+          "type": "string",
+          "description": "选项值，用于 jumps 匹配"
+        },
+        "tags": {
+          "type": "array",
+          "description": "选中后产出的意图标签",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "JumpRule": {
+      "type": "object",
+      "required": ["when_answer", "next_question_id"],
+      "properties": {
+        "when_answer": {
+          "type": "string",
+          "description": "当回答匹配此值时触发跳转"
+        },
+        "next_question_id": {
+          "type": "string",
+          "description": "跳转目标问题 ID"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0",
+      "bank_id": "frontend-ui-v1",
+      "scene": "frontend-ui",
+      "total_questions": 30,
+      "stages": [
+        { "id": "perceive", "name": "感知阶段", "order": 1 },
+        { "id": "name", "name": "命名阶段", "order": 2 },
+        { "id": "spec", "name": "规格阶段", "order": 3 },
+        { "id": "execute", "name": "执行阶段", "order": 4 },
+        { "id": "verify", "name": "验证阶段", "order": 5 }
+      ],
+      "questions": [
+        {
+          "id": "p-001",
+          "stage": "perceive",
+          "order": 1,
+          "text": "你今天想看到什么变化？",
+          "type": "single-choice",
+          "options": [
+            {
+              "label": "修一个看不顺眼的 UI",
+              "value": "fix-ui",
+              "tags": ["场景: 修UI"]
+            },
+            {
+              "label": "给现有功能加一个细节",
+              "value": "add-detail",
+              "tags": ["场景: 加细节"]
+            },
+            {
+              "label": "复制一个我喜欢的产品的小特性",
+              "value": "copy-feature",
+              "tags": ["场景: 复制特性"]
+            }
+          ],
+          "allow_custom": true,
+          "placeholder": "或自己描述你想做的事...",
+          "trigger_tags": [],
+          "jumps": [
+            { "when_answer": "fix-ui", "next_question_id": "n-001" },
+            { "when_answer": "add-detail", "next_question_id": "n-002" },
+            { "when_answer": "copy-feature", "next_question_id": "n-003" }
+          ],
+          "intent_extraction": {
+            "keywords": [
+              { "keyword": "挤", "extract_tag": "痛点: 间距太挤" },
+              { "keyword": "丑", "extract_tag": "痛点: 视觉丑" },
+              { "keyword": "乱", "extract_tag": "痛点: 视觉乱" },
+              { "keyword": "慢", "extract_tag": "痛点: 性能慢" },
+              { "keyword": "不对", "extract_tag": "痛点: 行为不对" }
+            ]
+          },
+          "required": false,
+          "timeout_sec": null
+        }
+      ]
+    }
+  ]
+}

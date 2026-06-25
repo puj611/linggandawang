@@ -1,0 +1,924 @@
+# 灵感大王问题库 v1.1
+# 覆盖场景：前端 UI（D3 决策：窄而深）
+# 分布：perceive 6 / name 7 / spec 8 / execute 5 / verify 5 = 31 条
+# 维护人：寇豆码（PM 许清楚 W1 末交付前先填一版）
+# Schema 见 src/question-bank/schema.json
+schema_version: "1.0"
+bank_id: "frontend-ui-v1"
+scene: "frontend-ui"
+total_questions: 31
+
+stages:
+  - id: perceive
+    name: "感知阶段"
+    order: 1
+  - id: name
+    name: "命名阶段"
+    order: 2
+  - id: spec
+    name: "规格阶段"
+    order: 3
+  - id: execute
+    name: "执行阶段"
+    order: 4
+  - id: verify
+    name: "验证阶段"
+    order: 5
+
+questions:
+  # ───────── perceive 6 条：感知阶段 ─────────
+  - id: "p-001"
+    stage: perceive
+    order: 1
+    text: "今天想让页面有什么变化？"
+    type: "single-choice"
+    options:
+      - label: "修一个看不顺眼的地方"
+        value: "fix-ui"
+        tags: ["场景: 修UI"]
+      - label: "给现有功能加个小细节"
+        value: "add-detail"
+        tags: ["场景: 加细节"]
+      - label: "抄一个我喜欢产品的特性"
+        value: "copy-feature"
+        tags: ["场景: 复制特性"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: []
+    jumps:
+      - when_answer: "fix-ui"
+        next_question_id: "p-002"
+      - when_answer: "add-detail"
+        next_question_id: "p-003"
+      - when_answer: "copy-feature"
+        next_question_id: "p-004"
+    intent_extraction:
+      keywords:
+        - { keyword: "挤", extract_tag: "痛点: 间距太挤" }
+        - { keyword: "丑", extract_tag: "痛点: 视觉丑" }
+        - { keyword: "乱", extract_tag: "痛点: 视觉乱" }
+        - { keyword: "看不清", extract_tag: "痛点: 对比度不足" }
+        - { keyword: "呆板", extract_tag: "痛点: 缺乏动效" }
+        - { keyword: "不统一", extract_tag: "痛点: 风格不一致" }
+        - { keyword: "刺眼", extract_tag: "痛点: 配色刺眼" }
+    required: true
+    quick_mode: true
+
+  - id: "p-002"
+    stage: perceive
+    order: 2
+    text: "最看不顺眼的是哪个区域？"
+    type: "single-choice"
+    options:
+      - label: "内容卡片 / 列表 / 表格"
+        value: "card-list"
+        tags: ["目标: 卡片列表"]
+      - label: "顶部导航 / 左侧菜单"
+        value: "nav"
+        tags: ["目标: 导航"]
+      - label: "输入框 / 按钮 / 表单"
+        value: "form"
+        tags: ["目标: 表单"]
+      - label: "整体颜色不好看"
+        value: "color"
+        tags: ["目标: 配色"]
+    allow_custom: true
+    placeholder: "或者指一下具体位置..."
+    trigger_tags: ["场景: 修UI"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "卡片", extract_tag: "目标: 卡片" }
+        - { keyword: "列表", extract_tag: "目标: 列表" }
+        - { keyword: "导航", extract_tag: "目标: 导航" }
+        - { keyword: "表单", extract_tag: "目标: 表单" }
+        - { keyword: "弹窗", extract_tag: "目标: 弹窗" }
+    required: true
+
+  - id: "p-003"
+    stage: perceive
+    order: 3
+    text: "想加个什么类型的细节？"
+    type: "single-choice"
+    options:
+      - label: "鼠标悬停/点击的小反馈（比如按钮变色、弹一下）"
+        value: "micro-interaction"
+        tags: ["目标: 微交互"]
+      - label: "加载动画 / 空页面提示"
+        value: "empty-state"
+        tags: ["目标: 空状态"]
+      - label: "图表、进度条、小徽章这类装饰"
+        value: "data-viz"
+        tags: ["目标: 数据可视化"]
+    allow_custom: true
+    placeholder: "或者描述你想加的感觉..."
+    trigger_tags: ["场景: 加细节"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "动效", extract_tag: "目标: 动效" }
+        - { keyword: "hover", extract_tag: "目标: hover 反馈" }
+        - { keyword: "加载", extract_tag: "目标: 加载态" }
+    required: true
+
+  - id: "p-004"
+    stage: perceive
+    order: 4
+    text: "想抄的是哪种感觉？（可以提参考产品名）"
+    type: "single-choice"
+    options:
+      - label: "页面排版/布局（比如三栏、左右分栏）"
+        value: "layout"
+        tags: ["目标: 布局"]
+      - label: "整体配色风格（像 Linear 深色、Notion 浅色那种）"
+        value: "color-style"
+        tags: ["目标: 配色"]
+      - label: "某个组件长什么样（按钮、卡片、弹窗）"
+        value: "component"
+        tags: ["目标: 组件样式"]
+      - label: "动画细节（过渡、弹出效果）"
+        value: "motion"
+        tags: ["目标: 动效"]
+    allow_custom: true
+    placeholder: "比如：像 Linear 那样的侧边栏..."
+    trigger_tags: ["场景: 复制特性"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "Linear", extract_tag: "参考: Linear" }
+        - { keyword: "Vercel", extract_tag: "参考: Vercel" }
+        - { keyword: "Raycast", extract_tag: "参考: Raycast" }
+        - { keyword: "Notion", extract_tag: "参考: Notion" }
+    required: true
+
+  - id: "p-005"
+    stage: perceive
+    order: 5
+    text: "用一句话形容你现在的感觉？"
+    type: "open"
+    options: []
+    allow_custom: true
+    placeholder: "比如：看起来太挤了、不够高级、哪里都对不齐..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "挤", extract_tag: "痛点: 间距太挤" }
+        - { keyword: "丑", extract_tag: "痛点: 视觉丑" }
+        - { keyword: "乱", extract_tag: "痛点: 视觉乱" }
+        - { keyword: "高级", extract_tag: "痛点: 不够高级" }
+        - { keyword: "看不清", extract_tag: "痛点: 对比度不足" }
+        - { keyword: "呆板", extract_tag: "痛点: 缺乏动效" }
+        - { keyword: "不统一", extract_tag: "痛点: 风格不一致" }
+        - { keyword: "刺眼", extract_tag: "痛点: 配色刺眼" }
+        - { keyword: "对不齐", extract_tag: "痛点: 对齐错位" }
+        - { keyword: "层级", extract_tag: "痛点: 层级缺失" }
+    required: false
+
+  - id: "p-006"
+    stage: perceive
+    order: 6
+    text: "这次改动影响多大范围？"
+    type: "single-choice"
+    options:
+      - label: "就改一个小地方（一个按钮、一张卡片）"
+        value: "single"
+        tags: ["范围: 单组件"]
+      - label: "改一整个页面"
+        value: "page"
+        tags: ["范围: 单页"]
+      - label: "全站统一换风格（所有页面都变）"
+        value: "global"
+        tags: ["范围: 全局"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords: []
+    required: false
+
+  # ───────── name 7 条：命名阶段（把模糊感觉命名成具体维度）─────────
+  - id: "n-001"
+    stage: name
+    order: 1
+    text: '你说"乱"，主要是哪种乱？'
+    type: "single-choice"
+    options:
+      - label: "元素之间空的距离不统一（有的挤有的松）"
+        value: "spacing-inconsistent"
+        tags: ["维度: 间距不统一"]
+      - label: "字大大小小没层次感"
+        value: "font-hierarchy"
+        tags: ["维度: 字号层级缺失"]
+      - label: "颜色太多太花哨"
+        value: "color-too-many"
+        tags: ["维度: 颜色太多"]
+      - label: "文字/元素对不齐"
+        value: "alignment"
+        tags: ["维度: 对齐错位"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["痛点: 视觉乱"]
+    trigger_clusters: ["乱", "花哨", "复杂", "整齐"]
+    jumps:
+      - when_answer: "spacing-inconsistent"
+        next_question_id: "s-001"
+      - when_answer: "font-hierarchy"
+        next_question_id: "s-004"
+      - when_answer: "alignment"
+        next_question_id: "s-003"
+      - when_answer: "color-too-many"
+        next_question_id: "s-005"
+    intent_extraction: {}
+    required: true
+    quick_mode: true
+
+  - id: "n-002"
+    stage: name
+    order: 2
+    text: '你说"丑"，最受不了哪方面？'
+    type: "single-choice"
+    options:
+      - label: "颜色搭配不好看"
+        value: "color"
+        tags: ["维度: 配色"]
+      - label: "边角和边框的样子不对"
+        value: "radius-border"
+        tags: ["维度: 圆角描边"]
+      - label: "字体/字的样子不合适"
+        value: "font"
+        tags: ["维度: 字体"]
+      - label: "太挤或太空，留白不对"
+        value: "whitespace"
+        tags: ["维度: 留白"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["痛点: 视觉丑"]
+    trigger_clusters: ["丑", "好看", "刺眼", "暗", "单调"]
+    jumps:
+      - when_answer: "color"
+        next_question_id: "s-005"
+      - when_answer: "radius-border"
+        next_question_id: "s-002"
+      - when_answer: "whitespace"
+        next_question_id: "s-001"
+      - when_answer: "font"
+        next_question_id: "s-004"
+    intent_extraction: {}
+    required: true
+
+  - id: "n-003"
+    stage: name
+    order: 3
+    text: '你说"不够高级"，差在哪一口气？'
+    type: "single-choice"
+    options:
+      - label: "内容太满、不够舒展（留白少）"
+        value: "whitespace"
+        tags: ["维度: 留白不足"]
+      - label: "文字和背景反差不够，不清晰"
+        value: "contrast"
+        tags: ["维度: 对比度不足"]
+      - label: "太死板，缺一点动画点缀"
+        value: "motion"
+        tags: ["维度: 缺动效"]
+      - label: "颜色太平淡，没有质感"
+        value: "flat-color"
+        tags: ["维度: 配色扁平"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["痛点: 不够高级"]
+    trigger_clusters: ["高级感", "厉害", "惊艳", "专业", "商务", "现代", "极简"]
+    jumps:
+      - when_answer: "whitespace"
+        next_question_id: "s-001"
+      - when_answer: "contrast"
+        next_question_id: "s-006"
+      - when_answer: "motion"
+        next_question_id: "n-005"
+      - when_answer: "flat-color"
+        next_question_id: "s-005"
+    intent_extraction: {}
+    required: true
+
+  - id: "n-004"
+    stage: name
+    order: 4
+    text: '"看不清"具体是哪种看不清？'
+    type: "single-choice"
+    options:
+      - label: "文字和背景颜色太接近"
+        value: "text-contrast"
+        tags: ["维度: 文字对比度低"]
+      - label: "图标线条太细"
+        value: "icon-thin"
+        tags: ["维度: 图标过细"]
+      - label: "字太小"
+        value: "font-small"
+        tags: ["维度: 字号过小"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["痛点: 对比度不足"]
+    trigger_clusters: ["看不清", "暗", "刺眼", "极简", "商务"]
+    jumps:
+      - when_answer: "text-contrast"
+        next_question_id: "s-006"
+      - when_answer: "font-small"
+        next_question_id: "s-004"
+      - when_answer: "icon-thin"
+        next_question_id: "s-003"
+    intent_extraction: {}
+    required: true
+
+  - id: "n-005"
+    stage: name
+    order: 5
+    text: '"呆板/没灵气"想加点什么？'
+    type: "single-choice"
+    options:
+      - label: "元素出现/消失时加点动画"
+        value: "enter-exit"
+        tags: ["维度: 进出动效"]
+      - label: "鼠标悬停时有反应（按钮变色等）"
+        value: "hover-feedback"
+        tags: ["维度: hover 反馈"]
+      - label: "状态切换时的过渡效果"
+        value: "transition"
+        tags: ["维度: 状态过渡"]
+    allow_custom: true
+    placeholder: "或者描述你想要的感觉..."
+    trigger_tags: ["痛点: 缺乏动效"]
+    trigger_clusters: ["呆板", "灵动", "卡顿", "反馈弱", "惊艳", "游戏"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "缓动", extract_tag: "动效: 缓动" }
+        - { keyword: "弹性", extract_tag: "动效: 弹性" }
+        - { keyword: "fade", extract_tag: "动效: 淡入淡出" }
+    required: false
+
+  - id: "n-006"
+    stage: name
+    order: 6
+    text: '"不统一"最明显的是哪类？'
+    type: "single-choice"
+    options:
+      - label: "按钮长得不一样"
+        value: "button"
+        tags: ["维度: 按钮不统一"]
+      - label: "元素之间空的距离时大时小"
+        value: "spacing"
+        tags: ["维度: 间距不统一"]
+      - label: "颜色用得没规矩"
+        value: "color"
+        tags: ["维度: 配色不统一"]
+      - label: "边角的圆度不一样"
+        value: "radius"
+        tags: ["维度: 圆角不统一"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["痛点: 风格不一致"]
+    trigger_clusters: ["整齐", "商务"]
+    jumps:
+      - when_answer: "spacing"
+        next_question_id: "s-001"
+      - when_answer: "color"
+        next_question_id: "s-005"
+      - when_answer: "radius"
+        next_question_id: "s-002"
+      - when_answer: "button"
+        next_question_id: "s-003"
+    intent_extraction: {}
+    required: true
+
+  - id: "n-007"
+    stage: name
+    order: 7
+    text: "整体风格想往哪个方向走？"
+    type: "single-choice"
+    options:
+      - label: "极简克制（像 Apple/Linear，少即是多，大量留白）"
+        value: "minimal"
+        tags: ["风格方向: 极简", "维度: 留白不足", "维度: 配色"]
+      - label: "科技未来（像 Vercel/VS Code，冷色调+锐利边角）"
+        value: "tech"
+        tags: ["风格方向: 科技感", "维度: 配色", "维度: 圆角描边"]
+      - label: "高级质感（像 Stripe/Linear，细腻阴影+强对比）"
+        value: "premium"
+        tags: ["风格方向: 高级感", "痛点: 不够高级", "维度: 留白不足"]
+      - label: "商务专业（像飞书/钉钉，克制配色+信息密度高）"
+        value: "business"
+        tags: ["风格方向: 商务", "痛点: 不够高级", "维度: 配色"]
+      - label: "温馨亲切（像小红书，暖色+大圆角）"
+        value: "warm"
+        tags: ["风格方向: 温馨", "维度: 配色", "维度: 圆角描边"]
+      - label: "C 端活泼（像抖音/B站，大圆角+色彩丰富）"
+        value: "consumer"
+        tags: ["风格方向: C端", "维度: 圆角描边", "维度: 配色"]
+      - label: "游戏炫酷（像 Steam/Epic，高饱和+强动效）"
+        value: "gaming"
+        tags: ["风格方向: 游戏", "维度: 配色", "维度: 缺动效"]
+      - label: "复古国风（像故宫文创，古典配色+传统字体）"
+        value: "retro"
+        tags: ["风格方向: 复古", "维度: 配色", "维度: 字体"]
+    allow_custom: true
+    placeholder: "或者说个参考产品，比如：像 Notion 那种..."
+    trigger_tags: []
+    trigger_clusters: ["极简", "科技感", "高级感", "商务", "温馨", "C端", "游戏", "复古", "现代"]
+    jumps:
+      - when_answer: "minimal"
+        next_question_id: "s-005"
+      - when_answer: "tech"
+        next_question_id: "s-005"
+      - when_answer: "premium"
+        next_question_id: "s-007"
+      - when_answer: "business"
+        next_question_id: "s-005"
+      - when_answer: "warm"
+        next_question_id: "s-002"
+      - when_answer: "consumer"
+        next_question_id: "s-002"
+      - when_answer: "gaming"
+        next_question_id: "n-005"
+      - when_answer: "retro"
+        next_question_id: "s-004"
+    intent_extraction:
+      keywords:
+        - { keyword: "极简", extract_tag: "风格方向: 极简" }
+        - { keyword: "简约", extract_tag: "风格方向: 极简" }
+        - { keyword: "科技", extract_tag: "风格方向: 科技感" }
+        - { keyword: "未来", extract_tag: "风格方向: 科技感" }
+        - { keyword: "赛博", extract_tag: "风格方向: 科技感" }
+        - { keyword: "高级", extract_tag: "风格方向: 高级感" }
+        - { keyword: "质感", extract_tag: "风格方向: 高级感" }
+        - { keyword: "商务", extract_tag: "风格方向: 商务" }
+        - { keyword: "专业", extract_tag: "风格方向: 商务" }
+        - { keyword: "b端", extract_tag: "风格方向: 商务" }
+        - { keyword: "saas", extract_tag: "风格方向: 商务" }
+        - { keyword: "温馨", extract_tag: "风格方向: 温馨" }
+        - { keyword: "温暖", extract_tag: "风格方向: 温馨" }
+        - { keyword: "亲切", extract_tag: "风格方向: 温馨" }
+        - { keyword: "可爱", extract_tag: "风格方向: C端" }
+        - { keyword: "活泼", extract_tag: "风格方向: C端" }
+        - { keyword: "c端", extract_tag: "风格方向: C端" }
+        - { keyword: "游戏", extract_tag: "风格方向: 游戏" }
+        - { keyword: "炫酷", extract_tag: "风格方向: 游戏" }
+        - { keyword: "复古", extract_tag: "风格方向: 复古" }
+        - { keyword: "国风", extract_tag: "风格方向: 复古" }
+        - { keyword: "Linear", extract_tag: "参考: Linear" }
+        - { keyword: "Vercel", extract_tag: "参考: Vercel" }
+        - { keyword: "Raycast", extract_tag: "参考: Raycast" }
+        - { keyword: "Notion", extract_tag: "参考: Notion" }
+        - { keyword: "Stripe", extract_tag: "参考: Stripe" }
+        - { keyword: "Apple", extract_tag: "参考: Apple" }
+    required: true
+    quick_mode: true
+
+  # ───────── spec 8 条：规格阶段（把感觉量化为具体规格）─────────
+  - id: "s-001"
+    stage: spec
+    order: 1
+    text: "内容排版想紧凑点还是松一点？"
+    type: "single-choice"
+    options:
+      - label: "密密麻麻（像 Excel/后台管理，一屏放很多信息）"
+        value: "compact"
+        tags: ["布局: 紧凑", "内边距: 8px", "行距: 12px"]
+      - label: "正常宽松（像普通网站，看着舒服，推荐）"
+        value: "standard"
+        tags: ["布局: 标准", "内边距: 16px", "行距: 20px"]
+      - label: "宽松透气（像 Apple 官网，大量留白，高级感）"
+        value: "loose"
+        tags: ["布局: 宽松", "内边距: 24px", "行距: 32px"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["维度: 间距不统一", "维度: 留白不足", "痛点: 间距太挤"]
+    trigger_clusters: ["挤", "空", "极简", "高级感", "温馨", "现代", "商务"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "8px", extract_tag: "内边距: 8px" }
+        - { keyword: "16px", extract_tag: "内边距: 16px" }
+        - { keyword: "24px", extract_tag: "内边距: 24px" }
+    required: true
+    quick_mode: true
+
+  - id: "s-002"
+    stage: spec
+    order: 2
+    text: "边角喜欢圆润一点还是方正一点？"
+    type: "single-choice"
+    options:
+      - label: "方方正正（像 Apple 官网/Windows 11，几乎直角）"
+        value: "0"
+        tags: ["圆角: 0px"]
+      - label: "稍微圆润（像 Linear/Vercel 这类工具网站）"
+        value: "4"
+        tags: ["圆角: 4px"]
+      - label: "标准圆角（像 Notion/大多数现代网站，推荐）"
+        value: "8"
+        tags: ["圆角: 8px"]
+      - label: "圆润可爱（像 iOS App，亲和力强）"
+        value: "12"
+        tags: ["圆角: 12px"]
+      - label: "完全圆（像药丸按钮，适合小标签/开关）"
+        value: "999"
+        tags: ["圆角: 999px"]
+    allow_custom: true
+    placeholder: "或者说个感觉..."
+    trigger_tags: ["维度: 圆角描边", "维度: 圆角不统一"]
+    trigger_clusters: ["科技感", "温馨", "极简", "C端", "游戏", "现代", "复古"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "0", extract_tag: "圆角: 0px" }
+        - { keyword: "4", extract_tag: "圆角: 4px" }
+        - { keyword: "8", extract_tag: "圆角: 8px" }
+        - { keyword: "12", extract_tag: "圆角: 12px" }
+    required: true
+    quick_mode: true
+
+  - id: "s-003"
+    stage: spec
+    order: 3
+    text: "文字和元素怎么对齐比较顺眼？"
+    type: "single-choice"
+    options:
+      - label: "全部靠左对齐（最易读，适合文字多的页面，推荐）"
+        value: "left"
+        tags: ["对齐: 左对齐"]
+      - label: "全部居中对齐（适合海报/落地页/品牌页）"
+        value: "center"
+        tags: ["对齐: 居中"]
+      - label: "数字靠右、文字靠左（适合表格/数据/金额展示）"
+        value: "numeric-right"
+        tags: ["对齐: 数值右对齐"]
+      - label: "严格按隐形网格对齐（最规整，设计师最爱）"
+        value: "grid-8"
+        tags: ["对齐: 8px 网格"]
+    allow_custom: true
+    placeholder: "或者描述你想要的感觉..."
+    trigger_tags: ["维度: 对齐错位", "痛点: 对齐错位"]
+    jumps: []
+    intent_extraction: {}
+    required: true
+
+  - id: "s-004"
+    stage: spec
+    order: 4
+    text: "标题和正文的大小对比想多明显？"
+    type: "single-choice"
+    options:
+      - label: "低调对比（大标题/小标题/正文三级，简洁）"
+        value: "3-level"
+        tags: ["字号: 3级", "标题: 18px", "正文: 12px"]
+      - label: "标准对比（H1/H2/H3/正文四级，大多数网站，推荐）"
+        value: "4-level"
+        tags: ["字号: 4级", "H1: 24px", "正文: 12px"]
+      - label: "强烈对比（超大 H1，适合官网/营销页/海报感）"
+        value: "5-level"
+        tags: ["字号: 5级", "H1: 32px", "正文: 12px"]
+    allow_custom: true
+    placeholder: "或者说个感觉..."
+    trigger_tags: ["维度: 字号层级缺失", "维度: 字号过小"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "18", extract_tag: "标题: 18px" }
+        - { keyword: "24", extract_tag: "H1: 24px" }
+        - { keyword: "32", extract_tag: "H1: 32px" }
+        - { keyword: "12", extract_tag: "正文: 12px" }
+    required: true
+
+  - id: "s-005"
+    stage: spec
+    order: 5
+    text: "整体色调偏好哪种？"
+    type: "single-choice"
+    options:
+      - label: "深色暗夜（像 Linear/VS Code，适合工具/开发者）"
+        value: "dark"
+        tags: ["配色: 深色", "背景: #0F0F12"]
+      - label: "浅色简洁（像 Notion/飞书，通用耐看，推荐）"
+        value: "light"
+        tags: ["配色: 浅色", "背景: #FFFFFF"]
+      - label: "温暖亲切（像小红书/美食类，米黄底+暖色主色）"
+        value: "warm"
+        tags: ["配色: 暖色"]
+      - label: "冷静专业（像 Stripe/企业 SaaS，灰蓝底+冷色主色）"
+        value: "cool"
+        tags: ["配色: 冷色"]
+    allow_custom: true
+    placeholder: "或者说个参考色/产品..."
+    trigger_tags: ["维度: 配色", "维度: 配色不统一", "痛点: 配色刺眼", "痛点: 视觉丑"]
+    trigger_clusters: ["科技感", "温馨", "极简", "高级感", "现代", "复古", "商务", "C端", "游戏", "单调", "惊艳", "刺眼", "暗"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "#", extract_tag: "配色: 自定义色值" }
+        - { keyword: "紫", extract_tag: "主色: 紫" }
+        - { keyword: "蓝", extract_tag: "主色: 蓝" }
+    required: true
+    quick_mode: true
+
+  - id: "s-006"
+    stage: spec
+    order: 6
+    text: "文字要看得多清楚？"
+    type: "single-choice"
+    options:
+      - label: "看着舒服就行（对比度适中，美观优先）"
+        value: "comfort"
+        tags: ["对比度: 舒适", "对比度: 3.0"]
+      - label: "标准清晰（推荐，大多数人都能看清）"
+        value: "aa"
+        tags: ["对比度: AA", "对比度: 4.5"]
+      - label: "超高清（老人/强光下也能看清）"
+        value: "aaa"
+        tags: ["对比度: AAA", "对比度: 7.0"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["维度: 对比度不足", "维度: 文字对比度低", "痛点: 对比度不足", "痛点: 看不清"]
+    trigger_clusters: ["看不清", "暗", "刺眼", "专业", "商务", "极简"]
+    jumps: []
+    intent_extraction: {}
+    required: true
+
+  - id: "s-007"
+    stage: spec
+    order: 7
+    text: "卡片阴影想要哪种感觉？"
+    type: "single-choice"
+    options:
+      - label: "完全不要阴影（纯扁平，像早期 iOS/微软风）"
+        value: "none"
+        tags: ["阴影: 无"]
+      - label: "淡淡的投影（像 Notion 卡片，柔和自然，推荐）"
+        value: "soft"
+        tags: ["阴影: 浅"]
+      - label: "明显悬浮感（像 Stripe，高级感强）"
+        value: "deep"
+        tags: ["阴影: 深"]
+      - label: "彩色光晕（像 iOS 大弹窗，品牌感强）"
+        value: "colored"
+        tags: ["阴影: 彩色"]
+    allow_custom: true
+    placeholder: "或者说个参考产品..."
+    trigger_tags: ["痛点: 不够高级"]
+    trigger_clusters: ["高级感", "厉害", "惊艳", "极简", "现代", "专业"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "s-008"
+    stage: spec
+    order: 8
+    text: "页面内容宽度偏好？"
+    type: "single-choice"
+    options:
+      - label: "窄栏居中（像博客/文档，专注阅读）"
+        value: "narrow"
+        tags: ["宽度: 1024px", "栅格: 12"]
+      - label: "标准宽度（像大多数后台/官网，推荐）"
+        value: "standard"
+        tags: ["宽度: 1280px", "栅格: 12"]
+      - label: "宽屏铺满（像数据看板/大屏展示）"
+        value: "wide"
+        tags: ["宽度: 1440px", "栅格: 16"]
+    allow_custom: true
+    placeholder: "或者描述使用场景..."
+    trigger_tags: ["目标: 布局"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── execute 5 条：执行阶段 ─────────
+  - id: "e-001"
+    stage: execute
+    order: 1
+    text: "改完之后影响范围多大合适？"
+    type: "single-choice"
+    options:
+      - label: "我不知道，你看着办（推荐）"
+        value: "auto"
+        tags: ["执行: 自动选择"]
+      - label: "就改这一个地方，不影响别的元素"
+        value: "tailwind"
+        tags: ["执行: Tailwind"]
+      - label: "改这一类组件，同类组件一起变"
+        value: "component"
+        tags: ["执行: 组件 props"]
+      - label: "全局统改，所有页面都生效"
+        value: "global-css"
+        tags: ["执行: 全局 CSS"]
+    allow_custom: true
+    placeholder: "或者描述你的项目用什么技术栈..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: true
+    quick_mode: true
+
+  - id: "e-002"
+    stage: execute
+    order: 2
+    text: "手机上要不要也适配？"
+    type: "single-choice"
+    options:
+      - label: "主要电脑上用，手机上能凑合看就行"
+        value: "desktop-first"
+        tags: ["响应式: 桌面优先"]
+      - label: "手机和电脑都要做好"
+        value: "mobile-first"
+        tags: ["响应式: 移动优先"]
+      - label: "只在电脑上用，不用管手机"
+        value: "desktop-only"
+        tags: ["响应式: 仅桌面"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "e-003"
+    stage: execute
+    order: 3
+    text: "深色/浅色模式怎么处理？"
+    type: "single-choice"
+    options:
+      - label: "只要深色模式"
+        value: "dark-only"
+        tags: ["主题: 仅深色"]
+      - label: "只要浅色模式"
+        value: "light-only"
+        tags: ["主题: 仅浅色"]
+      - label: "深浅色都要，能切换"
+        value: "both"
+        tags: ["主题: 双主题"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "e-004"
+    stage: execute
+    order: 4
+    text: "这次改动会影响现有功能吗？"
+    type: "single-choice"
+    options:
+      - label: "只改外观，不动功能和点击逻辑"
+        value: "visual-only"
+        tags: ["影响: 仅视觉"]
+      - label: "可能要改一点点击区域/交互方式"
+        value: "adjust-interaction"
+        tags: ["影响: 交互调整"]
+      - label: "需要大改组件结构（可能牵连其他地方）"
+        value: "refactor"
+        tags: ["影响: 组件重构"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: true
+
+  - id: "e-005"
+    stage: execute
+    order: 5
+    text: "希望怎么提交这次改动？"
+    type: "single-choice"
+    options:
+      - label: "一次性全部改完"
+        value: "single"
+        tags: ["提交: 单次"]
+      - label: "一个区域改完看一次"
+        value: "split-by-component"
+        tags: ["提交: 按组件拆分"]
+      - label: "分步骤来（先间距→再配色→再字体）"
+        value: "split-by-stage"
+        tags: ["提交: 按阶段拆分"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── verify 5 条：验证阶段 ─────────
+  - id: "v-001"
+    stage: verify
+    order: 1
+    text: '改完后你怎么判断"对了"？'
+    type: "single-choice"
+    options:
+      - label: "截图对比前后"
+        value: "screenshot-diff"
+        tags: ["验证: 截图对比"]
+      - label: "肉眼对照参考产品"
+        value: "visual-ref"
+        tags: ["验证: 视觉对照"]
+      - label: "走查清单逐项打勾"
+        value: "checklist"
+        tags: ["验证: 清单走查"]
+    allow_custom: true
+    placeholder: "或者描述你的验收方式..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "截图", extract_tag: "验证: 截图对比" }
+        - { keyword: "清单", extract_tag: "验证: 清单走查" }
+        - { keyword: "对照", extract_tag: "验证: 视觉对照" }
+    required: true
+
+  - id: "v-002"
+    stage: verify
+    order: 2
+    text: '"间距合适"的标准是什么？'
+    type: "single-choice"
+    options:
+      - label: "看着不挤不空就行（一指宽左右）"
+        value: "finger-width"
+        tags: ["验证标准: 间距一指宽"]
+      - label: "按 8px 网格严格对齐"
+        value: "grid-8"
+        tags: ["验证标准: 8px 网格"]
+      - label: "视觉上没有元素贴边就行"
+        value: "no-touch"
+        tags: ["验证标准: 无贴边"]
+    allow_custom: true
+    placeholder: "或者描述你的标准..."
+    trigger_tags: ["布局: 紧凑", "布局: 标准", "布局: 宽松"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "v-003"
+    stage: verify
+    order: 3
+    text: '"文字看得清"要到什么程度？'
+    type: "single-choice"
+    options:
+      - label: "我自己看着舒服就行"
+        value: "manual"
+        tags: ["验证标准: 人工可读"]
+      - label: "标准清晰（大多数人都能看清）"
+        value: "wcag-aa"
+        tags: ["验证标准: WCAG AA"]
+      - label: "非常清晰（老人/阳光下也能看清）"
+        value: "wcag-aaa"
+        tags: ["验证标准: WCAG AAA"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["对比度: AA", "对比度: AAA"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "v-004"
+    stage: verify
+    order: 4
+    text: "验证工作谁来做？"
+    type: "single-choice"
+    options:
+      - label: "我自己打开页面看"
+        value: "self"
+        tags: ["验证人: 自检"]
+      - label: "AI 自动帮我截图对比"
+        value: "agent"
+        tags: ["验证人: agent"]
+      - label: "找同事/朋友帮忙看看"
+        value: "peer"
+        tags: ["验证人: 队友"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "v-005"
+    stage: verify
+    order: 5
+    text: "改坏了怎么处理？"
+    type: "single-choice"
+    options:
+      - label: "一键撤回所有改动（推荐）"
+        value: "revert"
+        tags: ["回退: git revert"]
+      - label: "代码保留但先注释掉，方便对比"
+        value: "comment"
+        tags: ["回退: 注释"]
+      - label: "不用撤回，在基础上继续改"
+        value: "iterate"
+        tags: ["回退: 继续迭代"]
+    allow_custom: true
+    placeholder: "或者描述你的回退策略..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
