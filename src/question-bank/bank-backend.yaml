@@ -1,0 +1,763 @@
+# 灵感大王问题库 v1.1 — 后端/业务场景
+# 覆盖场景：后端接口 / 数据模型 / 业务逻辑（D3 决策：窄而深）
+# 分布：perceive 4 / name 5 / spec 6 / execute 4 / verify 4 = 23 条
+# 维护人：寇豆码（PM 许清楚 W1 末交付前先填一版）
+# Schema 见 src/question-bank/schema.json
+schema_version: "1.0"
+bank_id: "backend-api-v1"
+scene: "backend-api"
+total_questions: 23
+
+stages:
+  - id: perceive
+    name: "感知阶段"
+    order: 1
+  - id: name
+    name: "命名阶段"
+    order: 2
+  - id: spec
+    name: "规格阶段"
+    order: 3
+  - id: execute
+    name: "执行阶段"
+    order: 4
+  - id: verify
+    name: "验证阶段"
+    order: 5
+
+questions:
+  # ───────── perceive 4 条：感知阶段 ─────────
+  - id: "b-001"
+    stage: perceive
+    order: 1
+    text: "这次想做什么类型的后端工作？"
+    type: "single-choice"
+    options:
+      - label: "新增一个接口或服务"
+        value: "new-api"
+        tags: ["场景: 新增接口"]
+      - label: "优化已有查询或接口性能"
+        value: "optimize"
+        tags: ["场景: 优化查询"]
+      - label: "设计数据模型 / 表结构"
+        value: "data-model"
+        tags: ["场景: 数据建模"]
+      - label: "写业务逻辑 / 状态流转"
+        value: "business-logic"
+        tags: ["场景: 业务逻辑"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: []
+    jumps:
+      - when_answer: "new-api"
+        next_question_id: "b-005"
+      - when_answer: "optimize"
+        next_question_id: "b-006"
+      - when_answer: "data-model"
+        next_question_id: "b-009"
+      - when_answer: "business-logic"
+        next_question_id: "b-007"
+    intent_extraction:
+      keywords:
+        - { keyword: "接口", extract_tag: "场景: 新增接口" }
+        - { keyword: "api", extract_tag: "场景: 新增接口" }
+        - { keyword: "查询", extract_tag: "场景: 优化查询" }
+        - { keyword: "慢", extract_tag: "场景: 优化查询" }
+        - { keyword: "表", extract_tag: "场景: 数据建模" }
+        - { keyword: "模型", extract_tag: "场景: 数据建模" }
+        - { keyword: "逻辑", extract_tag: "场景: 业务逻辑" }
+        - { keyword: "状态机", extract_tag: "场景: 业务逻辑" }
+    required: true
+    quick_mode: true
+
+  - id: "b-002"
+    stage: perceive
+    order: 2
+    text: "这次改动影响哪个业务模块？"
+    type: "single-choice"
+    options:
+      - label: "用户 / 账号 / 权限"
+        value: "user"
+        tags: ["模块: 用户"]
+      - label: "订单 / 交易 / 支付"
+        value: "order"
+        tags: ["模块: 订单"]
+      - label: "内容 / 商品 / 目录"
+        value: "content"
+        tags: ["模块: 内容"]
+      - label: "消息 / 通知 / 推送"
+        value: "message"
+        tags: ["模块: 消息"]
+    allow_custom: true
+    placeholder: "或者描述你的业务模块..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "用户", extract_tag: "模块: 用户" }
+        - { keyword: "账号", extract_tag: "模块: 用户" }
+        - { keyword: "订单", extract_tag: "模块: 订单" }
+        - { keyword: "支付", extract_tag: "模块: 订单" }
+        - { keyword: "商品", extract_tag: "模块: 内容" }
+        - { keyword: "消息", extract_tag: "模块: 消息" }
+    required: true
+
+  - id: "b-003"
+    stage: perceive
+    order: 3
+    text: "是新功能还是改造现有的？"
+    type: "single-choice"
+    options:
+      - label: "从零开始新建"
+        value: "greenfield"
+        tags: ["类型: 新建"]
+      - label: "在现有代码上加功能"
+        value: "extend"
+        tags: ["类型: 扩展"]
+      - label: "重构 / 拆分已有逻辑"
+        value: "refactor"
+        tags: ["类型: 重构"]
+      - label: "修一个 Bug"
+        value: "bugfix"
+        tags: ["类型: 修Bug"]
+    allow_custom: true
+    placeholder: "或者描述你的情况..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "新建", extract_tag: "类型: 新建" }
+        - { keyword: "从零", extract_tag: "类型: 新建" }
+        - { keyword: "重构", extract_tag: "类型: 重构" }
+        - { keyword: "bug", extract_tag: "类型: 修Bug" }
+        - { keyword: "拆分", extract_tag: "类型: 重构" }
+    required: false
+
+  - id: "b-004"
+    stage: perceive
+    order: 4
+    text: "改动范围会影响多大？"
+    type: "single-choice"
+    options:
+      - label: "就改一个接口 / 一个方法"
+        value: "single"
+        tags: ["范围: 单接口"]
+      - label: "影响一个模块 / 一组接口"
+        value: "module"
+        tags: ["范围: 模块级"]
+      - label: "整个服务都要动"
+        value: "service"
+        tags: ["范围: 系统级"]
+      - label: "跨服务 / 跨团队协作"
+        value: "cross-service"
+        tags: ["范围: 跨服务"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── name 5 条：命名阶段（把模糊后端需求命名成具体维度）─────────
+  - id: "b-005"
+    stage: name
+    order: 1
+    text: "接口路径风格想用哪种？"
+    type: "single-choice"
+    options:
+      - label: "RESTful（/api/users/:id，资源+动词，最通用）"
+        value: "restful"
+        tags: ["路径: RESTful"]
+      - label: "RPC 风格（/api/getUserDetail，动作导向）"
+        value: "rpc"
+        tags: ["路径: RPC"]
+      - label: "GraphQL（单个端点，按需取字段）"
+        value: "graphql"
+        tags: ["路径: GraphQL"]
+      - label: "gRPC（Protobuf + 双向流，内部服务间）"
+        value: "grpc"
+        tags: ["路径: gRPC"]
+    allow_custom: true
+    placeholder: "或者说你们项目的现有风格..."
+    trigger_tags: ["场景: 新增接口"]
+    jumps:
+      - when_answer: "restful"
+        next_question_id: "b-010"
+      - when_answer: "rpc"
+        next_question_id: "b-010"
+      - when_answer: "graphql"
+        next_question_id: "b-010"
+      - when_answer: "grpc"
+        next_question_id: "b-010"
+    intent_extraction:
+      keywords:
+        - { keyword: "rest", extract_tag: "路径: RESTful" }
+        - { keyword: "rpc", extract_tag: "路径: RPC" }
+        - { keyword: "graphql", extract_tag: "路径: GraphQL" }
+        - { keyword: "grpc", extract_tag: "路径: gRPC" }
+    required: true
+    quick_mode: true
+
+  - id: "b-006"
+    stage: name
+    order: 2
+    text: "数据存储选型偏好哪种？"
+    type: "single-choice"
+    options:
+      - label: "关系型数据库（MySQL / PostgreSQL，事务强）"
+        value: "rdb"
+        tags: ["存储: 关系型"]
+      - label: "文档型（MongoDB，灵活 schema）"
+        value: "doc"
+        tags: ["存储: 文档型"]
+      - label: "缓存（Redis，键值 / 过期）"
+        value: "cache"
+        tags: ["存储: 缓存"]
+      - label: "搜索引擎（Elasticsearch，全文检索）"
+        value: "es"
+        tags: ["存储: 搜索引擎"]
+    allow_custom: true
+    placeholder: "或者描述你的存储需求..."
+    trigger_tags: ["场景: 优化查询", "场景: 数据建模"]
+    jumps:
+      - when_answer: "rdb"
+        next_question_id: "b-009"
+      - when_answer: "doc"
+        next_question_id: "b-009"
+      - when_answer: "cache"
+        next_question_id: "b-007"
+      - when_answer: "es"
+        next_question_id: "b-007"
+    intent_extraction:
+      keywords:
+        - { keyword: "mysql", extract_tag: "存储: 关系型" }
+        - { keyword: "postgres", extract_tag: "存储: 关系型" }
+        - { keyword: "mongo", extract_tag: "存储: 文档型" }
+        - { keyword: "redis", extract_tag: "存储: 缓存" }
+        - { keyword: "elastic", extract_tag: "存储: 搜索引擎" }
+        - { keyword: "sql", extract_tag: "存储: 关系型" }
+    required: true
+
+  - id: "b-007"
+    stage: name
+    order: 3
+    text: "业务逻辑的复杂度大概什么级别？"
+    type: "single-choice"
+    options:
+      - label: "简单 CRUD（增删改查为主）"
+        value: "crud"
+        tags: ["复杂度: 简单"]
+      - label: "中等（有业务规则 / 校验 / 联动）"
+        value: "medium"
+        tags: ["复杂度: 中等"]
+      - label: "复杂状态机 / 工作流"
+        value: "state-machine"
+        tags: ["复杂度: 状态机"]
+      - label: "分布式事务 / 跨服务一致性"
+        value: "distributed"
+        tags: ["复杂度: 分布式"]
+    allow_custom: true
+    placeholder: "或者描述你的业务复杂度..."
+    trigger_tags: ["场景: 业务逻辑"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "crud", extract_tag: "复杂度: 简单" }
+        - { keyword: "状态机", extract_tag: "复杂度: 状态机" }
+        - { keyword: "事务", extract_tag: "复杂度: 分布式" }
+        - { keyword: "工作流", extract_tag: "复杂度: 状态机" }
+        - { keyword: "一致性", extract_tag: "复杂度: 分布式" }
+    required: true
+
+  - id: "b-008"
+    stage: name
+    order: 4
+    text: "接口是同步返回还是异步处理？"
+    type: "single-choice"
+    options:
+      - label: "同步直接返回结果"
+        value: "sync"
+        tags: ["通信: 同步"]
+      - label: "异步任务 / 消息队列（MQ）"
+        value: "async-queue"
+        tags: ["通信: 异步队列"]
+      - label: "流式返回（SSE / WebSocket）"
+        value: "stream"
+        tags: ["通信: 流式"]
+      - label: "事件驱动（发布订阅）"
+        value: "event-driven"
+        tags: ["通信: 事件驱动"]
+    allow_custom: true
+    placeholder: "或者描述你的调用方式..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "同步", extract_tag: "通信: 同步" }
+        - { keyword: "异步", extract_tag: "通信: 异步队列" }
+        - { keyword: "队列", extract_tag: "通信: 异步队列" }
+        - { keyword: "mq", extract_tag: "通信: 异步队列" }
+        - { keyword: "流", extract_tag: "通信: 流式" }
+        - { keyword: "事件", extract_tag: "通信: 事件驱动" }
+    required: false
+
+  - id: "b-009"
+    stage: name
+    order: 5
+    text: "数据模型之间的关系复杂吗？"
+    type: "single-choice"
+    options:
+      - label: "单表 / 单实体（最简单）"
+        value: "single-table"
+        tags: ["模型: 单表"]
+      - label: "一对多（主从 / 父子）"
+        value: "one-to-many"
+        tags: ["模型: 一对多"]
+      - label: "多对多（需要中间表）"
+        value: "many-to-many"
+        tags: ["模型: 多对多"]
+      - label: "聚合根 + 多实体（DDD 风格）"
+        value: "aggregate"
+        tags: ["模型: 聚合根"]
+    allow_custom: true
+    placeholder: "或者描述你的数据关系..."
+    trigger_tags: ["场景: 数据建模"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "单表", extract_tag: "模型: 单表" }
+        - { keyword: "一对多", extract_tag: "模型: 一对多" }
+        - { keyword: "多对多", extract_tag: "模型: 多对多" }
+        - { keyword: "聚合", extract_tag: "模型: 聚合根" }
+        - { keyword: "关联", extract_tag: "模型: 一对多" }
+    required: false
+
+  # ───────── spec 6 条：规格阶段（把需求量化为具体规格）─────────
+  - id: "b-010"
+    stage: spec
+    order: 1
+    text: "接口入参出参想用什么格式规范？"
+    type: "single-choice"
+    options:
+      - label: "JSON + 扁平结构（简单直接）"
+        value: "json-flat"
+        tags: ["格式: JSON扁平"]
+      - label: "JSON + 嵌套对象（含 data/meta 包裹）"
+        value: "json-nested"
+        tags: ["格式: JSON嵌套"]
+      - label: "Protobuf（强类型，体积小）"
+        value: "protobuf"
+        tags: ["格式: Protobuf"]
+      - label: "FormData / 文件上传"
+        value: "form"
+        tags: ["格式: Form"]
+    allow_custom: true
+    placeholder: "或者说你们项目现有的约定..."
+    trigger_tags: ["场景: 新增接口", "路径: RESTful", "路径: RPC"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "json", extract_tag: "格式: JSON扁平" }
+        - { keyword: "proto", extract_tag: "格式: Protobuf" }
+        - { keyword: "form", extract_tag: "格式: Form" }
+        - { keyword: "嵌套", extract_tag: "格式: JSON嵌套" }
+    required: true
+    quick_mode: true
+
+  - id: "b-011"
+    stage: spec
+    order: 2
+    text: "错误码体系想怎么设计？"
+    type: "single-choice"
+    options:
+      - label: "HTTP 状态码为主（200/400/404/500）"
+        value: "http"
+        tags: ["错误码: HTTP"]
+      - label: "业务错误码（如 10001 用户不存在）"
+        value: "business-code"
+        tags: ["错误码: 业务码"]
+      - label: "分段编码（模块号+错误号，如 10001）"
+        value: "segmented"
+        tags: ["错误码: 分段"]
+      - label: "枚举 + 文案（code+message 配对）"
+        value: "enum"
+        tags: ["错误码: 枚举"]
+    allow_custom: true
+    placeholder: "或者描述你们的错误码规范..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "状态码", extract_tag: "错误码: HTTP" }
+        - { keyword: "错误码", extract_tag: "错误码: 业务码" }
+        - { keyword: "枚举", extract_tag: "错误码: 枚举" }
+        - { keyword: "code", extract_tag: "错误码: 业务码" }
+    required: true
+
+  - id: "b-012"
+    stage: spec
+    order: 3
+    text: "列表数据的分页 / 排序怎么约定？"
+    type: "single-choice"
+    options:
+      - label: "offset + limit（传统分页，简单）"
+        value: "offset-limit"
+        tags: ["分页: offset-limit"]
+      - label: "cursor 游标（大数据量更稳）"
+        value: "cursor"
+        tags: ["分页: cursor"]
+      - label: "不分页（一次返回全部）"
+        value: "no-page"
+        tags: ["分页: 无"]
+      - label: "自定义（按业务约定）"
+        value: "custom"
+        tags: ["分页: 自定义"]
+    allow_custom: true
+    placeholder: "或者描述你们的分页约定..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "分页", extract_tag: "分页: offset-limit" }
+        - { keyword: "offset", extract_tag: "分页: offset-limit" }
+        - { keyword: "cursor", extract_tag: "分页: cursor" }
+        - { keyword: "游标", extract_tag: "分页: cursor" }
+        - { keyword: "排序", extract_tag: "分页: offset-limit" }
+    required: false
+
+  - id: "b-013"
+    stage: spec
+    order: 4
+    text: "接口认证方式用哪种？"
+    type: "single-choice"
+    options:
+      - label: "JWT（无状态，前后端分离常用）"
+        value: "jwt"
+        tags: ["认证: JWT"]
+      - label: "Session + Cookie（服务端状态）"
+        value: "session"
+        tags: ["认证: Session"]
+      - label: "OAuth 2.0（第三方授权）"
+        value: "oauth"
+        tags: ["认证: OAuth"]
+      - label: "API Key / Token（机器对机器）"
+        value: "api-key"
+        tags: ["认证: API Key"]
+      - label: "无需认证（内部服务）"
+        value: "none"
+        tags: ["认证: 无"]
+    allow_custom: true
+    placeholder: "或者描述你们的认证方式..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "jwt", extract_tag: "认证: JWT" }
+        - { keyword: "token", extract_tag: "认证: JWT" }
+        - { keyword: "session", extract_tag: "认证: Session" }
+        - { keyword: "oauth", extract_tag: "认证: OAuth" }
+        - { keyword: "apikey", extract_tag: "认证: API Key" }
+        - { keyword: "登录", extract_tag: "认证: JWT" }
+    required: true
+    quick_mode: true
+
+  - id: "b-014"
+    stage: spec
+    order: 5
+    text: "数据校验放在哪一层？"
+    type: "single-choice"
+    options:
+      - label: "仅前端校验（后端信任前端）"
+        value: "frontend-only"
+        tags: ["校验: 仅前端"]
+      - label: "仅后端校验（安全兜底）"
+        value: "backend-only"
+        tags: ["校验: 仅后端"]
+      - label: "前后端双端校验（最稳）"
+        value: "both"
+        tags: ["校验: 双端"]
+      - label: "Schema 校验（JSON Schema / Zod / Yup）"
+        value: "schema"
+        tags: ["校验: Schema"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "校验", extract_tag: "校验: 双端" }
+        - { keyword: "zod", extract_tag: "校验: Schema" }
+        - { keyword: "yup", extract_tag: "校验: Schema" }
+        - { keyword: "schema", extract_tag: "校验: Schema" }
+    required: false
+
+  - id: "b-015"
+    stage: spec
+    order: 6
+    text: "接口版本管理怎么处理？"
+    type: "single-choice"
+    options:
+      - label: "URL 路径版本（/v1/users）"
+        value: "url-path"
+        tags: ["版本: URL路径"]
+      - label: "Header 版本（Accept-Version）"
+        value: "header"
+        tags: ["版本: Header"]
+      - label: "查询参数（?version=1）"
+        value: "query"
+        tags: ["版本: 查询参数"]
+      - label: "暂不需要版本管理"
+        value: "none"
+        tags: ["版本: 无"]
+    allow_custom: true
+    placeholder: "或者描述你们的版本约定..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "版本", extract_tag: "版本: URL路径" }
+        - { keyword: "v1", extract_tag: "版本: URL路径" }
+        - { keyword: "v2", extract_tag: "版本: URL路径" }
+        - { keyword: "header", extract_tag: "版本: Header" }
+    required: false
+
+  # ───────── execute 4 条：执行阶段 ─────────
+  - id: "b-016"
+    stage: execute
+    order: 1
+    text: "用什么技术栈实现？"
+    type: "single-choice"
+    options:
+      - label: "Node.js（Express / Fastify / NestJS）"
+        value: "node"
+        tags: ["技术栈: Node"]
+      - label: "Python（FastAPI / Django / Flask）"
+        value: "python"
+        tags: ["技术栈: Python"]
+      - label: "Go（Gin / Echo / 标准库）"
+        value: "go"
+        tags: ["技术栈: Go"]
+      - label: "Rust（Axum / Actix）"
+        value: "rust"
+        tags: ["技术栈: Rust"]
+      - label: "Java（Spring Boot）"
+        value: "java"
+        tags: ["技术栈: Java"]
+    allow_custom: true
+    placeholder: "或者描述你们用的语言/框架..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "node", extract_tag: "技术栈: Node" }
+        - { keyword: "python", extract_tag: "技术栈: Python" }
+        - { keyword: "go", extract_tag: "技术栈: Go" }
+        - { keyword: "rust", extract_tag: "技术栈: Rust" }
+        - { keyword: "java", extract_tag: "技术栈: Java" }
+        - { keyword: "spring", extract_tag: "技术栈: Java" }
+    required: true
+    quick_mode: true
+
+  - id: "b-017"
+    stage: execute
+    order: 2
+    text: "数据访问层用 ORM 还是原生 SQL？"
+    type: "single-choice"
+    options:
+      - label: "ORM（Prisma / TypeORM / SQLAlchemy / GORM）"
+        value: "orm"
+        tags: ["数据访问: ORM"]
+      - label: "原生 SQL（手写，性能优先）"
+        value: "raw-sql"
+        tags: ["数据访问: 原生SQL"]
+      - label: "查询构造器（Knex / Query Builder）"
+        value: "query-builder"
+        tags: ["数据访问: 查询构造器"]
+      - label: "混合（简单用 ORM，复杂用 SQL）"
+        value: "mixed"
+        tags: ["数据访问: 混合"]
+    allow_custom: true
+    placeholder: "或者描述你们的数据访问方式..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "orm", extract_tag: "数据访问: ORM" }
+        - { keyword: "prisma", extract_tag: "数据访问: ORM" }
+        - { keyword: "typeorm", extract_tag: "数据访问: ORM" }
+        - { keyword: "sql", extract_tag: "数据访问: 原生SQL" }
+        - { keyword: "knex", extract_tag: "数据访问: 查询构造器" }
+    required: true
+
+  - id: "b-018"
+    stage: execute
+    order: 3
+    text: "数据库迁移怎么管理？"
+    type: "single-choice"
+    options:
+      - label: "迁移脚本（推荐，版本可控）"
+        value: "migration"
+        tags: ["迁移: 脚本"]
+      - label: "ORM 自动同步（开发期方便）"
+        value: "auto-sync"
+        tags: ["迁移: 自动同步"]
+      - label: "手动执行 SQL"
+        value: "manual"
+        tags: ["迁移: 手动"]
+      - label: "暂不需要迁移"
+        value: "none"
+        tags: ["迁移: 无"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "b-019"
+    stage: execute
+    order: 4
+    text: "部署方式是哪种？"
+    type: "single-choice"
+    options:
+      - label: "Docker 容器"
+        value: "docker"
+        tags: ["部署: Docker"]
+      - label: "Kubernetes（K8s 编排）"
+        value: "k8s"
+        tags: ["部署: K8s"]
+      - label: "裸机 / PM2 / systemd"
+        value: "bare-metal"
+        tags: ["部署: 裸机"]
+      - label: "Serverless（云函数 / Lambda）"
+        value: "serverless"
+        tags: ["部署: Serverless"]
+    allow_custom: true
+    placeholder: "或者描述你们的部署方式..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "docker", extract_tag: "部署: Docker" }
+        - { keyword: "k8s", extract_tag: "部署: K8s" }
+        - { keyword: "serverless", extract_tag: "部署: Serverless" }
+        - { keyword: "lambda", extract_tag: "部署: Serverless" }
+    required: false
+
+  # ───────── verify 4 条：验证阶段 ─────────
+  - id: "b-020"
+    stage: verify
+    order: 1
+    text: "怎么算做好了？"
+    type: "single-choice"
+    options:
+      - label: "功能跑通 + 接口能调"
+        value: "works"
+        tags: ["验收: 功能正确"]
+      - label: "性能达标（QPS / 延迟）"
+        value: "perf"
+        tags: ["验收: 性能达标"]
+      - label: "文档完整 + 可交接"
+        value: "docs"
+        tags: ["验收: 文档完整"]
+      - label: "测试覆盖 + 可维护"
+        value: "tested"
+        tags: ["验收: 测试覆盖"]
+    allow_custom: true
+    placeholder: "或者描述你的验收标准..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "跑通", extract_tag: "验收: 功能正确" }
+        - { keyword: "性能", extract_tag: "验收: 性能达标" }
+        - { keyword: "qps", extract_tag: "验收: 性能达标" }
+        - { keyword: "文档", extract_tag: "验收: 文档完整" }
+        - { keyword: "测试", extract_tag: "验收: 测试覆盖" }
+    required: true
+
+  - id: "b-021"
+    stage: verify
+    order: 2
+    text: "单元测试要覆盖到什么程度？"
+    type: "single-choice"
+    options:
+      - label: "不写测试（先跑通再说）"
+        value: "none"
+        tags: ["测试: 无"]
+      - label: "关键路径覆盖（核心逻辑）"
+        value: "critical"
+        tags: ["测试: 关键路径"]
+      - label: "全功能覆盖（每个分支）"
+        value: "full"
+        tags: ["测试: 全覆盖"]
+      - label: "TDD（测试驱动开发）"
+        value: "tdd"
+        tags: ["测试: TDD"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "b-022"
+    stage: verify
+    order: 3
+    text: "性能基准有要求吗？"
+    type: "single-choice"
+    options:
+      - label: "无硬性要求（能用就行）"
+        value: "none"
+        tags: ["性能: 无要求"]
+      - label: "QPS 指标（如 ≥ 1000）"
+        value: "qps"
+        tags: ["性能: QPS"]
+      - label: "延迟指标（如 P99 < 100ms）"
+        value: "latency"
+        tags: ["性能: 延迟"]
+      - label: "需要压测（wrk / locust / k6）"
+        value: "load-test"
+        tags: ["性能: 压测"]
+    allow_custom: true
+    placeholder: "或者描述你的性能指标..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "qps", extract_tag: "性能: QPS" }
+        - { keyword: "延迟", extract_tag: "性能: 延迟" }
+        - { keyword: "p99", extract_tag: "性能: 延迟" }
+        - { keyword: "压测", extract_tag: "性能: 压测" }
+        - { keyword: "locust", extract_tag: "性能: 压测" }
+    required: false
+
+  - id: "b-023"
+    stage: verify
+    order: 4
+    text: "文档完整度要到什么级别？"
+    type: "single-choice"
+    options:
+      - label: "无文档（代码即文档）"
+        value: "none"
+        tags: ["文档: 无"]
+      - label: "Swagger / OpenAPI 自动生成"
+        value: "swagger"
+        tags: ["文档: Swagger"]
+      - label: "手写 API 文档（含示例）"
+        value: "manual"
+        tags: ["文档: 手写"]
+      - label: "含变更日志 + 架构说明"
+        value: "full"
+        tags: ["文档: 完整"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "swagger", extract_tag: "文档: Swagger" }
+        - { keyword: "openapi", extract_tag: "文档: Swagger" }
+        - { keyword: "文档", extract_tag: "文档: 手写" }
+        - { keyword: "示例", extract_tag: "文档: 手写" }
+    required: false
