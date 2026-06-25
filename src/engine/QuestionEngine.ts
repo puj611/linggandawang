@@ -57,6 +57,15 @@ export class QuestionEngine {
   private routeSource: 'keyword' | 'cluster' | 'fallback' = 'fallback';
   // 提问模式：direct=直接生成 / quick=快速提问 / full=详细诊断
   private mode: FlowMode = 'full';
+  // v1.2 新增：历史栈，每条记录一次「当前题 + 阶段 + askedIds 快照 + 标签 + answers 快照」
+  private history: Array<{
+    current: Question | null;
+    stage: StageName;
+    askedIds: string[];
+    answers: Record<string, Answer>;
+    intentTags: IntentTag[];
+    consecutiveSkips: number;
+  }> = [];
 
   constructor(private loader: QuestionLoader) {
     this.selector = new Selector(loader);
@@ -130,6 +139,8 @@ export class QuestionEngine {
     if (!this.current) {
       throw new Error('[QuestionEngine] 当前无问题，无法 answer');
     }
+    // v1.2：在回答前保存历史快照（用于 undo）
+    this.pushHistory();
     const q = this.current;
     const answer: Answer = {
       questionId: q.id,
@@ -178,6 +189,8 @@ export class QuestionEngine {
     if (!this.current) {
       throw new Error('[QuestionEngine] 当前无问题，无法 skip');
     }
+    // v1.2：在跳过前保存历史快照（用于 undo）
+    this.pushHistory();
     const q = this.current;
     this.answers[q.id] = {
       questionId: q.id,
@@ -207,6 +220,50 @@ export class QuestionEngine {
   finishEarly(): void {
     this.stage = 'COMPLETE';
     this.current = null;
+  }
+
+  /** v1.2 新增：撤销上一次回答，恢复到上一题的状态 */
+  undoLastAnswer(): { current: Question | null; stage: StageName; restored: boolean } {
+    if (this.history.length === 0) {
+      return { current: this.current, stage: this.stage, restored: false };
+    }
+    const snapshot = this.history.pop()!;
+    this.current = snapshot.current;
+    this.stage = snapshot.stage;
+    this.askedIds = [...snapshot.askedIds];
+    this.answers = { ...snapshot.answers };
+    this.intentTags = [...snapshot.intentTags];
+    this.consecutiveSkips = snapshot.consecutiveSkips;
+    this.forcedNextId = null;
+    return { current: this.current, stage: this.stage, restored: true };
+  }
+
+  /** v1.2 新增：重新生成本题（清掉当前题回答，从同阶段重选）
+   *  实现：撤销一次回答，相当于「重新回答上一题」
+   */
+  regenerateCurrent(): { current: Question | null; stage: StageName; restored: boolean } {
+    return this.undoLastAnswer();
+  }
+
+  /** v1.2 新增：历史栈是否可撤销 */
+  canUndo(): boolean {
+    return this.history.length > 0;
+  }
+
+  /** v1.2 新增：保存当前状态快照到历史栈（在每次 answer/skip 之前调用） */
+  private pushHistory(): void {
+    if (this.history.length >= 20) {
+      // 限制历史栈大小，避免内存膨胀
+      this.history.shift();
+    }
+    this.history.push({
+      current: this.current,
+      stage: this.stage,
+      askedIds: [...this.askedIds],
+      answers: { ...this.answers },
+      intentTags: [...this.intentTags],
+      consecutiveSkips: this.consecutiveSkips,
+    });
   }
 
   /** 选下一题（跨阶段推进） */
@@ -352,6 +409,7 @@ export class QuestionEngine {
     this.hasDynamicClarification = false; // v1.1
     this.routeSource = 'fallback'; // v1.1
     this.mode = 'full';
+    this.history = []; // v1.2
   }
 
   private extractFromSeed(seed: string) {

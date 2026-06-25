@@ -1,10 +1,18 @@
 // src/engine/QuestionLoader.ts
-// 问题库加载器：从 bank.yaml 加载 + schema 校验 + 用户目录覆盖（T8.4：文件系统读取）
+// 问题库加载器：从 bank.yaml + bank-backend.yaml 加载多场景 + schema 校验 + 用户目录覆盖（T8.4：文件系统读取）
+// P1.1：扩展支持 backend-api 场景，保持原有 API 向后兼容
 import { parse as parseYaml } from 'yaml';
 import { isTauri } from '@/lib/env';
 import type { QuestionBank, Question, PromptStage } from './types';
 import { STAGE_ORDER } from './types';
 import bankYamlText from '@/question-bank/bank.yaml?raw';
+import bankBackendYamlText from '@/question-bank/bank-backend.yaml?raw';
+
+/** 内置支持的场景列表（scene → bank 文本） */
+const BUILTIN_BANKS: { scene: string; text: string; source: string }[] = [
+  { scene: 'frontend-ui', text: bankYamlText, source: 'builtin-frontend' },
+  { scene: 'backend-api', text: bankBackendYamlText, source: 'builtin-backend' },
+];
 
 async function getInvoke() {
   if (!isTauri()) return null;
@@ -17,7 +25,10 @@ async function getInvoke() {
 }
 
 export class QuestionLoader {
-  private bank: QuestionBank | null = null;
+  /** 多场景问题库缓存（scene → QuestionBank） */
+  private banks: Map<string, QuestionBank> = new Map();
+  /** 当前激活场景（默认 frontend-ui，保持向后兼容） */
+  private activeScene: string = 'frontend-ui';
   private userBankText: string | null = null;
   private preloaded = false;
 
@@ -39,26 +50,32 @@ export class QuestionLoader {
     }
   }
 
-  /** 加载内置 + 用户覆盖后的问题库 */
+  /** 加载所有内置场景库 + 用户覆盖（仅对 frontend-ui 生效），返回当前激活场景的问题库 */
   load(): QuestionBank {
-    if (this.bank) return this.bank;
+    const cached = this.banks.get(this.activeScene);
+    if (cached) return cached;
+    this.loadAllBanks();
+    return this.banks.get(this.activeScene)!;
+  }
 
-    const builtin = this.parseAndValidate(bankYamlText, 'builtin');
-    let merged = builtin;
-
-    // T8.4：从文件系统读取用户覆盖（预加载到内存）
-    if (this.userBankText) {
-      const userBank = this.parseAndValidate(this.userBankText, 'user');
-      merged = this.mergeBank(builtin, userBank);
+  /** 加载所有内置场景问题库到内存 */
+  private loadAllBanks(): void {
+    for (const entry of BUILTIN_BANKS) {
+      if (this.banks.has(entry.scene)) continue;
+      const builtin = this.parseAndValidate(entry.text, entry.source);
+      // 用户覆盖仅对 frontend-ui 场景生效（保持向后兼容）
+      if (entry.scene === 'frontend-ui' && this.userBankText) {
+        const userBank = this.parseAndValidate(this.userBankText, 'user');
+        this.banks.set(entry.scene, this.mergeBank(builtin, userBank));
+      } else {
+        this.banks.set(entry.scene, builtin);
+      }
     }
-
-    this.bank = merged;
-    return merged;
   }
 
   /** 手动刷新问题库 */
   async reload(): Promise<QuestionBank> {
-    this.bank = null;
+    this.banks.clear();
     this.preloaded = false;
     await this.preloadUserBank();
     return this.load();
@@ -67,7 +84,7 @@ export class QuestionLoader {
   /** 设置用户覆盖（设置面板调用） */
   async setUserBank(yaml: string): Promise<void> {
     this.userBankText = yaml;
-    this.bank = null; // 清除缓存，下次 load 重新合并
+    this.banks.clear(); // 清除缓存，下次 load 重新合并
     const invoke = await getInvoke();
     if (!invoke) return;
     try {
@@ -81,7 +98,7 @@ export class QuestionLoader {
   /** 清除用户覆盖 */
   async clearUserBank(): Promise<void> {
     this.userBankText = null;
-    this.bank = null; // 清除缓存，下次 load 重新合并
+    this.banks.clear(); // 清除缓存，下次 load 重新合并
     const invoke = await getInvoke();
     if (!invoke) return;
     try {
@@ -92,13 +109,38 @@ export class QuestionLoader {
     }
   }
 
+  /** 获取当前激活场景的问题库 */
   getBank(): QuestionBank {
-    if (!this.bank) this.load();
-    return this.bank!;
+    return this.load();
   }
 
+  /** 返回当前激活场景（P1.1 新增） */
+  getScene(): string {
+    return this.activeScene;
+  }
+
+  /** 设置当前激活场景（P1.1 新增） */
+  setScene(scene: string): void {
+    if (this.activeScene === scene) return;
+    this.activeScene = scene;
+  }
+
+  /** 按 ID 查找问题：先查当前场景，找不到则跨场景查找（支持 seedRouter 跨场景路由） */
   getQuestionById(id: string): Question | undefined {
-    return this.getBank().questions.find((q) => q.id === id);
+    // 确保所有库已加载
+    if (this.banks.size === 0) this.load();
+    // 先在当前激活场景中查找
+    const active = this.banks.get(this.activeScene);
+    if (active) {
+      const q = active.questions.find((q) => q.id === id);
+      if (q) return q;
+    }
+    // 跨场景查找（seedRouter 可能返回另一场景的题目 ID）
+    for (const bank of this.banks.values()) {
+      const q = bank.questions.find((q) => q.id === id);
+      if (q) return q;
+    }
+    return undefined;
   }
 
   getQuestionsByStage(stage: QuestionBank['stages'][number]['id']): Question[] {
@@ -107,7 +149,7 @@ export class QuestionLoader {
       .sort((a, b) => a.order - b.order);
   }
 
-  private parseAndValidate(text: string, source: 'builtin' | 'user'): QuestionBank {
+  private parseAndValidate(text: string, source: string): QuestionBank {
     let obj: unknown;
     try {
       obj = parseYaml(text);

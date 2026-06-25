@@ -1,19 +1,44 @@
 // src/engine/seedRouter.ts
-// 种子输入路由 v1.1：在 v1 关键词路由基础上，新增形容词簇匹配 + 权重聚合 + 动态澄清问题
+// 种子输入路由 v1.2：在 v1.1 关键词路由基础上，新增形容词簇匹配 + 权重聚合 + 动态澄清问题 + 多场景路由
 // 行为契约：
-//   1. 原有 keyword 路由优先命中 preferredQuestionId 时直接返回（向后兼容）
-//   2. 否则基于形容词簇做权重聚合：返回 tagScores 让 Selector 选下一题
-//   3. 若命中簇且该簇有 clarification_question，返回动态澄清题
-//   4. 旧接口字段（question / matchedKeywords）保持不变
+//   1. 先检测 seed 属于哪个场景（frontend-ui / backend-api），默认 frontend-ui
+//   2. 原有 keyword 路由优先命中 preferredQuestionId 时直接返回（向后兼容）
+//   3. 否则基于形容词簇做权重聚合：返回 tagScores 让 Selector 选下一题
+//   4. 若命中簇且该簇有 clarification_question，返回动态澄清题
+//   5. 旧接口字段（question / matchedKeywords）保持不变，新增 scene 字段
 import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { getAllAdjectiveClusters } from './AdjectiveClusterLoader';
+
+/** 支持的场景类型 */
+export type SceneType = 'frontend-ui' | 'backend-api';
 
 interface SeedRoute {
   keywords: string[];
   targetStage: 'perceive' | 'name' | 'spec';
   preferredQuestionId?: string;
+  /** 该路由适用的场景（默认 frontend-ui） */
+  scene?: SceneType;
 }
+
+// 后端关键词（命中任一即判定为后端场景）
+const BACKEND_KEYWORDS = [
+  '接口', 'api', '后端', '数据库', 'sql', '查询', '缓存',
+  'redis', 'mysql', 'mongo', 'postgres', 'orm',
+  'jwt', 'session', 'oauth', '认证', '鉴权',
+  '分页', '错误码', '数据模型', '表结构', '迁移',
+  'node', 'python', 'golang', 'rust', 'java', 'spring',
+  'docker', 'k8s', 'serverless', '部署',
+  'mq', '队列', '消息', '微服务', 'grpc', 'graphql', 'restful',
+];
+
+// 前端关键词（命中任一即判定为前端场景）
+const FRONTEND_KEYWORDS = [
+  '页面', '按钮', '颜色', '布局', '样式', 'ui',
+  '间距', '圆角', '字体', '字号', '配色', '对齐',
+  '阴影', '动画', '动效', '深色', '浅色', '响应式',
+  '卡片', '导航', '表单', '弹窗', '组件', 'hover',
+];
 
 // 按场景/痛点关键词路由（具体关键词优先，"改/修"等通用词放最后）
 const ROUTES: SeedRoute[] = [
@@ -48,7 +73,47 @@ const ROUTES: SeedRoute[] = [
   { keywords: ['挤', '间距', '密'], targetStage: 'perceive', preferredQuestionId: 'p-001' },
   // 修 UI → perceive p-001（"修一个看不顺眼的 UI"），通用关键词放最后
   { keywords: ['修', '改', '调', 'fix'], targetStage: 'perceive', preferredQuestionId: 'p-001' },
+
+  // ───────── 后端场景路由（scene: backend-api）─────────
+  // 接口路径风格 → name b-005
+  { keywords: ['restful', 'rpc风格', 'graphql端点', 'grpc接口'], targetStage: 'name', preferredQuestionId: 'b-005', scene: 'backend-api' },
+  // 数据存储 → name b-006
+  { keywords: ['存储选型', '用什么数据库', 'redis缓存', 'mongo文档'], targetStage: 'name', preferredQuestionId: 'b-006', scene: 'backend-api' },
+  // 业务逻辑复杂度 → name b-007
+  { keywords: ['状态机', '工作流', '分布式事务', '业务规则'], targetStage: 'name', preferredQuestionId: 'b-007', scene: 'backend-api' },
+  // 数据模型 → name b-009
+  { keywords: ['数据模型', '表结构', '建表', '实体关系'], targetStage: 'name', preferredQuestionId: 'b-009', scene: 'backend-api' },
+  // 认证方式 → spec b-013
+  { keywords: ['jwt', '认证方式', 'oauth', 'session登录', 'api-key'], targetStage: 'spec', preferredQuestionId: 'b-013', scene: 'backend-api' },
+  // 分页 → spec b-012
+  { keywords: ['分页', 'cursor游标', 'offset-limit', '排序约定'], targetStage: 'spec', preferredQuestionId: 'b-012', scene: 'backend-api' },
+  // 错误码 → spec b-011
+  { keywords: ['错误码', '错误处理', 'http状态码', '业务码'], targetStage: 'spec', preferredQuestionId: 'b-011', scene: 'backend-api' },
+  // 技术栈 → execute b-016
+  { keywords: ['技术栈', '用什么语言', 'nodejs', 'fastapi', 'gin框架'], targetStage: 'spec', preferredQuestionId: 'b-016', scene: 'backend-api' },
+  // 新增接口 → perceive b-001（后端通用入口）
+  { keywords: ['新增接口', '写个api', '加个接口', '后端开发'], targetStage: 'perceive', preferredQuestionId: 'b-001', scene: 'backend-api' },
 ];
+
+/**
+ * 根据 seed 关键词检测场景（P1.1 新增）。
+ * 后端关键词命中数 > 前端关键词命中数 → backend-api
+ * 否则 → frontend-ui（默认）
+ */
+export function detectScene(seed: string): SceneType {
+  if (!seed) return 'frontend-ui';
+  const lowered = seed.toLowerCase();
+  let backendHits = 0;
+  let frontendHits = 0;
+  for (const kw of BACKEND_KEYWORDS) {
+    if (lowered.includes(kw.toLowerCase())) backendHits++;
+  }
+  for (const kw of FRONTEND_KEYWORDS) {
+    if (lowered.includes(kw.toLowerCase())) frontendHits++;
+  }
+  // 后端命中严格大于前端才判定为后端，否则默认前端
+  return backendHits > frontendHits ? 'backend-api' : 'frontend-ui';
+}
 
 /**
  * 在文本中匹配所有形容词簇，返回去重后的命中列表。
@@ -165,18 +230,29 @@ export function routeSeed(loader: QuestionLoader, seed: string): {
 }
 
 /**
- * 完整版路由：关键词优先 → 形容词簇匹配 → 聚合 → 必要时生成澄清题。
+ * 完整版路由：场景检测 → 关键词优先 → 形容词簇匹配 → 聚合 → 必要时生成澄清题。
+ * P1.1：新增 scene 字段，根据 seed 关键词自动判定 frontend-ui / backend-api 场景。
  */
 export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
   const text = seed.trim();
   if (!text) {
-    return { question: null, matchedKeywords: [], matchedClusters: [], tagScores: [] };
+    return { question: null, matchedKeywords: [], matchedClusters: [], tagScores: [], scene: 'frontend-ui' as SceneType };
   }
   const lowered = text.toLowerCase();
 
-  // 1. 关键词路由（v1 行为，保留）
+  // 0. 场景检测（P1.1 新增）
+  const scene = detectScene(text);
+  // 切换 loader 到对应场景，使后续 getQuestionById / getBank 取到正确场景的问题库
+  loader.setScene(scene);
+
+  // 1. 关键词路由（按场景过滤：前端 seed 只走前端路由，后端 seed 只走后端路由）
+  const sceneRoutes = ROUTES.filter((r) => {
+    if (scene === 'backend-api') return r.scene === 'backend-api';
+    // frontend-ui：走未标记 scene 的路由（即前端路由）
+    return !r.scene || r.scene === 'frontend-ui';
+  });
   const matched: string[] = [];
-  for (const route of ROUTES) {
+  for (const route of sceneRoutes) {
     for (const kw of route.keywords) {
       if (lowered.includes(kw.toLowerCase())) {
         matched.push(kw);
@@ -188,6 +264,7 @@ export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
               matchedKeywords: matched,
               matchedClusters: [],
               tagScores: [],
+              scene,
             };
           }
         }
@@ -207,6 +284,7 @@ export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
     matchedClusters,
     tagScores,
     dynamicClarification: dynamicClarification ?? undefined,
+    scene,
   };
 }
 

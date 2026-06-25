@@ -129,6 +129,11 @@
           "type": ["integer", "null"],
           "description": "超时自动跳过秒数，Demo 阶段不启用",
           "default": null
+        },
+        "why": {
+          "type": "string",
+          "description": "v1.2 新增：解释为什么问这个问题，用于 UI 显示「💡 为什么问这个」提示，帮助用户理解阶段目标",
+          "maxLength": 200
         }
       }
     },

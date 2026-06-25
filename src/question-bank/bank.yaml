@@ -31,6 +31,7 @@ questions:
     stage: perceive
     order: 1
     text: "今天想让页面有什么变化？"
+    why: "先确定你的目标类型，让我知道你要修 UI、加细节还是抄特性"
     type: "single-choice"
     options:
       - label: "修一个看不顺眼的地方"
@@ -68,6 +69,7 @@ questions:
     stage: perceive
     order: 2
     text: "最看不顺眼的是哪个区域？"
+    why: "定位到具体区域，避免改错地方"
     type: "single-choice"
     options:
       - label: "内容卡片 / 列表 / 表格"
@@ -203,6 +205,7 @@ questions:
     stage: name
     order: 1
     text: '你说"乱"，主要是哪种乱？'
+    why: "把「乱」翻译成具体维度（信息/视觉/层级），后续才能针对性给规格"
     type: "single-choice"
     options:
       - label: "元素之间空的距离不统一（有的挤有的松）"
@@ -480,6 +483,7 @@ questions:
     stage: spec
     order: 1
     text: "内容排版想紧凑点还是松一点？"
+    why: "把「挤」或「空」量化为具体间距数值，避免「适当增加」这类模糊词"
     type: "single-choice"
     options:
       - label: "密密麻麻（像 Excel/后台管理，一屏放很多信息）"
@@ -698,6 +702,7 @@ questions:
     stage: execute
     order: 1
     text: "改完之后影响范围多大合适？"
+    why: "明确改动边界（纯视觉/交互逻辑/数据流），避免误伤其他模块"
     type: "single-choice"
     options:
       - label: "我不知道，你看着办（推荐）"
@@ -813,6 +818,7 @@ questions:
     stage: verify
     order: 1
     text: '改完后你怎么判断"对了"？'
+    why: "确定验收方式（截图/参考对照/走查清单），改完才能客观确认是否达标"
     type: "single-choice"
     options:
       - label: "截图对比前后"

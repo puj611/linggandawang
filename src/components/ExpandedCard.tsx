@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useFlow } from '@/hooks/useFlow';
 import { useDrag } from '@/hooks/useDrag';
+import { useResize } from '@/hooks/useResize';
 import { StartTemplates } from './StartTemplates';
 import { RecentPromptList } from './RecentPromptList';
 import { ScreenshotDropZone } from './ScreenshotDropZone';
 import { DiagnosisReport, type DiagnosisIssue } from './DiagnosisReport';
+import { ReferenceImagePanel } from './ReferenceImagePanel';
 import { screenshotDiagnoser } from '@/engine/ScreenshotDiagnoser';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useWindowStore } from '@/stores/windowStore';
@@ -35,6 +37,8 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   const alwaysOnTop = useWindowStore((s) => s.alwaysOnTop);
   const toggleAlwaysOnTop = useWindowStore((s) => s.toggleAlwaysOnTop);
   const { dragProps, offset } = useDrag();
+  // P1.5：右下角宽度调整把手
+  const { resizeProps, width } = useResize();
   const projectPath = useProjectStore((s) => s.fingerprint?.path);
 
   useEffect(() => {
@@ -109,14 +113,15 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
 
   return (
     <div
-      className="fixed left-1/2 top-1/2 w-[420px] max-h-[580px] bg-transparent flex flex-col items-center overflow-visible"
+      className="fixed left-1/2 top-1/2 max-h-[580px] bg-transparent flex flex-col items-center overflow-visible"
       style={{
         zIndex: 9999,
+        width: `${width}px`,
         transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
       }}
     >
       <div
-        className="w-full max-h-[580px] bg-surface-1 border border-border rounded-card shadow-card flex flex-col overflow-hidden"
+        className="relative w-full max-h-[580px] bg-surface-1 border border-border rounded-card shadow-card flex flex-col overflow-hidden"
       >
       {/* 顶部标题栏：拖动把手 */}
       <div
@@ -177,7 +182,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
           autoFocus
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="说一句你现在想做的事…"
+          placeholder="比如：我想让按钮更显眼 / 列表太挤了 / 想加个登录页"
           rows={3}
           className="w-full bg-surface-2 border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder-text-tertiary resize-none focus:outline-none focus:border-brand transition-colors leading-relaxed"
         />
@@ -230,6 +235,8 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
           </div>
         )}
         {issues && <DiagnosisReport issues={issues} onInsertToSpec={onInsertIssues} />}
+        {/* P1.3：参照图 / 情绪板（独立于截图诊断，不影响现有逻辑） */}
+        <ReferenceImagePanel />
       </div>
 
       {/* 起点模板 */}
@@ -237,6 +244,16 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
 
       {/* 最近提示词 */}
       <RecentPromptList />
+
+      {/* P1.5：右下角宽度调整把手 */}
+      <div
+        {...resizeProps}
+        data-no-drag
+        className="absolute right-0 bottom-0 w-3 h-10 flex items-center justify-center hover:bg-surface-3/50 transition-colors group"
+        title="拖动调整宽度"
+      >
+        <div className="w-0.5 h-4 bg-border-light rounded-full group-hover:bg-brand transition-colors" />
+      </div>
       </div>
     </div>
   );

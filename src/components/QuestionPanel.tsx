@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useEngineStore } from '@/stores/engineStore';
 import { useFlow } from '@/hooks/useFlow';
 import { useDrag } from '@/hooks/useDrag';
+import { useResize } from '@/hooks/useResize';
 import { IntentTagChips } from './IntentTagChips';
 import { SkipConfirmDialog } from './SkipConfirmDialog';
 import { STAGE_LABEL } from '@/engine/types';
@@ -13,16 +14,21 @@ import { useAppStore } from '@/stores/appStore';
 const STAGES: PromptStage[] = ['perceive', 'name', 'spec', 'execute', 'verify'];
 
 export function QuestionPanel() {
-  const { currentQuestion, intentTags, consecutiveSkips } = useEngineStore();
-  const { answer, skip } = useFlow();
+  const { currentQuestion, intentTags, consecutiveSkips, canUndo } = useEngineStore();
+  const { answer, skip, goBack } = useFlow();
   const [customInput, setCustomInput] = useState('');
   const [answering, setAnswering] = useState(false);
   const { dragProps, offset, dragging } = useDrag();
+  // P1.5：右下角宽度调整把手
+  const { resizeProps, width } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
 
   if (!currentQuestion) {
     return (
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] max-h-[580px] bg-surface-1 border border-border rounded-card shadow-card p-6 text-center text-text-secondary text-sm">
+      <div
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-h-[580px] bg-surface-1 border border-border rounded-card shadow-card p-6 text-center text-text-secondary text-sm"
+        style={{ zIndex: 9999, width: `${width}px` }}
+      >
         <div className="flex items-center justify-center gap-2">
           <div className="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
           <span>已完成所有阶段，正在生成提示词…</span>
@@ -67,9 +73,10 @@ export function QuestionPanel() {
 
   return (
     <div
-      className={`fixed left-1/2 top-1/2 w-[420px] max-h-[580px] bg-surface-1 border border-border rounded-card shadow-card flex flex-col overflow-hidden ${dragging ? '' : 'transition-fsm'}`}
+      className={`fixed left-1/2 top-1/2 max-h-[580px] bg-surface-1 border border-border rounded-card shadow-card flex flex-col overflow-hidden relative ${dragging ? '' : 'transition-fsm'}`}
       style={{
         zIndex: 9999,
+        width: `${width}px`,
         transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
       }}
     >
@@ -104,12 +111,24 @@ export function QuestionPanel() {
           ))}
         </div>
         <div className="flex justify-between items-center">
-          <button
-            onClick={backToExpanded}
-            className="text-[11px] text-text-tertiary hover:text-text-secondary transition-colors no-drag"
-          >
-            ← 返回
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={backToExpanded}
+              className="text-[11px] text-text-tertiary hover:text-text-secondary transition-colors no-drag"
+            >
+              ← 返回
+            </button>
+            {canUndo && (
+              <button
+                onClick={goBack}
+                disabled={answering}
+                title="撤销上一题的回答，重新选择"
+                className="text-[11px] text-text-tertiary hover:text-brand transition-colors no-drag disabled:opacity-40"
+              >
+                ↻ 上一题
+              </button>
+            )}
+          </div>
           <span className="text-[11px] text-text-secondary font-medium">
             {STAGE_LABEL[currentQuestion.stage]}（{stageIdx + 1}/5）
           </span>
@@ -121,9 +140,18 @@ export function QuestionPanel() {
 
       {/* 中部：问题 */}
       <div className="px-5 py-5 flex-1 flex flex-col items-center justify-center text-center">
-        <p className="text-text-primary text-base font-semibold leading-relaxed mb-5 tracking-tight text-balance">
+        <p className="text-text-primary text-base font-semibold leading-relaxed mb-2 tracking-tight text-balance">
           {currentQuestion.text}
         </p>
+        {currentQuestion.why && (
+          <p className="text-[11px] text-text-tertiary mb-4 leading-relaxed max-w-[90%]">
+            <span className="text-brand/80">💡 为什么问这个：</span>
+            {currentQuestion.why}
+          </p>
+        )}
+        {!currentQuestion.why && (
+          <div className="mb-4" />
+        )}
 
         {/* 选项 */}
         <div className="w-full flex flex-col gap-2">
@@ -174,6 +202,16 @@ export function QuestionPanel() {
 
       {/* 二次确认弹窗 */}
       {consecutiveSkips >= 2 && <SkipConfirmDialog />}
+
+      {/* P1.5：右下角宽度调整把手 */}
+      <div
+        {...resizeProps}
+        data-no-drag
+        className="absolute right-0 bottom-0 w-3 h-10 flex items-center justify-center hover:bg-surface-3/50 transition-colors group"
+        title="拖动调整宽度"
+      >
+        <div className="w-0.5 h-4 bg-border-light rounded-full group-hover:bg-brand transition-colors" />
+      </div>
     </div>
   );
 }

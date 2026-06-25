@@ -43,6 +43,8 @@ export interface Question {
   trigger_clusters?: string[];
   // 快速模式下是否提问此题（仅 quick_mode: true 的题会在快速模式中被选中）
   quick_mode?: boolean;
+  // v1.2 新增：为什么问这个（用于 UI 显示「💡 为什么问这个」提示，帮助用户理解阶段目标）
+  why?: string;
 }
 
 export interface StageMeta {

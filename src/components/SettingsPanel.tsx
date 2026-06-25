@@ -9,8 +9,13 @@ import { questionLoader } from '@/engine/QuestionLoader';
 import { getHotkey, setHotkey } from '@/hooks/useHotkey';
 import { ClusterAnalyticsPanel } from './ClusterAnalyticsPanel';
 import { LLMConfigSection } from './LLMConfigSection';
+import { setPreference } from '@/lib/sqlite';
 
 type TabKey = 'general' | 'analytics';
+
+// 与 App.tsx 约定的跨组件事件名：派发此事件可重新唤起引导遮罩
+const ONBOARDING_SHOW_EVENT = 'show-onboarding';
+const ONBOARDING_SEEN_KEY = 'onboarding_seen';
 
 export function SettingsPanel() {
   const closeSettings = useAppStore((s) => s.closeSettings);
@@ -61,10 +66,33 @@ export function SettingsPanel() {
     setConfirmClear(false);
   };
 
+  // P1.5 其他改进：导出 context.json 为本地文件
+  const onExportContext = () => {
+    const ctx = ctxStore.ctx;
+    const json = JSON.stringify(ctx, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    a.download = `linggandawang-context-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const onReloadBank = () => {
     questionLoader.reload();
     setBankReloaded(true);
     setTimeout(() => setBankReloaded(false), 1500);
+  };
+
+  // 重新查看新手引导：重置标记并派发事件让 App.tsx 显示遮罩
+  const onShowOnboarding = () => {
+    void setPreference(ONBOARDING_SEEN_KEY, '');
+    window.dispatchEvent(new CustomEvent(ONBOARDING_SHOW_EVENT));
+    closeSettings();
   };
 
   return (
@@ -90,7 +118,10 @@ export function SettingsPanel() {
             startRecordHotkey={startRecordHotkey}
             onClearContext={onClearContext}
             onReloadBank={onReloadBank}
+            onShowOnboarding={onShowOnboarding}
             onSwitchTab={setTab}
+            contextPreview={ctxStore.ctx}
+            onExportContext={onExportContext}
           />
         ) : (
           <ClusterAnalyticsPanel onBack={() => setTab('general')} />
@@ -110,12 +141,17 @@ interface GeneralProps {
   startRecordHotkey: () => void;
   onClearContext: () => void;
   onReloadBank: () => void;
+  onShowOnboarding: () => void;
   onSwitchTab: (k: TabKey) => void;
+  // P1.5 其他改进：上下文预览数据与导出回调
+  contextPreview: import('@/types/context').LinggandawangContext;
+  onExportContext: () => void;
 }
 
 function GeneralSettings({
   hotkey, recording, confirmClear, bankReloaded, features, closeSettings,
-  startRecordHotkey, onClearContext, onReloadBank, onSwitchTab,
+  startRecordHotkey, onClearContext, onReloadBank, onShowOnboarding, onSwitchTab,
+  contextPreview, onExportContext,
 }: GeneralProps) {
   return (
     <>
@@ -209,20 +245,65 @@ function GeneralSettings({
           </button>
         </div>
 
-        {/* 清空上下文 */}
+        {/* 重新查看新手引导（P1.4） */}
         <div>
           <button
-            onClick={onClearContext}
-            className={`w-full px-3 py-1.5 text-xs rounded-btn transition-colors ${
-              confirmClear
-                ? 'bg-red-500 hover:bg-red-600 text-white'
-                : 'border border-border text-text-secondary hover:text-text-primary'
-            }`}
+            onClick={onShowOnboarding}
+            className="w-full px-3 py-1.5 text-xs rounded-btn border border-border text-text-secondary hover:text-text-primary hover:bg-bg-card-hover transition-colors flex items-center justify-center gap-1.5"
           >
-            {confirmClear ? '再次点击确认清空上下文' : '清空上下文'}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            重新查看新手引导
           </button>
           <div className="text-[10px] text-text-secondary mt-1">
-            清空 ~/.linggandawang/context.json
+            重看 3 步使用流程和热键
+          </div>
+        </div>
+
+        {/* 上下文管理（P1.5 其他改进）：预览 / 清空 / 导出 */}
+        <div className="pt-3 border-t border-border">
+          <div className="text-[11px] text-text-secondary mb-1.5">上下文管理</div>
+          {/* 概要 */}
+          <div className="text-[10px] text-text-tertiary mb-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+            <span>项目：{contextPreview.project?.name || contextPreview.project?.path || '未绑定'}</span>
+            <span>最近问答：{contextPreview.recent_qa?.length ?? 0} 条</span>
+            <span>意图标签：{contextPreview.intent_tags?.length ?? 0} 个</span>
+          </div>
+          <div className="text-[10px] text-text-tertiary mb-1.5">
+            最后更新：{contextPreview.timestamps?.updated_at
+              ? new Date(contextPreview.timestamps.updated_at).toLocaleString('zh-CN')
+              : '未知'}
+          </div>
+          {/* JSON 预览（截断显示，避免过长） */}
+          <pre className="bg-bg-main border border-border rounded-btn p-2 max-h-32 overflow-auto text-[10px] text-text-tertiary whitespace-pre-wrap break-all font-mono">
+{(() => {
+  const raw = JSON.stringify(contextPreview, null, 2);
+  return raw.length > 800 ? raw.slice(0, 800) + '\n…（截断，导出查看完整）' : raw;
+})()}
+          </pre>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={onExportContext}
+              className="flex-1 px-3 py-1.5 text-xs rounded-btn border border-border text-text-primary hover:bg-bg-card-hover transition-colors"
+            >
+              导出 .json
+            </button>
+            <button
+              onClick={onClearContext}
+              className={`flex-1 px-3 py-1.5 text-xs rounded-btn transition-colors ${
+                confirmClear
+                  ? 'bg-red-500 hover:bg-red-600 text-white'
+                  : 'border border-border text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {confirmClear ? '再次点击确认' : '清空上下文'}
+            </button>
+          </div>
+          <div className="text-[10px] text-text-secondary mt-1">
+            上下文存储于 ~/.linggandawang/context.json
           </div>
         </div>
       </div>

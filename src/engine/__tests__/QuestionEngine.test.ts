@@ -87,4 +87,54 @@ describe('QuestionEngine 状态机', () => {
     const tags = engine.getIntentTags();
     expect(tags.some((t) => t.value.includes('间距太挤'))).toBe(true);
   });
+
+  // v1.2 新增：返回上一题（撤销最后一次回答）
+  it('undoLastAnswer() 撤销最后一次回答', () => {
+    const engine = makeEngine();
+    engine.start('修 UI');
+    expect(engine.canUndo()).toBe(false);
+    const firstQ = engine.currentQuestion();
+    engine.answer('fix-ui', '修一个看不顺眼的 UI', ['场景: 修UI']);
+    const secondQ = engine.currentQuestion();
+    expect(secondQ?.id).not.toBe(firstQ?.id);
+    expect(engine.canUndo()).toBe(true);
+    // 撤销
+    const result = engine.undoLastAnswer();
+    expect(result.restored).toBe(true);
+    expect(engine.currentQuestion()?.id).toBe(firstQ?.id);
+    // answers 应被回滚
+    expect(Object.keys(engine.getAnswers())).not.toContain(firstQ?.id);
+  });
+
+  it('undoLastAnswer() 在空历史时返回 restored=false', () => {
+    const engine = makeEngine();
+    engine.start('修 UI');
+    const result = engine.undoLastAnswer();
+    expect(result.restored).toBe(false);
+  });
+
+  it('history 栈限制为 20', () => {
+    const engine = makeEngine();
+    engine.start('修 UI');
+    // 连续回答 25 次（虽然有阶段推进，但每次都会 pushHistory）
+    let safety = 25;
+    while (!engine.isComplete() && safety > 0) {
+      const q = engine.currentQuestion();
+      if (!q) break;
+      if (q.options.length > 0) {
+        engine.answer(q.options[0].value, q.options[0].label, q.options[0].tags);
+      } else {
+        engine.answer('custom', '自定义', []);
+      }
+      safety--;
+    }
+    // 历史栈不应超过 20
+    let undoCount = 0;
+    while (engine.canUndo()) {
+      engine.undoLastAnswer();
+      undoCount++;
+      if (undoCount > 25) break; // 防死循环
+    }
+    expect(undoCount).toBeLessThanOrEqual(20);
+  });
 });

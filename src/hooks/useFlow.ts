@@ -51,6 +51,8 @@ export function useFlow() {
   const features = useFeatureStore();
   const projectFingerprint = useProjectStore((s) => s.fingerprint);
 
+  const { setCanUndo } = useEngineStore();
+
   /** 启动提问 */
   const start = useCallback(
     (seed: string, mode: FlowMode = 'full') => {
@@ -68,6 +70,7 @@ export function useFlow() {
       for (const tag of engine.getIntentTags()) {
         addIntentTag(tag);
       }
+      setCanUndo(false); // 启动时清空 undo 标记
       // v1.1 记录簇命中分析数据
       const recordHit = useAnalyticsStore.getState().recordHit;
       recordHit({
@@ -120,9 +123,11 @@ export function useFlow() {
 
       if (result.isComplete || !result.nextQuestion) {
         finishAndGenerate();
+      } else {
+        setCanUndo(engine.canUndo());
       }
     },
-    [setStage, setCurrentQuestion, addAsked, addIntentTag, recordAnswer, ctxStore],
+    [setStage, setCurrentQuestion, addAsked, addIntentTag, recordAnswer, ctxStore, setCanUndo],
   );
 
   /** 跳过当前题 */
@@ -142,7 +147,8 @@ export function useFlow() {
     } else if (result.needSkipConfirm) {
       openSkipConfirm();
     }
-  }, [recordAnswer, incSkip, setStage, setCurrentQuestion, addAsked, openSkipConfirm]);
+    setCanUndo(engine.canUndo());
+  }, [recordAnswer, incSkip, setStage, setCurrentQuestion, addAsked, openSkipConfirm, setCanUndo]);
 
   /** 用户在二次确认中选择"继续提问" */
   const continueAfterSkipConfirm = useCallback(() => {
@@ -246,6 +252,39 @@ export function useFlow() {
     [addIntentTag, appState, promptGenerator, setResult, ctxStore, projectFingerprint],
   );
 
+  /** v1.2 新增：返回上一题（撤销最后一次回答） */
+  const goBack = useCallback(() => {
+    const engine = getEngine();
+    const result = engine.undoLastAnswer();
+    if (!result.restored) return;
+    setStage(result.stage);
+    setCurrentQuestion(result.current);
+    setCanUndo(engine.canUndo());
+    // 同步 store 状态（askedIds/answers/intentTags）
+    const snap = engine.snapshot();
+    // 用 setIntentTags 一次性替换（防止旧的意图标签残留）
+    useEngineStore.getState().setIntentTags(snap.intentTags);
+    // 同步 answers
+    const cur = useEngineStore.getState();
+    for (const key of Object.keys(cur.answers)) {
+      if (!(key in snap.answers)) {
+        cur.removeAnswer(key);
+      }
+    }
+  }, [setStage, setCurrentQuestion, setCanUndo]);
+
+  /** v1.2 新增：结果页分块编辑 — 更新某个段落的 content */
+  const updateSection = useCallback(
+    async (segmentKey: 'action' | 'spec' | 'constraint' | 'verify', newContent: string) => {
+      const cur = useEngineStore.getState().result;
+      if (!cur) return;
+      const next = promptGenerator.updateSection(cur, segmentKey, newContent);
+      setResult(next);
+      await ctxStore.setLastPrompt(promptGenerator.toMarkdown(next));
+    },
+    [setResult, ctxStore],
+  );
+
   /** 重新提问 */
   const restart = useCallback(() => {
     const engine = getEngine();
@@ -275,6 +314,8 @@ export function useFlow() {
     directGenerate,
     answer,
     skip,
+    goBack,
+    updateSection,
     continueAfterSkipConfirm,
     finishEarlyAndGenerate,
     removeTag,

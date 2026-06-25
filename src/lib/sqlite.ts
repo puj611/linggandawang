@@ -48,6 +48,8 @@ export interface PromptHistoryRecord {
   seed_input: string;
   created_at: string;
   updated_at: string;
+  // 收藏标记：SQL 中为 INTEGER（0/1），接口层统一为 boolean
+  favorite?: boolean;
 }
 
 const LS_PROMPT_HISTORY = 'sqlite_prompt_history';
@@ -92,14 +94,23 @@ export async function insertPromptHistory(record: Omit<PromptHistoryRecord, 'id'
   return result.lastInsertId ?? 0;
 }
 
-export async function listPromptHistory(limit = 20): Promise<PromptHistoryRecord[]> {
+export async function listPromptHistory(
+  limit = 20,
+  onlyFavorite = false,
+): Promise<PromptHistoryRecord[]> {
   const db = await getDb();
   if (!db) {
-    return readPromptHistoryFromStorage().slice(0, limit);
+    // localStorage 降级：在内存中按 favorite 过滤
+    let list = readPromptHistoryFromStorage();
+    if (onlyFavorite) list = list.filter((item) => item.favorite === true);
+    return list.slice(0, limit);
   }
+  // SQL 层按 favorite 字段过滤（1 = 已收藏）
+  const where = onlyFavorite ? 'WHERE favorite = 1' : '';
   const rows = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<PromptHistoryRecord[]>(
-    `SELECT id, title, markdown, tags_json as tags, seed_input, created_at, updated_at
+    `SELECT id, title, markdown, tags_json as tags, seed_input, favorite, created_at, updated_at
      FROM prompt_history
+     ${where}
      ORDER BY created_at DESC
      LIMIT $1`,
     [limit],
@@ -107,6 +118,7 @@ export async function listPromptHistory(limit = 20): Promise<PromptHistoryRecord
   return rows.map((r: PromptHistoryRecord) => ({
     ...r,
     tags: safeParseJson<string[]>(r.tags as unknown as string, []),
+    favorite: Number(r.favorite) === 1,
   }));
 }
 
@@ -117,7 +129,7 @@ export async function getPromptHistoryById(id: number): Promise<PromptHistoryRec
     return list.find((item) => item.id === id) ?? null;
   }
   const rows = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<PromptHistoryRecord[]>(
-    `SELECT id, title, markdown, tags_json as tags, seed_input, created_at, updated_at
+    `SELECT id, title, markdown, tags_json as tags, seed_input, favorite, created_at, updated_at
      FROM prompt_history
      WHERE id = $1`,
     [id],
@@ -126,6 +138,7 @@ export async function getPromptHistoryById(id: number): Promise<PromptHistoryRec
   return {
     ...rows[0],
     tags: safeParseJson<string[]>(rows[0].tags as unknown as string, []),
+    favorite: Number(rows[0].favorite) === 1,
   };
 }
 
@@ -137,6 +150,74 @@ export async function deletePromptHistory(id: number): Promise<void> {
     return;
   }
   await db.execute('DELETE FROM prompt_history WHERE id = $1', [id]);
+}
+
+/**
+ * 按关键词搜索提示词历史（匹配 title 或 markdown，不区分大小写）
+ * @param keyword 搜索关键词，空字符串时等价于 listPromptHistory
+ * @param limit 返回上限
+ */
+export async function searchPromptHistory(keyword: string, limit = 20): Promise<PromptHistoryRecord[]> {
+  const kw = keyword.trim();
+  const db = await getDb();
+  if (!db) {
+    // localStorage 降级：在内存中做大小写不敏感的子串匹配
+    const list = readPromptHistoryFromStorage();
+    if (!kw) return list.slice(0, limit);
+    const lower = kw.toLowerCase();
+    return list
+      .filter(
+        (item) =>
+          item.title.toLowerCase().includes(lower) ||
+          item.markdown.toLowerCase().includes(lower),
+      )
+      .slice(0, limit);
+  }
+  // SQL 用 LIKE 做大小写不敏感匹配（SQLite 默认 ASCII 大小写不敏感）
+  const pattern = `%${kw}%`;
+  const rows = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<PromptHistoryRecord[]>(
+    `SELECT id, title, markdown, tags_json as tags, seed_input, favorite, created_at, updated_at
+     FROM prompt_history
+     WHERE title LIKE $1 OR markdown LIKE $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [pattern, limit],
+  );
+  return rows.map((r: PromptHistoryRecord) => ({
+    ...r,
+    tags: safeParseJson<string[]>(r.tags as unknown as string, []),
+    favorite: Number(r.favorite) === 1,
+  }));
+}
+
+/**
+ * 只查收藏的提示词（listPromptHistory 的快捷方式）
+ */
+export async function listFavoritePrompts(limit = 20): Promise<PromptHistoryRecord[]> {
+  return listPromptHistory(limit, true);
+}
+
+/**
+ * 切换某条提示词的收藏状态
+ * @param id 记录主键
+ * @param favorite true=收藏，false=取消收藏
+ */
+export async function togglePromptFavorite(id: number, favorite: boolean): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    // localStorage 降级：原地更新 favorite 字段
+    const list = readPromptHistoryFromStorage();
+    const idx = list.findIndex((item) => item.id === id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], favorite };
+      writePromptHistoryToStorage(list);
+    }
+    return;
+  }
+  await db.execute(
+    `UPDATE prompt_history SET favorite = $1, updated_at = $2 WHERE id = $3`,
+    [favorite ? 1 : 0, new Date().toISOString(), id],
+  );
 }
 
 // =============== 用户偏好 ===============

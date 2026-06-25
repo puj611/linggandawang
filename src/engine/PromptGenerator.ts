@@ -22,6 +22,9 @@ interface GenerateInput {
   project?: ProjectFingerprint | null;
 }
 
+/** v1.2 新增：可编辑的段落键名 */
+export type SegmentKey = 'action' | 'spec' | 'constraint' | 'verify';
+
 const STAGE_TO_LABEL: Record<string, string> = {
   perceive: '感知',
   name: '命名',
@@ -56,6 +59,18 @@ export class PromptGenerator {
   /** 删除 tag 后重生成（基于剩余 tags + 既有 answers） */
   regenerate(remainingTags: IntentTag[], answers: Record<string, Answer>, seed: string, project?: ProjectFingerprint | null): PromptResult {
     return this.generate({ intentTags: remainingTags, answers, seedInput: seed, project });
+  }
+
+  /** v1.2 新增：分块更新某个段落的 content，返回更新后的 PromptResult 副本 */
+  updateSection(result: PromptResult, segmentKey: SegmentKey, newContent: string): PromptResult {
+    const next: PromptResult = {
+      ...result,
+      [segmentKey]: {
+        ...(result[segmentKey] as PromptSegment),
+        content: newContent,
+      },
+    };
+    return next;
   }
 
   /** 转 Markdown 全文 */

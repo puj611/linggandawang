@@ -10,12 +10,12 @@ describe('QuestionLoader', () => {
     expect(bank.questions.length).toBeGreaterThanOrEqual(30);
   });
 
-  it('分布：perceive 6 / name 6 / spec 8 / execute 5 / verify 5', () => {
+  it('分布：perceive 6 / name 7 / spec 8 / execute 5 / verify 5', () => {
     const loader = new QuestionLoader();
     const bank = loader.load();
     const count = (stage: string) => bank.questions.filter((q) => q.stage === stage).length;
     expect(count('perceive')).toBe(6);
-    expect(count('name')).toBe(6);
+    expect(count('name')).toBe(7);
     expect(count('spec')).toBe(8);
     expect(count('execute')).toBe(5);
     expect(count('verify')).toBe(5);
