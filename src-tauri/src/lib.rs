@@ -157,7 +157,7 @@ fn delete_api_key(provider: String) -> Result<(), String> {
     validate_provider(&provider)?;
     let entry = keyring::Entry::new(KEYRING_SERVICE, &provider)
         .map_err(|_| "密钥存储服务不可用".to_string())?;
-    match entry.delete_password() {
+    match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(_) => Err("删除 API Key 失败".to_string()),
