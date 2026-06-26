@@ -20,11 +20,10 @@ interface WindowStore {
 }
 
 const DEFAULT_POSITION: WindowPosition = { x: -1, y: -1, screen: 'default' };
-// P1.5：默认宽度与持久化 key
-const DEFAULT_WIDTH = 420;
+const DEFAULT_WIDTH = 400;
 const WIDTH_PREF_KEY = 'window_width';
-export const MIN_WINDOW_WIDTH = 380;
-export const MAX_WINDOW_WIDTH = 600;
+export const MIN_WINDOW_WIDTH = 360;
+export const MAX_WINDOW_WIDTH = 560;
 
 async function getInvoke() {
   if (!isTauri()) return null;

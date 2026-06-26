@@ -31,7 +31,7 @@ export function PrivacyDialog() {
       style={{ zIndex: 20000 }}
       data-no-drag
     >
-      <div className="bg-surface-1 border border-border rounded-card shadow-card w-[440px] max-w-[90vw] overflow-hidden">
+      <div className="bg-surface-1 border border-border rounded-card shadow-popover w-[440px] max-w-[90vw] overflow-hidden">
         {/* 标题栏 */}
         <div className="px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">

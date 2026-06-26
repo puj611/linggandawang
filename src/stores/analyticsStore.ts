@@ -2,7 +2,7 @@
 // 簇命中分析数据：记录每次 start 的簇命中情况，持久化到 localStorage
 import { create } from 'zustand';
 
-export type RouteSource = 'keyword' | 'cluster' | 'fallback';
+export type RouteSource = 'keyword' | 'cluster' | 'fallback' | 'llm';
 
 export interface ClusterHitRecord {
   id: string;
@@ -88,6 +88,7 @@ export interface SourceDistribution {
   keyword: number;
   cluster: number;
   fallback: number;
+  llm: number;
 }
 
 export interface DateRange {
@@ -131,7 +132,7 @@ export function computeSourceDistribution(records: ClusterHitRecord[]): SourceDi
       acc[r.routeSource] = (acc[r.routeSource] ?? 0) + 1;
       return acc;
     },
-    { keyword: 0, cluster: 0, fallback: 0 },
+    { keyword: 0, cluster: 0, fallback: 0, llm: 0 },
   );
 }
 

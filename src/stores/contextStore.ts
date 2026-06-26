@@ -2,10 +2,13 @@
 // 上下文暂存：通过 Tauri invoke 写入 ~/.linggandawang/context.json
 import { create } from 'zustand';
 import { isTauri } from '@/lib/env';
-import type { LinggandawangContext, ContextRecentQA } from '@/types/context';
+import type { LinggandawangContext, ContextRecentQA, ContextPreference } from '@/types/context';
 import type { IntentTag } from '@/types/intent-tag';
 
-const MAX_RECENT_QA = 3;
+// v2.0：从 3 扩展到 20，使上下文能覆盖完整一次提问流程，喂给 LLM 提供连续性
+const MAX_RECENT_QA = 20;
+// preferences 累积上限，避免无限膨胀
+const MAX_PREFERENCES = 30;
 const ARCHIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
 async function getInvoke() {
@@ -84,6 +87,14 @@ interface ContextStoreState {
   setIntentTags: (tags: IntentTag[]) => Promise<void>;
   setLastPrompt: (md: string) => Promise<void>;
   setDevProgress: (patch: NonNullable<LinggandawangContext['dev_progress']>) => Promise<void>;
+  /** v2.0 新增：累积用户偏好（同 key 同 value 更新时间戳；同 key 不同 value 视为新偏好） */
+  appendPreference: (pref: ContextPreference) => Promise<void>;
+  /** v2.0 新增：批量累积用户偏好（如从 LLM 分析结果转换） */
+  appendPreferences: (prefs: ContextPreference[]) => Promise<void>;
+  /** v2.0 新增：便捷读取最近 N 条 QA（用于喂给 LLM / PromptGenerator） */
+  getRecentQA: (limit?: number) => ContextRecentQA[];
+  /** v2.0 新增：便捷读取用户偏好列表 */
+  getPreferences: () => ContextPreference[];
 }
 
 export const useContextStore = create<ContextStoreState>((set, get) => ({
@@ -132,5 +143,43 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
   setDevProgress: async (patch) => {
     const cur = get().ctx;
     await get().save({ dev_progress: { ...cur.dev_progress, ...patch } });
+  },
+  // v2.0 新增：累积用户偏好。同 key 同 value → 仅更新 confirmed_at；同 key 不同 value → 视为偏好升级，保留最新
+  appendPreference: async (pref) => {
+    const cur = get().ctx;
+    const existing = cur.preferences ?? [];
+    // 同 key 同 value 视为同一偏好，更新时间戳
+    const sameIdx = existing.findIndex((p) => p.key === pref.key && p.value === pref.value);
+    let next: ContextPreference[];
+    if (sameIdx >= 0) {
+      next = existing.map((p, i) => (i === sameIdx ? { ...p, confirmed_at: pref.confirmed_at } : p));
+    } else {
+      // 同 key 不同 value：移除旧的，追加新的（视为偏好升级）
+      const filtered = existing.filter((p) => p.key !== pref.key);
+      next = [...filtered, pref].slice(-MAX_PREFERENCES);
+    }
+    await get().save({ preferences: next });
+  },
+  appendPreferences: async (prefs) => {
+    if (prefs.length === 0) return;
+    const cur = get().ctx;
+    let existing = [...(cur.preferences ?? [])];
+    for (const pref of prefs) {
+      const sameIdx = existing.findIndex((p) => p.key === pref.key && p.value === pref.value);
+      if (sameIdx >= 0) {
+        existing = existing.map((p, i) => (i === sameIdx ? { ...p, confirmed_at: pref.confirmed_at } : p));
+      } else {
+        const filtered = existing.filter((p) => p.key !== pref.key);
+        existing = [...filtered, pref];
+      }
+    }
+    await get().save({ preferences: existing.slice(-MAX_PREFERENCES) });
+  },
+  getRecentQA: (limit) => {
+    const list = get().ctx.recent_qa ?? [];
+    return typeof limit === 'number' ? list.slice(-limit) : list;
+  },
+  getPreferences: () => {
+    return get().ctx.preferences ?? [];
   },
 }));

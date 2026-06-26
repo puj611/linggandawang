@@ -138,7 +138,7 @@ export function Ball() {
       {/* P1.5 其他改进：右键浮动菜单 */}
       {menuOpen && (
         <div
-          className="fixed bg-surface-3 border border-border rounded-btn shadow-popover py-1 min-w-[140px] text-text-primary"
+          className="fixed bg-surface-2 border border-border rounded-btn shadow-popover py-1 min-w-[140px] text-text-primary"
           style={{
             left: menuPos.x,
             top: menuPos.y,

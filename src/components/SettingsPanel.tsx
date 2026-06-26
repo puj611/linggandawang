@@ -104,7 +104,7 @@ export function SettingsPanel() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-bg-card border border-border rounded-card shadow-card flex flex-col overflow-hidden"
+        className="bg-bg-card border border-border rounded-card shadow-popover flex flex-col overflow-hidden"
         style={{ width: tab === 'analytics' ? 560 : 400, height: tab === 'analytics' ? 600 : 'auto', maxHeight: '80vh' }}
       >
         {tab === 'general' ? (

@@ -26,7 +26,7 @@ export function SkipConfirmDialog() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-bg-card border border-border rounded-card shadow-card p-5 w-[320px]"
+        className="bg-bg-card border border-border rounded-card shadow-popover p-5 w-[320px]"
       >
         <div className="text-text-primary text-sm font-medium mb-2">连续跳过 ≥ 2 题</div>
         <div className="text-text-secondary text-xs mb-4">

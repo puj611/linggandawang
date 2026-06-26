@@ -137,7 +137,7 @@ export function ProjectPanel({ onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-[380px] max-h-[500px] bg-bg-card border border-border rounded-card shadow-card flex flex-col overflow-hidden"
+        className="w-[380px] max-h-[500px] bg-bg-card border border-border rounded-card shadow-popover flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}

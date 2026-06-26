@@ -9,6 +9,7 @@
 import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { getAllAdjectiveClusters } from './AdjectiveClusterLoader';
+import type { LLMIntentAnalysis } from './LLMIntentAnalyzer';
 
 /** 支持的场景类型 */
 export type SceneType = 'frontend-ui' | 'backend-api';
@@ -349,4 +350,89 @@ export function pickFirstQuestionByTagScores(
   }
 
   return null;
+}
+
+/**
+ * v2.0 新增：基于 LLM 意图分析的路由
+ * - 用 LLM 判定的 scene 替代关键词场景检测
+ * - 用 LLM detected_dimensions 替代形容词簇 tagScores
+ * - ambiguity_score > 0.6 时生成 LLM 建议的澄清题
+ * - LLM 分析为 null 时由调用方降级到 routeSeedWithClusters
+ */
+export function routeWithLLMAnalysis(
+  loader: QuestionLoader,
+  _seed: string,
+  analysis: LLMIntentAnalysis,
+): ReturnType<typeof routeSeedWithClusters> {
+  // 场景切换（fullstack 时默认 frontend-ui）
+  const scene: SceneType = analysis.scene === 'backend-api' ? 'backend-api' : 'frontend-ui';
+  loader.setScene(scene);
+
+  // 将 LLM detected_dimensions 转为 tagScores
+  const tagScores: TagScore[] = analysis.detected_dimensions.map((d) => ({
+    tag: d.tag,
+    weight: d.weight,
+    source_clusters: ['llm-analysis'],
+  }));
+
+  let dynamicClarification: Question | null = null;
+
+  // 歧义度高时，用 LLM 建议的追问生成澄清题
+  if (analysis.ambiguity_score > 0.6 && analysis.suggested_followup) {
+    const options: QuestionOption[] = analysis.followup_options.slice(0, 4).map((label, i) => ({
+      label,
+      value: `clarify-${i}`,
+      tags: [`澄清: ${label}`],
+    }));
+    dynamicClarification = {
+      id: `dyn-llm-clarify-${Date.now()}`,
+      stage: 'name',
+      order: 0,
+      text: analysis.suggested_followup,
+      type: 'single-choice',
+      options,
+      allow_custom: true,
+      placeholder: '或者用你自己的话说...',
+      trigger_tags: [],
+      jumps: [],
+      required: false,
+      why: 'LLM 分析到你的描述存在多种理解可能，需要澄清后才能精准提问',
+    };
+  }
+
+  // 如果 LLM 生成了澄清题，直接返回
+  if (dynamicClarification) {
+    return {
+      question: dynamicClarification,
+      matchedKeywords: [],
+      matchedClusters: [],
+      tagScores,
+      dynamicClarification: dynamicClarification ?? undefined,
+      scene,
+    };
+  }
+
+  // 否则用 tagScores 选首题（复用现有 pickFirstQuestionByTagScores）
+  const first = pickFirstQuestionByTagScores(loader, tagScores, []);
+  if (first) {
+    return {
+      question: first,
+      matchedKeywords: [],
+      matchedClusters: [],
+      tagScores,
+      dynamicClarification: undefined,
+      scene,
+    };
+  }
+
+  // 兜底
+  const fallback = loader.getBank().questions.find((q) => q.stage === 'perceive') ?? null;
+  return {
+    question: fallback,
+    matchedKeywords: [],
+    matchedClusters: [],
+    tagScores,
+    dynamicClarification: undefined,
+    scene,
+  };
 }

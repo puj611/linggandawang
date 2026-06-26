@@ -312,7 +312,15 @@ function SourcePie({ keyword, cluster, fallback }: { keyword: number; cluster: n
   );
 }
 
-function SourceBadge({ source, dynamic }: { source: 'keyword' | 'cluster' | 'fallback'; dynamic?: boolean }) {
+function SourceBadge({ source, dynamic }: { source: 'keyword' | 'cluster' | 'fallback' | 'llm'; dynamic?: boolean }) {
+  if (source === 'llm') {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="px-1.5 py-0.5 bg-[#1F2A3D] text-[#5BA3E8] rounded text-[9px]">LLM</span>
+        {dynamic && <span className="px-1 py-0.5 bg-[#3D2F1F] text-[#ffd580] rounded text-[9px]">澄清题</span>}
+      </span>
+    );
+  }
   if (source === 'keyword') {
     return <span className="px-1.5 py-0.5 bg-[#2A1F3D] text-brand rounded text-[9px]">关键词</span>;
   }

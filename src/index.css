@@ -20,6 +20,8 @@ body {
   text-rendering: optimizeLegibility;
   user-select: none;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  font-size: 14px;
+  line-height: 20px;
 }
 
 * {
@@ -61,6 +63,7 @@ textarea {
   outline: none;
   background: transparent;
   color: inherit;
+  font-size: 14px;
   transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out);
 }
 
@@ -120,12 +123,13 @@ textarea::placeholder {
     top: 50%;
     transform: translateY(-50%);
     color: white;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: bold;
     z-index: 1;
   }
   .primary-btn {
-    @apply bg-brand text-white rounded-btn font-medium;
+    @apply bg-brand text-white rounded-btn font-medium text-sm;
+    padding: 8px 16px;
     box-shadow: 0 2px 8px var(--color-brand-glow);
     transition: all 150ms var(--ease-out);
   }
@@ -138,14 +142,15 @@ textarea::placeholder {
     transform: translateY(0) scale(0.98);
   }
   .ghost-btn {
-    @apply bg-surface-2 border border-border text-text-secondary rounded-btn;
+    @apply bg-surface-2 border border-border text-text-secondary rounded-btn text-sm;
+    padding: 8px 12px;
     transition: all 150ms var(--ease-out);
   }
   .ghost-btn:hover {
     @apply bg-surface-hover border-border-light text-text-primary;
   }
   .tag-chip {
-    @apply inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-chip;
+    @apply inline-flex items-center px-2 py-1 text-xs font-medium rounded-chip;
     background: var(--color-brand-soft-light);
     color: #A78BFA;
     border: 1px solid transparent;
@@ -177,10 +182,13 @@ textarea::placeholder {
   .no-drag {
     -webkit-app-region: no-drag;
   }
-  .glass-card {
-    background: rgba(18, 18, 28, 0.92);
-    backdrop-filter: blur(24px) saturate(1.2);
-    -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  .window-panel {
+    background: rgba(10, 10, 15, 0.98);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    box-shadow: var(--shadow-window);
   }
   .text-balance {
     text-wrap: balance;

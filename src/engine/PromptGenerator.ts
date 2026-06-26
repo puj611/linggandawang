@@ -4,6 +4,7 @@ import type { PromptResult, PromptSegment, MarkdownExportOptions } from '@/types
 import type { IntentTag } from '@/types/intent-tag';
 import type { Answer } from '@/types/state';
 import type { ProjectFingerprint } from '@/types/project';
+import type { ContextRecentQA, ContextPreference } from '@/types/context';
 import type { PromptStage } from './types';
 import { STAGE_ORDER } from './types';
 import { expandToSpecs } from './评价词典';
@@ -20,6 +21,10 @@ interface GenerateInput {
   answers: Record<string, Answer>;
   seedInput: string;
   project?: ProjectFingerprint | null;
+  /** v2.0 新增：最近问答历史，用于在动作段中提供连续性 */
+  recentQA?: ContextRecentQA[];
+  /** v2.0 新增：用户已确认偏好，注入约束段 */
+  preferences?: ContextPreference[];
 }
 
 /** v1.2 新增：可编辑的段落键名 */
@@ -36,12 +41,12 @@ const STAGE_TO_LABEL: Record<string, string> = {
 export class PromptGenerator {
   /** 从 EngineState 生成 PromptResult */
   generate(input: GenerateInput): PromptResult {
-    const { intentTags, answers, seedInput, project } = input;
-    const rawQuotes = this.collectRawQuotes(answers, seedInput);
+    const { intentTags, answers, seedInput, project, recentQA, preferences } = input;
+    const rawQuotes = this.collectRawQuotes(answers, seedInput, recentQA);
     const projectCtx = project ? this.buildProjectContext(project) : null;
-    const action = this.buildAction(intentTags, answers, seedInput);
+    const action = this.buildAction(intentTags, answers, seedInput, recentQA);
     const spec = this.buildSpec(intentTags, answers, seedInput, project);
-    const constraint = this.buildConstraint(intentTags, answers, project);
+    const constraint = this.buildConstraint(intentTags, answers, project, preferences);
     const verify = this.buildVerify(intentTags, answers);
     return {
       project_context: projectCtx,
@@ -56,9 +61,24 @@ export class PromptGenerator {
     };
   }
 
-  /** 删除 tag 后重生成（基于剩余 tags + 既有 answers） */
-  regenerate(remainingTags: IntentTag[], answers: Record<string, Answer>, seed: string, project?: ProjectFingerprint | null): PromptResult {
-    return this.generate({ intentTags: remainingTags, answers, seedInput: seed, project });
+  /** 删除 tag 后重生成（基于剩余 tags + 既有 answers）
+   *  v2.0：新增可选 context 参数，保留接口向后兼容
+   */
+  regenerate(
+    remainingTags: IntentTag[],
+    answers: Record<string, Answer>,
+    seed: string,
+    project?: ProjectFingerprint | null,
+    context?: { recentQA?: ContextRecentQA[]; preferences?: ContextPreference[] },
+  ): PromptResult {
+    return this.generate({
+      intentTags: remainingTags,
+      answers,
+      seedInput: seed,
+      project,
+      recentQA: context?.recentQA,
+      preferences: context?.preferences,
+    });
   }
 
   /** v1.2 新增：分块更新某个段落的 content，返回更新后的 PromptResult 副本 */
@@ -251,7 +271,12 @@ export class PromptGenerator {
     };
   }
 
-  private buildAction(tags: IntentTag[], answers: Record<string, Answer>, seed: string): PromptSegment {
+  private buildAction(
+    tags: IntentTag[],
+    answers: Record<string, Answer>,
+    seed: string,
+    recentQA?: ContextRecentQA[],
+  ): PromptSegment {
     // 动作段：从 seed + perceive 回答提取动词 + 对象
     const perceiveAnswers = this.answersByStage(answers, 'perceive');
     const sceneTag = tags.find((t) => t.label === '场景');
@@ -270,6 +295,13 @@ export class PromptGenerator {
       action = `完成以下需求：${seed}`;
     } else {
       action = `按以下规格调整 UI`;
+    }
+
+    // v2.0：若有最近问答历史，附加连续性提示（仅引用最后一条作为衔接）
+    const lastQA = recentQA?.[recentQA.length - 1];
+    if (lastQA && lastQA.answer && lastQA.answer !== '__skipped__') {
+      const tail = `\n（衔接上文：${lastQA.question_text} → ${lastQA.answer}）`;
+      action = action + tail;
     }
 
     const raw = perceiveAnswers.map((a) => a.raw).filter(Boolean).join(' / ');
@@ -341,7 +373,12 @@ export class PromptGenerator {
     };
   }
 
-  private buildConstraint(tags: IntentTag[], answers: Record<string, Answer>, project?: ProjectFingerprint | null): PromptSegment {
+  private buildConstraint(
+    tags: IntentTag[],
+    answers: Record<string, Answer>,
+    project?: ProjectFingerprint | null,
+    preferences?: ContextPreference[],
+  ): PromptSegment {
     // 约束段：从 verify 阶段回答 + 标签推导否定式约束
     const verifyAnswers = this.answersByStage(answers, 'verify');
     const executeAnswers = this.answersByStage(answers, 'execute');
@@ -394,6 +431,15 @@ export class PromptGenerator {
     for (const a of verifyAnswers) {
       if (a.value === 'revert') lines.push('未达标时使用 git revert 回退');
       if (a.value === 'comment') lines.push('未达标时注释保留改动');
+    }
+
+    // v2.0 新增：用户已确认偏好（来自历史累积）作为正向约束
+    if (preferences && preferences.length > 0) {
+      lines.push('');
+      lines.push('用户已确认偏好（必须遵循）：');
+      for (const p of preferences) {
+        lines.push(`  - ${p.key}: ${p.value}`);
+      }
     }
 
     const raw = [...executeAnswers, ...verifyAnswers].map((a) => a.raw).filter(Boolean).join(' / ');
@@ -463,9 +509,21 @@ export class PromptGenerator {
     });
   }
 
-  private collectRawQuotes(answers: Record<string, Answer>, seed: string): string[] {
+  private collectRawQuotes(
+    answers: Record<string, Answer>,
+    seed: string,
+    recentQA?: ContextRecentQA[],
+  ): string[] {
     const quotes: string[] = [];
     if (seed) quotes.push(seed);
+    // v2.0：把最近问答历史的答案也纳入原话汇总（提供更完整的上下文）
+    if (recentQA && recentQA.length > 0) {
+      for (const qa of recentQA) {
+        if (qa.answer && qa.answer !== '__skipped__') {
+          quotes.push(`[历史] ${qa.question_text} → ${qa.answer}`);
+        }
+      }
+    }
     for (const stage of STAGE_ORDER) {
       const list = this.answersByStage(answers, stage);
       for (const a of list) {
