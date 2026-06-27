@@ -21,10 +21,11 @@ export function ProjectOnboarding() {
       if (path) {
         const fp = await scanProject(path);
         await setFingerprint(fp);
-        return;
+      } else {
+        // 浏览器模式下文件夹选择不可用，自动降级为演示扫描
+        const fp = await scanProject('');
+        await setFingerprint(fp);
       }
-      const fp = await scanProject('');
-      await setFingerprint(fp);
     } catch (e) {
       setError(e instanceof Error ? e.message : '选择失败');
     } finally {

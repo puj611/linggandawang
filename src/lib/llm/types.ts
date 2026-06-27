@@ -7,10 +7,28 @@ export type LLMProvider = 'openai' | 'deepseek' | 'tongyi' | 'custom';
 /** 聊天消息角色 */
 export type ChatRole = 'system' | 'user' | 'assistant';
 
-/** 聊天消息 */
+/** 多模态内容：文本部分 */
+export interface TextContentPart {
+  type: 'text';
+  text: string;
+}
+
+/** 多模态内容：图片部分 */
+export interface ImageContentPart {
+  type: 'image_url';
+  image_url: {
+    url: string; // data:image/...;base64,... 或 https://...
+    detail?: 'low' | 'high' | 'auto';
+  };
+}
+
+/** 多模态内容联合类型 */
+export type ContentPart = TextContentPart | ImageContentPart;
+
+/** 聊天消息（支持纯文本或多模态内容） */
 export interface ChatMessage {
   role: ChatRole;
-  content: string;
+  content: string | ContentPart[];
 }
 
 /** LLM 请求参数 */

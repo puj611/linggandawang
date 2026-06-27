@@ -54,12 +54,14 @@ export function ProjectPanel({ onClose }: Props) {
     setError(null);
     try {
       const path = await pickProjectFolder();
-      if (!path) {
-        setScanning(false);
-        return;
+      if (path) {
+        const fp = await scanProject(path);
+        await setFingerprint(fp);
+      } else {
+        // 浏览器模式下文件夹选择不可用，自动降级为演示扫描
+        const fp = await scanProject('');
+        await setFingerprint(fp);
       }
-      const fp = await scanProject(path);
-      await setFingerprint(fp);
     } catch (e) {
       setError(e instanceof Error ? e.message : '选择项目失败');
     } finally {
@@ -68,7 +70,6 @@ export function ProjectPanel({ onClose }: Props) {
   };
 
   const handleDemoScan = async () => {
-    // Web dev 环境直接扫描内置 mock（灵感大王自身）
     setScanning(true);
     setError(null);
     try {

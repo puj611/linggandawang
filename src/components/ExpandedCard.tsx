@@ -1,5 +1,5 @@
 // src/components/ExpandedCard.tsx
-// 展开态：输入卡片 + 截图诊断区
+// 展开态：输入卡片 + 截图诊断区 + 图片提示词拆解
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useFlow } from '@/hooks/useFlow';
@@ -9,8 +9,10 @@ import { StartTemplates } from './StartTemplates';
 import { RecentPromptList } from './RecentPromptList';
 import { ScreenshotDropZone } from './ScreenshotDropZone';
 import { DiagnosisReport, type DiagnosisIssue } from './DiagnosisReport';
+import { ImageExtractResult } from './ImageExtractResult';
 import { ReferenceImagePanel } from './ReferenceImagePanel';
 import { screenshotDiagnoser } from '@/engine/ScreenshotDiagnoser';
+import { imagePromptExtractor, type ExtractedPrompt } from '@/engine/ImagePromptExtractor';
 import { useFeatureStore } from '@/stores/featureStore';
 import { useWindowStore } from '@/stores/windowStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -29,6 +31,9 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   const [mode, setMode] = useState<FlowMode>('full');
   const [issues, setIssues] = useState<DiagnosisIssue[] | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
+  const [extractResult, setExtractResult] = useState<ExtractedPrompt | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [screenshotData, setScreenshotData] = useState<ScreenshotPayload | null>(null);
   const collapse = useAppStore((s) => s.collapse);
   const transition = useAppStore((s) => s.transition);
   const openSettings = useAppStore((s) => s.openSettings);
@@ -86,8 +91,10 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
 
   const onScreenshot = async (p: ScreenshotPayload) => {
     if (!features.screenshotDiagnosis) return;
+    setScreenshotData(p);
     setDiagnosing(true);
     setIssues(null);
+    setExtractResult(null);
     try {
       const result = await screenshotDiagnoser.diagnose({
         dataUrl: p.dataUrl,
@@ -99,6 +106,27 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
     } finally {
       setDiagnosing(false);
     }
+  };
+
+  const onExtractPrompt = async () => {
+    if (!screenshotData) return;
+    setExtracting(true);
+    setExtractResult(null);
+    try {
+      const result = await imagePromptExtractor.extract({
+        dataUrl: screenshotData.dataUrl,
+      });
+      setExtractResult(result);
+    } catch (e) {
+      console.error('[ExpandedCard] 图片拆解失败', e);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const onInsertExtractedPrompt = (prompt: string) => {
+    setInput(prompt);
+    setExtractResult(null);
   };
 
   const onInsertIssues = async (tags: Parameters<typeof addScreenshotTags>[0]) => {
@@ -130,11 +158,6 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
         {...dragProps}
       >
         <div className="flex items-center gap-3 text-text-tertiary">
-          <div className="flex gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-surface-3" />
-            <div className="w-2.5 h-2.5 rounded-full bg-surface-3" />
-            <div className="w-2.5 h-2.5 rounded-full bg-surface-3" />
-          </div>
           <span className="text-xs font-medium tracking-wide">灵感大王</span>
         </div>
         <div className="flex items-center gap-1 no-drag">
@@ -240,6 +263,43 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
             </div>
           )}
           {issues && <DiagnosisReport issues={issues} onInsertToSpec={onInsertIssues} />}
+
+          {/* 图片提示词拆解按钮 */}
+          {screenshotData && !diagnosing && (
+            <div className="mt-2">
+              <button
+                onClick={onExtractPrompt}
+                disabled={extracting}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs border border-dashed border-border rounded-btn hover:border-brand hover:bg-brand/5 transition-colors text-text-secondary"
+              >
+                {extracting ? (
+                  <>
+                    <div className="w-3 h-3 border border-brand border-t-transparent rounded-full animate-spin" />
+                    <span>正在拆解提示词…</span>
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    <span>拆解图片提示词（需要配置视觉模型）</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* 拆解结果 */}
+          {extractResult && (
+            <ImageExtractResult
+              result={extractResult}
+              onInsert={onInsertExtractedPrompt}
+              onClose={() => setExtractResult(null)}
+            />
+          )}
+
           <ReferenceImagePanel />
         </div>
 
