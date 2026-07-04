@@ -1,5 +1,6 @@
 // src/stores/contextStore.ts
 // 上下文暂存：通过 Tauri invoke 写入 ~/.linggandawang/context.json
+// P1-4 修复：所有写操作通过 opsQueue 串行化，消除读-改-写竞态
 import { create } from 'zustand';
 import { isTauri } from '@/lib/env';
 import type { LinggandawangContext, ContextRecentQA, ContextPreference } from '@/types/context';
@@ -10,6 +11,16 @@ const MAX_RECENT_QA = 20;
 // preferences 累积上限，避免无限膨胀
 const MAX_PREFERENCES = 30;
 const ARCHIVE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// P1-4：写操作串行化队列。所有 mutating 操作通过 enqueue 进入此队列，
+// 保证前一个操作的 read-modify-write 完成后才开始下一个，避免交错覆盖
+let opsChain: Promise<unknown> = Promise.resolve();
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const next = opsChain.then(task, task);
+  // 即使 task 抛错，链也不应中断
+  opsChain = next.catch(() => {});
+  return next;
+}
 
 async function getInvoke() {
   if (!isTauri()) return null;
@@ -44,9 +55,14 @@ async function readPersisted(): Promise<LinggandawangContext> {
     if (raw) {
       const ctx = JSON.parse(raw) as LinggandawangContext;
       if (ctx && ctx.schema_version === '1.0') return ctx;
+      // P3-3：schema_version 不匹配时记录警告，便于诊断
+      if (ctx && ctx.schema_version !== '1.0') {
+        console.warn('[contextStore] context.json schema_version 不匹配，重置为空', ctx.schema_version);
+      }
     }
-  } catch {
-    /* noop */
+  } catch (e) {
+    // P3-3：JSON 解析失败时记录警告（context.json 损坏）
+    console.warn('[contextStore] context.json 解析失败，重置为空', e);
   }
   return emptyContext();
 }
@@ -56,8 +72,9 @@ async function writePersisted(ctx: LinggandawangContext) {
   if (!invoke) return;
   try {
     await invoke('save_context', { payload: { content: JSON.stringify(ctx) } });
-  } catch {
-    /* noop */
+  } catch (e) {
+    // P3-3：写入失败时记录警告，便于用户感知持久化异常
+    console.warn('[contextStore] save_context 失败', e);
   }
 }
 
@@ -66,8 +83,9 @@ async function archiveCtx(_ctx: LinggandawangContext): Promise<LinggandawangCont
   if (invoke) {
     try {
       await invoke('archive_context');
-    } catch {
-      /* noop */
+    } catch (e) {
+      // P3-3：归档失败不阻塞流程，但记录警告
+      console.warn('[contextStore] archive_context 失败', e);
     }
   }
   const fresh = emptyContext();
@@ -104,77 +122,87 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
     const ctx = await readPersisted();
     set({ ctx, loaded: true });
   },
-  save: async (patch) => {
-    const cur = get().ctx;
-    const next: LinggandawangContext = {
-      ...cur,
-      ...patch,
-      timestamps: { ...cur.timestamps, updated_at: new Date().toISOString() },
-    };
-    await writePersisted(next);
-    set({ ctx: next });
-  },
-  archiveIfStale: async () => {
-    const cur = get().ctx;
-    const updated = new Date(cur.timestamps.updated_at).getTime();
-    if (Date.now() - updated > ARCHIVE_TTL_MS) {
-      const fresh = await archiveCtx(cur);
-      set({ ctx: fresh });
-      return true;
-    }
-    return false;
-  },
-  clear: async () => {
-    const fresh = emptyContext();
-    await writePersisted(fresh);
-    set({ ctx: fresh });
-  },
-  appendRecentQA: async (qa) => {
-    const cur = get().ctx;
-    const list = [...(cur.recent_qa ?? []), qa].slice(-MAX_RECENT_QA);
-    await get().save({ recent_qa: list });
-  },
-  setIntentTags: async (tags) => {
-    await get().save({ intent_tags: tags });
-  },
-  setLastPrompt: async (md) => {
-    await get().save({ last_prompt: md });
-  },
-  setDevProgress: async (patch) => {
-    const cur = get().ctx;
-    await get().save({ dev_progress: { ...cur.dev_progress, ...patch } });
-  },
-  // v2.0 新增：累积用户偏好。同 key 同 value → 仅更新 confirmed_at；同 key 不同 value → 视为偏好升级，保留最新
-  appendPreference: async (pref) => {
-    const cur = get().ctx;
-    const existing = cur.preferences ?? [];
-    // 同 key 同 value 视为同一偏好，更新时间戳
-    const sameIdx = existing.findIndex((p) => p.key === pref.key && p.value === pref.value);
-    let next: ContextPreference[];
-    if (sameIdx >= 0) {
-      next = existing.map((p, i) => (i === sameIdx ? { ...p, confirmed_at: pref.confirmed_at } : p));
-    } else {
-      // 同 key 不同 value：移除旧的，追加新的（视为偏好升级）
-      const filtered = existing.filter((p) => p.key !== pref.key);
-      next = [...filtered, pref].slice(-MAX_PREFERENCES);
-    }
-    await get().save({ preferences: next });
-  },
-  appendPreferences: async (prefs) => {
-    if (prefs.length === 0) return;
-    const cur = get().ctx;
-    let existing = [...(cur.preferences ?? [])];
-    for (const pref of prefs) {
-      const sameIdx = existing.findIndex((p) => p.key === pref.key && p.value === pref.value);
-      if (sameIdx >= 0) {
-        existing = existing.map((p, i) => (i === sameIdx ? { ...p, confirmed_at: pref.confirmed_at } : p));
-      } else {
-        const filtered = existing.filter((p) => p.key !== pref.key);
-        existing = [...filtered, pref];
+  // P1-4：所有 mutating 操作通过 enqueue 串行化
+  save: (patch) =>
+    enqueue(async () => {
+      const cur = get().ctx;
+      const next: LinggandawangContext = {
+        ...cur,
+        ...patch,
+        timestamps: { ...cur.timestamps, updated_at: new Date().toISOString() },
+      };
+      await writePersisted(next);
+      set({ ctx: next });
+    }),
+  archiveIfStale: () =>
+    enqueue(async () => {
+      const cur = get().ctx;
+      const updated = new Date(cur.timestamps.updated_at).getTime();
+      if (Date.now() - updated > ARCHIVE_TTL_MS) {
+        const fresh = await archiveCtx(cur);
+        set({ ctx: fresh });
+        return true;
       }
-    }
-    await get().save({ preferences: existing.slice(-MAX_PREFERENCES) });
-  },
+      return false;
+    }),
+  clear: () =>
+    enqueue(async () => {
+      const fresh = emptyContext();
+      await writePersisted(fresh);
+      set({ ctx: fresh });
+    }),
+  appendRecentQA: (qa) =>
+    enqueue(async () => {
+      const cur = get().ctx;
+      const list = [...(cur.recent_qa ?? []), qa].slice(-MAX_RECENT_QA);
+      await get().save({ recent_qa: list });
+    }),
+  setIntentTags: (tags) =>
+    enqueue(async () => {
+      await get().save({ intent_tags: tags });
+    }),
+  setLastPrompt: (md) =>
+    enqueue(async () => {
+      await get().save({ last_prompt: md });
+    }),
+  setDevProgress: (patch) =>
+    enqueue(async () => {
+      const cur = get().ctx;
+      await get().save({ dev_progress: { ...cur.dev_progress, ...patch } });
+    }),
+  // v2.0 新增：累积用户偏好。同 key 同 value → 仅更新 confirmed_at；同 key 不同 value → 视为偏好升级，保留最新
+  appendPreference: (pref) =>
+    enqueue(async () => {
+      const cur = get().ctx;
+      const existing = cur.preferences ?? [];
+      // 同 key 同 value 视为同一偏好，更新时间戳
+      const sameIdx = existing.findIndex((p) => p.key === pref.key && p.value === pref.value);
+      let next: ContextPreference[];
+      if (sameIdx >= 0) {
+        next = existing.map((p, i) => (i === sameIdx ? { ...p, confirmed_at: pref.confirmed_at } : p));
+      } else {
+        // 同 key 不同 value：移除旧的，追加新的（视为偏好升级）
+        const filtered = existing.filter((p) => p.key !== pref.key);
+        next = [...filtered, pref].slice(-MAX_PREFERENCES);
+      }
+      await get().save({ preferences: next });
+    }),
+  appendPreferences: (prefs) =>
+    enqueue(async () => {
+      if (prefs.length === 0) return;
+      const cur = get().ctx;
+      let existing = [...(cur.preferences ?? [])];
+      for (const pref of prefs) {
+        const sameIdx = existing.findIndex((p) => p.key === pref.key && p.value === pref.value);
+        if (sameIdx >= 0) {
+          existing = existing.map((p, i) => (i === sameIdx ? { ...p, confirmed_at: pref.confirmed_at } : p));
+        } else {
+          const filtered = existing.filter((p) => p.key !== pref.key);
+          existing = [...filtered, pref];
+        }
+      }
+      await get().save({ preferences: existing.slice(-MAX_PREFERENCES) });
+    }),
   getRecentQA: (limit) => {
     const list = get().ctx.recent_qa ?? [];
     return typeof limit === 'number' ? list.slice(-limit) : list;

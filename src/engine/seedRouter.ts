@@ -1,15 +1,82 @@
 // src/engine/seedRouter.ts
-// 种子输入路由 v1.2：在 v1.1 关键词路由基础上，新增形容词簇匹配 + 权重聚合 + 动态澄清问题 + 多场景路由
+// 种子输入路由 v1.3：在 v1.2 基础上新增否定词识别（r1增强）
 // 行为契约：
 //   1. 先检测 seed 属于哪个场景（frontend-ui / backend-api），默认 frontend-ui
-//   2. 原有 keyword 路由优先命中 preferredQuestionId 时直接返回（向后兼容）
-//   3. 否则基于形容词簇做权重聚合：返回 tagScores 让 Selector 选下一题
-//   4. 若命中簇且该簇有 clarification_question，返回动态澄清题
-//   5. 旧接口字段（question / matchedKeywords）保持不变，新增 scene 字段
+//   2. 否定词预处理：标记被否定的关键词/簇，避免反向命中
+//   3. 原有 keyword 路由优先命中 preferredQuestionId 时直接返回（向后兼容，但被否定的关键词跳过）
+//   4. 否则基于形容词簇做权重聚合：否定簇权重转负，返回 tagScores 让 Selector 选下一题
+//   5. 若命中簇且该簇有 clarification_question，返回动态澄清题
+//   6. 旧接口字段（question / matchedKeywords）保持不变，新增 scene 字段
 import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { getAllAdjectiveClusters } from './AdjectiveClusterLoader';
 import type { LLMIntentAnalysis } from './LLMIntentAnalyzer';
+
+// r1增强：否定词集合（前置/后置均可）
+const NEGATION_WORDS = [
+  '不要', '别', '不用', '不需要', '去除', '去掉', '除掉',
+  '避免', '取消', '消除', '禁止', '防止', '拒绝', '放弃',
+  'no ', 'not ', "don't", 'without', 'avoid',
+];
+
+/**
+ * r1增强：否定词检测
+ * 扫描 text，对每个否定词后的 1-2 个词标记为"否定目标"。
+ * 同时支持"不要 X"和"X 不要"两种语序。
+ *
+ * @returns 被否定的词语列表（小写），用于后续过滤簇匹配
+ */
+export function detectNegation(text: string): string[] {
+  if (!text) return [];
+  const lowered = text.toLowerCase();
+  const negated: string[] = [];
+
+  for (const neg of NEGATION_WORDS) {
+    const negLower = neg.toLowerCase();
+    let idx = lowered.indexOf(negLower);
+    while (idx >= 0) {
+      // 取否定词后的 1-6 个字符作为否定目标（覆盖"圆角/配色/动画"等 2-3 字词）
+      const after = lowered.slice(idx + negLower.length, idx + negLower.length + 6).trim();
+      if (after) {
+        // 取首个有意义的词（中文取 2-3 字，英文取到空格）
+        const cnMatch = after.match(/^[\u4e00-\u9fa5]{2,3}/);
+        const enMatch = after.match(/^[a-z]+/i);
+        const target = cnMatch?.[0] ?? enMatch?.[0] ?? '';
+        if (target) negated.push(target);
+      }
+      idx = lowered.indexOf(negLower, idx + 1);
+    }
+    // 反向语序："X 不要"（如"圆角不要"）—— 检查否定词前的 2-3 字
+    idx = lowered.indexOf(negLower);
+    while (idx >= 0) {
+      const before = lowered.slice(Math.max(0, idx - 3), idx).trim();
+      if (before) {
+        const cnMatch = before.match(/[\u4e00-\u9fa5]{2,3}$/);
+        const enMatch = before.match(/[a-z]+$/i);
+        const target = cnMatch?.[0] ?? enMatch?.[0] ?? '';
+        if (target) negated.push(target);
+      }
+      idx = lowered.indexOf(negLower, idx + 1);
+    }
+  }
+  return negated;
+}
+
+/**
+ * r1增强：判断一个关键词是否被否定。
+ * 支持精确匹配和子串包含（"圆角" 被 "圆角" 否定，"配色" 被 "颜色" 否定——通过簇 surface_forms 关联）。
+ */
+function isKeywordNegated(keyword: string, negatedWords: string[]): boolean {
+  if (negatedWords.length === 0) return false;
+  const kwLower = keyword.toLowerCase();
+  // 1. 精确匹配
+  if (negatedWords.includes(kwLower)) return true;
+  // 2. 否定词是关键词的子串（"圆角" vs 否定"圆角"）
+  for (const neg of negatedWords) {
+    if (kwLower.includes(neg) || neg.includes(kwLower)) return true;
+  }
+  return false;
+}
 
 /** 支持的场景类型 */
 export type SceneType = 'frontend-ui' | 'backend-api';
@@ -119,19 +186,24 @@ export function detectScene(seed: string): SceneType {
 /**
  * 在文本中匹配所有形容词簇，返回去重后的命中列表。
  * 同一 cluster 命中多个 surface_form 时只算一次（取首次匹配的位置/形式）。
+ * r1增强：negatedWords 中的词命中的簇，magnitude 转负（用于后续聚合时降低该 tag 权重）。
  */
-export function matchAdjectiveClusters(text: string): ClusterMatch[] {
+export function matchAdjectiveClusters(text: string, negatedWords: string[] = []): ClusterMatch[] {
   if (!text) return [];
   const lowered = text.toLowerCase();
   const clusters = getAllAdjectiveClusters();
   const result: ClusterMatch[] = [];
   for (const cluster of clusters) {
     for (const form of cluster.surface_forms) {
-      if (lowered.includes(form.toLowerCase())) {
+      const formLower = form.toLowerCase();
+      if (lowered.includes(formLower)) {
+        // r1增强：检查该 form 是否被否定
+        const isNegated = isKeywordNegated(form, negatedWords);
         result.push({
           cluster,
           matched_form: form,
-          magnitude: cluster.magnitude_modifier ?? 1,
+          // 被否定的簇 magnitude 转负，使后续聚合时该 tag 权重为负（降低优先级）
+          magnitude: isNegated ? -(cluster.magnitude_modifier ?? 1) : (cluster.magnitude_modifier ?? 1),
         });
         break; // 每个簇只计一次命中
       }
@@ -143,6 +215,7 @@ export function matchAdjectiveClusters(text: string): ClusterMatch[] {
 /**
  * 把簇命中按 dimension_tags 聚合为 TagScore 数组。
  * 同一 tag 来自多个簇时权重累加。cluster.magnitude 会乘到它产出的所有 tag 权重上。
+ * r1增强：被否定的簇 magnitude 为负，聚合后该 tag 权重可能为负或被正权重抵消。
  */
 export function aggregateTagScores(matches: ClusterMatch[]): TagScore[] {
   const map = new Map<string, TagScore>();
@@ -164,7 +237,8 @@ export function aggregateTagScores(matches: ClusterMatch[]): TagScore[] {
       }
     }
   }
-  return Array.from(map.values()).sort((a, b) => b.weight - a.weight);
+  // r1增强：过滤掉权重 ≤ 0 的 tag（被否定后净权重非正）
+  return Array.from(map.values()).filter((s) => s.weight > 0).sort((a, b) => b.weight - a.weight);
 }
 
 function round2(n: number): number {
@@ -231,8 +305,9 @@ export function routeSeed(loader: QuestionLoader, seed: string): {
 }
 
 /**
- * 完整版路由：场景检测 → 关键词优先 → 形容词簇匹配 → 聚合 → 必要时生成澄清题。
+ * 完整版路由：场景检测 → 否定词预处理 → 关键词优先 → 形容词簇匹配 → 聚合 → 必要时生成澄清题。
  * P1.1：新增 scene 字段，根据 seed 关键词自动判定 frontend-ui / backend-api 场景。
+ * r1增强：新增否定词识别，被否定的关键词路由跳过，被否定的簇权重转负。
  */
 export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
   const text = seed.trim();
@@ -246,6 +321,9 @@ export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
   // 切换 loader 到对应场景，使后续 getQuestionById / getBank 取到正确场景的问题库
   loader.setScene(scene);
 
+  // r1增强：否定词预处理
+  const negatedWords = detectNegation(text);
+
   // 1. 关键词路由（按场景过滤：前端 seed 只走前端路由，后端 seed 只走后端路由）
   const sceneRoutes = ROUTES.filter((r) => {
     if (scene === 'backend-api') return r.scene === 'backend-api';
@@ -258,6 +336,10 @@ export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
       if (lowered.includes(kw.toLowerCase())) {
         matched.push(kw);
         if (route.preferredQuestionId) {
+          // r1增强：被否定的关键词跳过该路由（避免"不要圆角"命中圆角路由）
+          if (isKeywordNegated(kw, negatedWords)) {
+            continue; // 不返回此 preferredQuestionId，继续扫描其他路由
+          }
           const q = loader.getQuestionById(route.preferredQuestionId);
           if (q) {
             return {
@@ -273,8 +355,8 @@ export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
     }
   }
 
-  // 2. 形容词簇匹配 + 权重聚合
-  const matchedClusters = matchAdjectiveClusters(text);
+  // 2. 形容词簇匹配 + 权重聚合（r1增强：传入 negatedWords，被否定的簇 magnitude 转负）
+  const matchedClusters = matchAdjectiveClusters(text, negatedWords);
   const tagScores = aggregateTagScores(matchedClusters);
   // 3. 必要时生成动态澄清题
   const dynamicClarification = buildDynamicClarification(seed, tagScores, matchedClusters);

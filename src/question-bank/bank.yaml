@@ -101,6 +101,7 @@ questions:
     stage: perceive
     order: 3
     text: "想加个什么类型的细节？"
+    why: "确定细节类型（微交互/空状态/数据可视化），才能给到对应的实现方案"
     type: "single-choice"
     options:
       - label: "鼠标悬停/点击的小反馈（比如按钮变色、弹一下）"
@@ -127,6 +128,7 @@ questions:
     stage: perceive
     order: 4
     text: "想抄的是哪种感觉？（可以提参考产品名）"
+    why: "明确要抄的维度（布局/配色/组件/动效），避免笼统说「像 Linear」导致 AI 自由发挥"
     type: "single-choice"
     options:
       - label: "页面排版/布局（比如三栏、左右分栏）"
@@ -157,6 +159,7 @@ questions:
     stage: perceive
     order: 5
     text: "用一句话形容你现在的感觉？"
+    why: "用你的原话捕捉痛点关键词，后续问题会基于这些词精准展开"
     type: "open"
     options: []
     allow_custom: true
@@ -181,6 +184,7 @@ questions:
     stage: perceive
     order: 6
     text: "这次改动影响多大范围？"
+    why: "确定改动范围（单组件/单页/全站），影响后续规格和执行方案的粒度"
     type: "single-choice"
     options:
       - label: "就改一个小地方（一个按钮、一张卡片）"
@@ -241,6 +245,7 @@ questions:
     stage: name
     order: 2
     text: '你说"丑"，最受不了哪方面？'
+    why: "把「丑」拆解为配色/圆角/字体/留白等具体维度，才能对症下药"
     type: "single-choice"
     options:
       - label: "颜色搭配不好看"
@@ -275,6 +280,7 @@ questions:
     stage: name
     order: 3
     text: '你说"不够高级"，差在哪一口气？'
+    why: "「高级感」是复合概念，需拆解为留白/对比度/动效/配色质感中具体缺哪项"
     type: "single-choice"
     options:
       - label: "内容太满、不够舒展（留白少）"
@@ -309,6 +315,7 @@ questions:
     stage: name
     order: 4
     text: '"看不清"具体是哪种看不清？'
+    why: "「看不清」可能是对比度/图标粗细/字号问题，定位到具体原因才能给准确规格"
     type: "single-choice"
     options:
       - label: "文字和背景颜色太接近"
@@ -338,6 +345,7 @@ questions:
     stage: name
     order: 5
     text: '"呆板/没灵气"想加点什么？'
+    why: "明确动效类型（进出/hover/过渡），不同类型对应不同的 CSS 方案和触发时机"
     type: "single-choice"
     options:
       - label: "元素出现/消失时加点动画"
@@ -365,6 +373,7 @@ questions:
     stage: name
     order: 6
     text: '"不统一"最明显的是哪类？'
+    why: "「不统一」可能出现在按钮/间距/配色/圆角，定位到具体类别才能给统一规范"
     type: "single-choice"
     options:
       - label: "按钮长得不一样"
@@ -399,6 +408,7 @@ questions:
     stage: name
     order: 7
     text: "整体风格想往哪个方向走？"
+    why: "锁定风格方向（极简/科技/高级/商务等），后续所有规格都围绕这个方向展开"
     type: "single-choice"
     options:
       - label: "极简克制（像 Apple/Linear，少即是多，大量留白）"
@@ -512,6 +522,7 @@ questions:
     stage: spec
     order: 2
     text: "边角喜欢圆润一点还是方正一点？"
+    why: "圆角是风格强信号，选参照物（Apple/Linear/Notion）比说数值更直观"
     type: "single-choice"
     options:
       - label: "方方正正（像 Apple 官网/Windows 11，几乎直角）"
@@ -547,6 +558,7 @@ questions:
     stage: spec
     order: 3
     text: "文字和元素怎么对齐比较顺眼？"
+    why: "对齐方式影响整体秩序感，不同场景（阅读/表格/海报）最佳对齐策略不同"
     type: "single-choice"
     options:
       - label: "全部靠左对齐（最易读，适合文字多的页面，推荐）"
@@ -572,6 +584,7 @@ questions:
     stage: spec
     order: 4
     text: "标题和正文的大小对比想多明显？"
+    why: "字号层级决定信息优先级，3级/4级/5级对应不同的内容密度和视觉冲击"
     type: "single-choice"
     options:
       - label: "低调对比（大标题/小标题/正文三级，简洁）"
@@ -599,6 +612,7 @@ questions:
     stage: spec
     order: 5
     text: "整体色调偏好哪种？"
+    why: "色调是视觉基调，用参照物（Linear/Notion/小红书/Stripe）锁定方向，比抽象描述更准"
     type: "single-choice"
     options:
       - label: "深色暗夜（像 Linear/VS Code，适合工具/开发者）"
@@ -630,6 +644,7 @@ questions:
     stage: spec
     order: 6
     text: "文字要看得多清楚？"
+    why: "对比度有 WCAG 标准，舒适/AA/AAA 对应不同场景，避免「再清楚点」这种模糊要求"
     type: "single-choice"
     options:
       - label: "看着舒服就行（对比度适中，美观优先）"
@@ -653,6 +668,7 @@ questions:
     stage: spec
     order: 7
     text: "卡片阴影想要哪种感觉？"
+    why: "阴影影响层级感和高级感，无阴影/浅阴影/深阴影/彩色光晕对应完全不同的视觉气质"
     type: "single-choice"
     options:
       - label: "完全不要阴影（纯扁平，像早期 iOS/微软风）"
@@ -679,6 +695,7 @@ questions:
     stage: spec
     order: 8
     text: "页面内容宽度偏好？"
+    why: "内容宽度影响阅读专注度和信息密度，窄/标准/宽屏对应不同使用场景"
     type: "single-choice"
     options:
       - label: "窄栏居中（像博客/文档，专注阅读）"
@@ -729,6 +746,7 @@ questions:
     stage: execute
     order: 2
     text: "手机上要不要也适配？"
+    why: "响应式适配工作量差异巨大，明确目标设备避免 AI 生成不必要的媒体查询"
     type: "single-choice"
     options:
       - label: "主要电脑上用，手机上能凑合看就行"
@@ -751,6 +769,7 @@ questions:
     stage: execute
     order: 3
     text: "深色/浅色模式怎么处理？"
+    why: "双主题需要 CSS 变量架构支持，明确是否需要避免 AI 漏掉暗色适配"
     type: "single-choice"
     options:
       - label: "只要深色模式"
@@ -773,6 +792,7 @@ questions:
     stage: execute
     order: 4
     text: "这次改动会影响现有功能吗？"
+    why: "明确改动深度（纯视觉/交互调整/结构重构），影响 AI 是否修改组件逻辑"
     type: "single-choice"
     options:
       - label: "只改外观，不动功能和点击逻辑"
@@ -795,6 +815,7 @@ questions:
     stage: execute
     order: 5
     text: "希望怎么提交这次改动？"
+    why: "提交方式（一次性/按组件/按阶段）影响 AI 生成代码的组织方式"
     type: "single-choice"
     options:
       - label: "一次性全部改完"
@@ -840,11 +861,13 @@ questions:
         - { keyword: "清单", extract_tag: "验证: 清单走查" }
         - { keyword: "对照", extract_tag: "验证: 视觉对照" }
     required: true
+    quick_mode: true
 
   - id: "v-002"
     stage: verify
     order: 2
     text: '"间距合适"的标准是什么？'
+    why: "「合适」是主观词，量化为一指宽/8px网格/无贴边才能客观验收"
     type: "single-choice"
     options:
       - label: "看着不挤不空就行（一指宽左右）"
@@ -867,6 +890,7 @@ questions:
     stage: verify
     order: 3
     text: '"文字看得清"要到什么程度？'
+    why: "清晰度有 WCAG 标准可量化，人工/AA/AAA 对应不同无障碍要求"
     type: "single-choice"
     options:
       - label: "我自己看着舒服就行"
@@ -889,6 +913,7 @@ questions:
     stage: verify
     order: 4
     text: "验证工作谁来做？"
+    why: "验证人（自检/AI/队友）决定验收方式是主观还是客观"
     type: "single-choice"
     options:
       - label: "我自己打开页面看"
@@ -911,6 +936,7 @@ questions:
     stage: verify
     order: 5
     text: "改坏了怎么处理？"
+    why: "明确回滚策略（git/备份/无所谓），让 AI 知道是否需要保留原始代码注释"
     type: "single-choice"
     options:
       - label: "一键撤回所有改动（推荐）"
@@ -928,3 +954,4 @@ questions:
     jumps: []
     intent_extraction: {}
     required: false
+    quick_mode: true

@@ -29,9 +29,17 @@ export function useTauriDropFile(
             onHoverChange?.(false);
           } else if (event.payload.type === 'drop') {
             onHoverChange?.(false);
-            const paths = (event.payload as { paths: string[] }).paths || [];
+            // P2-6 修复：用类型守卫替代不安全的 as 断言，兼容 payload 结构变更
+            const payload = event.payload as unknown;
+            const paths: string[] =
+              payload && typeof payload === 'object' && 'paths' in payload
+                ? Array.isArray((payload as { paths?: unknown }).paths)
+                  ? ((payload as { paths: unknown[] }).paths.filter((p): p is string => typeof p === 'string'))
+                  : []
+                : [];
+            // P2-2 安全：移除 svg 支持
             const imagePaths = paths.filter((p) =>
-              /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(p),
+              /\.(png|jpe?g|gif|webp|bmp)$/i.test(p),
             );
             if (imagePaths.length > 0) {
               onDrop(imagePaths);

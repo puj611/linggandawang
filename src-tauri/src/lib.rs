@@ -131,9 +131,26 @@ fn validate_provider(provider: &str) -> Result<(), String> {
     Ok(())
 }
 
+// P3-2 安全：校验 API Key 长度与可见字符集，避免异常输入导致 keyring 写入失败或异常
+fn validate_api_key(api_key: &str) -> Result<(), String> {
+    if api_key.is_empty() {
+        return Err("API Key 不能为空".to_string());
+    }
+    // 长度上限 1024 字节（覆盖所有主流 LLM 服务商 Key 长度）
+    if api_key.len() > 1024 {
+        return Err("API Key 长度异常（超过 1024 字节）".to_string());
+    }
+    // 仅允许可见 ASCII + 空格（32-126），拒绝控制字符与二进制
+    if !api_key.chars().all(|c| (c.is_ascii_graphic() || c == ' ')) {
+        return Err("API Key 含非法字符（仅允许可见 ASCII）".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn save_api_key(provider: String, api_key: String) -> Result<(), String> {
     validate_provider(&provider)?;
+    validate_api_key(&api_key)?;
     let entry = keyring::Entry::new(KEYRING_SERVICE, &provider)
         .map_err(|_| "密钥存储服务不可用".to_string())?;
     entry.set_password(&api_key)
@@ -248,6 +265,13 @@ fn read_image_file(path: String, app: tauri::AppHandle) -> Result<ImageDataResul
         }
     }
 
+    // v2.3：统一敏感文件校验，与 scan_project 的 SENSITIVE_PATTERNS 一致
+    // 防止用户把 .env/id_rsa 等敏感文件改名为 .png 后通过拖入读取
+    let file_name = pb.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if is_sensitive_file(file_name) {
+        return Err("无权限读取敏感文件".to_string());
+    }
+
     // 限制文件大小（10MB），防止读取超大文件导致内存溢出
     const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
     let metadata = fs::metadata(&canonical).map_err(|e| e.to_string())?;
@@ -266,8 +290,8 @@ fn read_image_file(path: String, app: tauri::AppHandle) -> Result<ImageDataResul
         "gif" => "image/gif",
         "webp" => "image/webp",
         "bmp" => "image/bmp",
-        "svg" => "image/svg+xml",
-        _ => return Err(format!("不支持的图片格式: {}", ext)),
+        // P2-2 安全：移除 svg 支持，避免未来渲染变更（如 inline/embed）触发 XSS 攻击面
+        _ => return Err(format!("不支持的图片格式: {}（仅支持 png/jpg/gif/webp/bmp）", ext)),
     };
 
     let mut file = fs::File::open(&pb).map_err(|e| e.to_string())?;
@@ -541,41 +565,59 @@ fn read_package_json(path: &PathBuf) -> Option<PkgJsonPayload> {
 }
 
 #[tauri::command]
-fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let (tx, rx) = std::sync::mpsc::channel();
+    // P1-3 修复：原实现用 std::sync::mpsc + rx.recv() 阻塞主线程，
+    // 改为 tokio::sync::oneshot + .await，让 Tauri 异步运行时调度，UI 不冻结
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
     app.dialog().file().pick_folder(move |path| {
-        let _ = tx.send(path.map(|p| p.to_string()));
+        let result = path.map(|p| p.to_string());
+        let _ = tx.send(result);
     });
-    match rx.recv() {
-        Ok(Some(p)) => Ok(Some(p)),
-        Ok(None) => Ok(None),
+    match rx.await {
+        Ok(p) => Ok(p),
         Err(e) => Err(e.to_string()),
     }
 }
 
 // 敏感文件/目录黑名单 - 扫描项目时跳过这些文件
-const SENSITIVE_PATTERNS: &[&str] = &[
-    ".env", ".env.local", ".env.production", ".env.development",
+// P3-1 修复：分为两类
+//  - EXT_PATTERNS: 扩展名后缀，用 ends_with 精确匹配（避免 .db 误判 user-db.png）
+//  - NAME_PATTERNS: 文件名/目录名，用路径分段精确匹配（避免 .env 误判 env-config.md）
+const SENSITIVE_EXT_PATTERNS: &[&str] = &[
+    ".env.local", ".env.production", ".env.development",
     ".env.staging", ".env.test",
-    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
     ".pem", ".key", ".pfx", ".p12", ".crt", ".cer",
     ".keystore", ".jks",
+    ".kdbx", ".gpg", ".asc", ".ovpn",
+    ".sqlite", ".db",
+];
+
+const SENSITIVE_NAME_PATTERNS: &[&str] = &[
+    ".env",
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
     ".npmrc", ".pypirc", ".netrc",
     "credentials", "credentials.json",
     ".aws", ".ssh", ".gitconfig",
     ".htpasswd", "kubeconfig",
-    ".docker", "secrets.json", "secrets.yaml", "secrets.yml",
+    ".docker",
+    "secrets.json", "secrets.yaml", "secrets.yml",
     ".bash_history", ".zsh_history", ".psql_history",
-    ".kdbx", ".gpg", ".asc", ".ovpn",
     "docker-compose.yml", "docker-compose.yaml",
     ".yarnrc", ".yarnrc.yml",
-    ".sqlite", ".db",
 ];
 
 fn is_sensitive_file(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    SENSITIVE_PATTERNS.iter().any(|p| lower.contains(p))
+    // 1. 扩展名后缀匹配（如 .db, .pem）
+    if SENSITIVE_EXT_PATTERNS.iter().any(|p| lower.ends_with(p)) {
+        return true;
+    }
+    // 2. 路径分段精确匹配（避免 .env 误判 env-config.md）
+    //    按正反斜杠分割，每段若精确等于某个 pattern 则命中
+    let segments = lower.split(|c| c == '/' || c == '\\');
+    let seg_set: std::collections::HashSet<&str> = segments.collect();
+    SENSITIVE_NAME_PATTERNS.iter().any(|p| seg_set.contains(*p))
 }
 
 #[tauri::command]
@@ -632,6 +674,12 @@ fn sqlite_migrations() -> Vec<Migration> {
             version: 3,
             description: "create_question_bank_cache",
             sql: include_str!("../migrations/0003_create_question_bank_cache.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 4,
+            description: "add_favorite_to_prompt_history",
+            sql: include_str!("../migrations/0004_add_favorite_to_prompt_history.sql"),
             kind: MigrationKind::Up,
         },
     ]

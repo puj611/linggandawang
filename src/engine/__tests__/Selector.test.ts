@@ -82,3 +82,68 @@ describe('Selector 动态选题', () => {
     expect(q?.id).toBe('v-001');
   });
 });
+
+// P2 补充：quickMode 过滤分支单测（原有测试覆盖率为 0）
+describe('Selector quickMode 过滤', () => {
+  it('quickMode=true 时只选 quick_mode: true 的题', () => {
+    const sel = makeSelector();
+    const q = sel.select({
+      stage: 'perceive',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+      quickMode: true,
+    });
+    expect(q).not.toBeNull();
+    expect(q!.quick_mode).toBe(true);
+  });
+
+  it('quickMode=true 时 forcedNextId 指向非 quick 题会被过滤（返回评分最高的 quick 题）', () => {
+    const sel = makeSelector();
+    // n-002 不是 quick_mode 题，forcedNextId 应被过滤
+    const q = sel.select({
+      stage: 'name',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+      forcedNextId: 'n-002',
+      quickMode: true,
+    });
+    expect(q).not.toBeNull();
+    // 不应返回 n-002（非 quick）
+    expect(q!.id).not.toBe('n-002');
+    expect(q!.quick_mode).toBe(true);
+  });
+
+  it('firstOfStage(verify, true) 返回 quick 题而非 v-001 之后的无 quick 题', () => {
+    const sel = makeSelector();
+    const q = sel.firstOfStage('verify', true);
+    expect(q).not.toBeNull();
+    expect(q!.quick_mode).toBe(true);
+    // v-001 现已标记 quick_mode: true（P1 修复）
+    expect(q!.id).toBe('v-001');
+  });
+
+  it('quickMode=false（默认）时返回任意题（含非 quick）', () => {
+    const sel = makeSelector();
+    const q = sel.select({
+      stage: 'verify',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+      // quickMode 未传，默认 false
+    });
+    expect(q).not.toBeNull();
+    // 不强制 quick_mode，只要返回 verify 阶段的题即可
+    expect(q!.stage).toBe('verify');
+  });
+
+  it('quickMode=true 时所有阶段都能选到 quick 题（不返回 null）', () => {
+    const sel = makeSelector();
+    for (const stage of ['perceive', 'name', 'spec', 'execute', 'verify'] as const) {
+      const q = sel.firstOfStage(stage, true);
+      expect(q, `阶段 ${stage} 应有 quick 题`).not.toBeNull();
+      expect(q!.quick_mode).toBe(true);
+    }
+  });
+});

@@ -5,6 +5,7 @@
 import { getAdapter } from '@/lib/llm';
 import type { LLMResponse } from '@/lib/llm/types';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
+import { useLLMAvailabilityStore } from '@/stores/llmAvailabilityStore';
 import { buildIntentAnalysisMessages } from './prompts/intent-analysis';
 import type { TagScore } from './types';
 import type { SceneType } from './seedRouter';
@@ -60,21 +61,30 @@ export function analysisToIntentTags(
   return tags;
 }
 
-const TIMEOUT_MS = 8000; // LLM 分析超时 8 秒，超时后降级
+const DEFAULT_TIMEOUT_MS = 8000; // full 模式 LLM 分析超时 8 秒
+const QUICK_TIMEOUT_MS = 4000; // quick 模式 LLM 分析超时 4 秒（P3 快速通道：更快降级到规则路由）
 
 /**
  * 分析用户意图
  * - LLM 可用时：调用 LLM 获取结构化意图分析
  * - LLM 不可用或超时：返回 null，调用方降级到关键词匹配
+ * - P3 快速通道：quick 模式下超时从 8s 降到 4s，LLM 慢时更快降级
  */
 export async function analyzeIntent(
   seed: string,
   projectStack?: string,
   recentQA?: Array<{ question: string; answer: string }>,
+  mode: 'quick' | 'full' = 'full',
 ): Promise<LLMIntentAnalysis | null> {
   const { config, hasApiKey } = useApiKeyStore.getState();
   if (!config || !hasApiKey) {
     return null; // 未配置 LLM，降级
+  }
+
+  // r5增强：熔断器检查，熔断期间直接降级，避免每次都等超时
+  if (!useLLMAvailabilityStore.getState().shouldAttempt()) {
+    console.info('[LLMIntentAnalyzer] 熔断中，直接降级到关键词匹配');
+    return null;
   }
 
   const apiKey = await useApiKeyStore.getState().getApiKey();
@@ -83,9 +93,12 @@ export async function analyzeIntent(
   const adapter = getAdapter(config.provider);
   const messages = buildIntentAnalysisMessages(seed, projectStack, recentQA);
 
+  // P3 快速通道：quick 模式用更短超时
+  const timeoutMs = mode === 'quick' ? QUICK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     const response: LLMResponse = await adapter.chat(
       {
@@ -96,6 +109,7 @@ export async function analyzeIntent(
       },
       apiKey,
       config.baseUrl,
+      controller.signal, // 传入外部 signal，使 8s 超时实际生效
     );
 
     clearTimeout(timeout);
@@ -108,10 +122,14 @@ export async function analyzeIntent(
         ambiguity: analysis.ambiguity_score,
       });
     }
+    // r5增强：调用成功，重置熔断器
+    useLLMAvailabilityStore.getState().recordSuccess();
     return analysis;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn('[LLMIntentAnalyzer] LLM 分析失败，降级到关键词匹配', msg);
+    // r5增强：记录失败，达阈值会触发熔断
+    useLLMAvailabilityStore.getState().recordFailure(e);
     return null;
   }
 }
@@ -144,39 +162,50 @@ function parseLLMResponse(content: string): LLMIntentAnalysis | null {
   }
 }
 
-/** 规范化 LLM 输出，确保字段完整且类型正确 */
-function normalizeAnalysis(raw: any): LLMIntentAnalysis {
-  const scene = raw.scene === 'backend-api' ? 'backend-api' : raw.scene === 'fullstack' ? 'fullstack' : 'frontend-ui';
+/** 规范化 LLM 输出，确保字段完整且类型正确（导出用于单元测试） */
+export function normalizeAnalysis(raw: unknown): LLMIntentAnalysis {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const scene = r.scene === 'backend-api' ? 'backend-api' : r.scene === 'fullstack' ? 'fullstack' : 'frontend-ui';
 
-  const pain_points = Array.isArray(raw.pain_points)
-    ? raw.pain_points.slice(0, 5).map((pp: any) => ({
-        text: String(pp.text ?? ''),
-        dimension: String(pp.dimension ?? '其他'),
-        severity: Math.min(5, Math.max(1, Number(pp.severity) || 3)),
-      }))
+  const pain_points = Array.isArray(r.pain_points)
+    ? (r.pain_points as unknown[])
+        .slice(0, 5)
+        .map((pp) => {
+          const p = (pp ?? {}) as Record<string, unknown>;
+          return {
+            text: String(p.text ?? ''),
+            dimension: String(p.dimension ?? '其他'),
+            severity: Math.min(5, Math.max(1, Number(p.severity) || 3)),
+          };
+        })
     : [];
 
-  const detected_dimensions = Array.isArray(raw.detected_dimensions)
-    ? raw.detected_dimensions.slice(0, 8).map((d: any) => ({
-        tag: String(d.tag ?? ''),
-        weight: Math.min(1, Math.max(0, Number(d.weight) || 0.5)),
-        confidence: Math.min(1, Math.max(0, Number(d.confidence) || 0.5)),
-      }))
+  const detected_dimensions = Array.isArray(r.detected_dimensions)
+    ? (r.detected_dimensions as unknown[])
+        .slice(0, 8)
+        .map((d) => {
+          const dim = (d ?? {}) as Record<string, unknown>;
+          return {
+            tag: String(dim.tag ?? ''),
+            weight: Math.min(1, Math.max(0, Number(dim.weight) || 0.5)),
+            confidence: Math.min(1, Math.max(0, Number(dim.confidence) || 0.5)),
+          };
+        })
     : [];
 
   // 权重归一化
-  const totalWeight = detected_dimensions.reduce((sum: number, d: any) => sum + d.weight, 0);
+  const totalWeight = detected_dimensions.reduce((sum, d) => sum + d.weight, 0);
   if (totalWeight > 0 && Math.abs(totalWeight - 1.0) > 0.01) {
     for (const d of detected_dimensions) {
       d.weight = d.weight / totalWeight;
     }
   }
 
-  const urgency = raw.urgency === 'high' ? 'high' : raw.urgency === 'low' ? 'low' : 'medium';
-  const ambiguity_score = Math.min(1, Math.max(0, Number(raw.ambiguity_score) || 0));
-  const suggested_followup = raw.suggested_followup ? String(raw.suggested_followup) : null;
-  const followup_options = Array.isArray(raw.followup_options)
-    ? raw.followup_options.slice(0, 4).map((o: any) => String(o))
+  const urgency = r.urgency === 'high' ? 'high' : r.urgency === 'low' ? 'low' : 'medium';
+  const ambiguity_score = Math.min(1, Math.max(0, Number(r.ambiguity_score) || 0));
+  const suggested_followup = r.suggested_followup ? String(r.suggested_followup) : null;
+  const followup_options = Array.isArray(r.followup_options)
+    ? (r.followup_options as unknown[]).slice(0, 4).map((o) => String(o))
     : [];
 
   return {

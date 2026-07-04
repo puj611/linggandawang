@@ -4,7 +4,7 @@ import type { Question, StageName, PromptStage, QuestionBank, FlowMode } from '.
 import { STAGE_ORDER, STAGE_TO_STATE } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { Selector } from './Selector';
-import { routeSeedWithClusters, pickFirstQuestionByTagScores, routeWithLLMAnalysis } from './seedRouter';
+import { routeSeedWithClusters, pickFirstQuestionByTagScores, routeWithLLMAnalysis, matchAdjectiveClusters, aggregateTagScores } from './seedRouter';
 import type { TagScore, ClusterMatch } from './types';
 import type { IntentTag } from '@/types/intent-tag';
 import type { Answer } from '@/types/state';
@@ -80,8 +80,15 @@ export class QuestionEngine {
   /** v2.0 新增：LLM 意图分析结果（本次 start 时传入，通过 getLLMAnalysis 暴露给后续阶段使用） */
   private _llmAnalysis: LLMIntentAnalysis | null = null;
 
-  /** 启动提问：路由 seed 到首问题。mode 控制提问深度 */
-  start(seed: string, mode: FlowMode = 'full', llmAnalysis?: LLMIntentAnalysis | null): Question | null {
+  /** 启动提问：路由 seed 到首问题。mode 控制提问深度。
+   *  r4增强：接收 recentQA，从中提取已确认标签并加 0.3 权重并入 tagScores，实现跨会话上下文记忆。
+   */
+  start(
+    seed: string,
+    mode: FlowMode = 'full',
+    llmAnalysis?: LLMIntentAnalysis | null,
+    recentQA?: { question_text: string; answer: string }[],
+  ): Question | null {
     this.reset();
     this.mode = mode;
     this.seedInput = seed;
@@ -125,6 +132,11 @@ export class QuestionEngine {
     this.matchedClusterIds = this.matchedClusters.map((m) => m.cluster.id);
     this.matchedKeywords = routed.matchedKeywords ?? [];
     this.hasDynamicClarification = !!routed.dynamicClarification;
+
+    // r4增强：从 recentQA 提取已确认标签，加权并入 tagScores（跨会话上下文记忆）
+    if (recentQA && recentQA.length > 0) {
+      this.mergeHistoricalTagScores(recentQA);
+    }
 
     // direct 模式：提取意图标签后直接完成，不问任何问题
     if (mode === 'direct') {
@@ -198,6 +210,9 @@ export class QuestionEngine {
 
     // 3. 解析跳转规则
     this.forcedNextId = this.selector.resolveJump(answer, this.loader.getBank());
+
+    // r3增强：answers 反向更新 tagScores —— 用户每答一题，剩余题的优先级动态调整
+    this.updateTagScoresFromAnswer(q, answer);
 
     // 4. 选下一题（先看本阶段）
     const next = this.selectNext();
@@ -518,5 +533,106 @@ export class QuestionEngine {
       deletable: true,
       created_at: new Date().toISOString(),
     };
+  }
+
+  /**
+   * r3增强：从用户回答中反向更新 tagScores，让"越问越准"成立。
+   *
+   * 策略：
+   * - 选项 tags 直接转为 tagScores 项，权重 0.6（用户明确选择）
+   * - 自定义 raw 文本重新跑 matchAdjectiveClusters，命中的簇 tag 权重 0.5
+   * - 已存在的 tag 累加权重（上限 2.0 防止单 tag 过度膨胀）
+   * - 跳过的题不更新 tagScores
+   */
+  private updateTagScoresFromAnswer(q: Question, answer: Answer): void {
+    if (answer.skipped) return;
+
+    const newScores: TagScore[] = [];
+
+    // 1. 选项 tags → tagScores（权重 0.6）
+    for (const tag of answer.tags) {
+      newScores.push({
+        tag,
+        weight: 0.6,
+        source_clusters: [`answer:${q.id}`],
+      });
+    }
+
+    // 2. 自定义 raw 文本 → 簇匹配 → tagScores（权重 0.5）
+    if (answer.raw && answer.raw !== answer.value && answer.raw !== '__skipped__') {
+      const matches = matchAdjectiveClusters(answer.raw);
+      const clusterScores = aggregateTagScores(matches);
+      // 降低历史簇权重到 0.5（避免自定义输入权重过高）
+      for (const s of clusterScores) {
+        newScores.push({
+          tag: s.tag,
+          weight: Math.min(0.5, s.weight * 0.5),
+          source_clusters: [`answer-raw:${q.id}`],
+        });
+      }
+    }
+
+    if (newScores.length === 0) return;
+
+    // 3. 合并到 this.tagScores（累加，上限 2.0）
+    const map = new Map<string, TagScore>(this.tagScores.map((s) => [s.tag, { ...s }]));
+    for (const ns of newScores) {
+      const existing = map.get(ns.tag);
+      if (existing) {
+        existing.weight = Math.min(2.0, Math.round((existing.weight + ns.weight) * 100) / 100);
+        if (!existing.source_clusters.includes(ns.source_clusters[0])) {
+          existing.source_clusters.push(ns.source_clusters[0]);
+        }
+      } else {
+        map.set(ns.tag, { ...ns });
+      }
+    }
+    this.tagScores = Array.from(map.values()).sort((a, b) => b.weight - a.weight);
+  }
+
+  /**
+   * r4增强：从 recentQA 提取已确认标签，加权并入 tagScores（跨会话上下文记忆）。
+   *
+   * 策略：
+   * - 把每条 QA 的 answer 文本重新跑 matchAdjectiveClusters
+   * - 命中的簇 tag 给予 0.3 基础权重加成（低于本次 start 的实时权重）
+   * - 已存在的 tag 累加（上限 2.0）
+   * - 这样后续 Selector 选 spec 题时，历史确认过的维度会自然加分
+   */
+  private mergeHistoricalTagScores(recentQA: { question_text: string; answer: string }[]): void {
+    if (!recentQA || recentQA.length === 0) return;
+
+    const historicalScores: TagScore[] = [];
+    for (const qa of recentQA) {
+      // 对 answer 跑簇匹配（answer 是用户确认过的，权重较高）
+      const answerText = qa.answer || '';
+      if (!answerText || answerText === '__skipped__') continue;
+      const matches = matchAdjectiveClusters(answerText);
+      const scores = aggregateTagScores(matches);
+      for (const s of scores) {
+        historicalScores.push({
+          tag: s.tag,
+          weight: 0.3, // 固定 0.3 加成（低于实时权重 0.5-0.6）
+          source_clusters: [`historical:${qa.question_text.slice(0, 20)}`],
+        });
+      }
+    }
+
+    if (historicalScores.length === 0) return;
+
+    // 合并到 this.tagScores
+    const map = new Map<string, TagScore>(this.tagScores.map((s) => [s.tag, { ...s }]));
+    for (const hs of historicalScores) {
+      const existing = map.get(hs.tag);
+      if (existing) {
+        existing.weight = Math.min(2.0, Math.round((existing.weight + hs.weight) * 100) / 100);
+        if (!existing.source_clusters.includes(hs.source_clusters[0])) {
+          existing.source_clusters.push(hs.source_clusters[0]);
+        }
+      } else {
+        map.set(hs.tag, { ...hs });
+      }
+    }
+    this.tagScores = Array.from(map.values()).sort((a, b) => b.weight - a.weight);
   }
 }

@@ -19,7 +19,7 @@ export const EVALUATION_DICT: EvaluationEntry[] = [
   {
     keyword: '太丑',
     label: '视觉: 太丑',
-    specSuggestion: '需进一步命名（颜色/对齐/字号/圆角中哪一项）',
+    specSuggestion: '收敛配色到主色+1强调色；统一圆角到 8px；检查元素是否按 8px 网格对齐',
     followupHint: '丑具体是指颜色、对齐、字号还是圆角？',
   },
   {

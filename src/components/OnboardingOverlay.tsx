@@ -14,7 +14,7 @@ const HOTKEY_LABEL = 'Alt+Shift+Space';
 export function OnboardingOverlay({ onComplete }: Props) {
   const [step, setStep] = useState(0);
 
-  const isLast = step === 2;
+  const isLast = step === 3;
   const next = () => {
     if (isLast) {
       onComplete();
@@ -51,13 +51,14 @@ export function OnboardingOverlay({ onComplete }: Props) {
         <div className="px-5 py-6 min-h-[260px] flex flex-col">
           {step === 0 && <WelcomeStep />}
           {step === 1 && <FlowStep />}
-          {step === 2 && <HotkeyStep />}
+          {step === 2 && <LlmOptionalStep />}
+          {step === 3 && <HotkeyStep />}
         </div>
 
         {/* 底部：步骤指示器 + 主按钮 */}
         <div className="px-5 py-3 border-t border-border flex items-center justify-between">
           <div className="flex gap-1.5">
-            {[0, 1, 2].map((i) => (
+            {[0, 1, 2, 3].map((i) => (
               <span
                 key={i}
                 className={`w-1.5 h-1.5 rounded-full transition-all ${
@@ -177,7 +178,52 @@ function FlowStep() {
   );
 }
 
-// ===== 步骤 3：快捷键页 =====
+// ===== 步骤 3：LLM 可选配置页 =====
+function LlmOptionalStep() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-text-primary text-sm font-semibold">可选：配置 AI 模型</div>
+        <div className="text-text-tertiary text-[11px] mt-0.5">不配置也能完整使用核心功能</div>
+      </div>
+
+      <div className="space-y-2">
+        {/* 基础模式说明 */}
+        <div className="bg-surface-2 border border-border rounded-btn px-3 py-2.5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-1.5 py-0.5 text-[9px] rounded bg-surface-3 text-text-tertiary border border-border-light">
+              默认
+            </span>
+            <span className="text-text-primary text-xs font-medium">基础模式</span>
+          </div>
+          <div className="text-[10px] text-text-tertiary leading-relaxed">
+            无需配置即可使用：关键词路由、规则引擎提问、Canvas 截图对比度诊断、提示词生成。
+          </div>
+        </div>
+
+        {/* 智能模式说明 */}
+        <div className="bg-brand-soft/30 border border-brand/20 rounded-btn px-3 py-2.5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-1.5 py-0.5 text-[9px] rounded bg-brand/15 text-brand border border-brand/30">
+              可选
+            </span>
+            <span className="text-text-primary text-xs font-medium">智能模式</span>
+          </div>
+          <div className="text-[10px] text-text-tertiary leading-relaxed">
+            配置 LLM 后额外获得：智能意图分析、动态追问题、图片提示词拆解。
+          </div>
+        </div>
+      </div>
+
+      <p className="text-text-secondary text-[11px] leading-relaxed">
+        点击下方<span className="text-text-primary">「开始使用」</span>进入应用，
+        随时可在<span className="text-text-primary">设置</span>中配置 LLM。
+      </p>
+    </div>
+  );
+}
+
+// ===== 步骤 4：快捷键页 =====
 function HotkeyStep() {
   return (
     <div className="space-y-4">

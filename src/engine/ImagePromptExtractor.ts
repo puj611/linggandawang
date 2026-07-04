@@ -3,6 +3,8 @@
 
 import { getAdapter } from '@/lib/llm';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
+import { useLLMAvailabilityStore } from '@/stores/llmAvailabilityStore';
+import { classifyLLMError } from '@/lib/llm/error-messages';
 import type { ContentPart, LLMResponse } from '@/lib/llm/types';
 
 /** 拆解结果 */
@@ -51,6 +53,9 @@ PROMPT|完整的英文提示词（可直接用于 Midjourney/Stable Diffusion）
 6. 完整提示词要用英文，适合 AI 绘图工具使用
 7. 如果图片有明显的设计风格（如 UI 设计），要特别标注`;
 
+/** 图片拆解超时时间（视觉模型较慢，给 20s） */
+const EXTRACT_TIMEOUT_MS = 20000;
+
 function parseResponse(content: string): ExtractedPrompt {
   const lines = content.split('\n').filter(line => line.includes('|'));
   const result: Record<string, string> = {};
@@ -88,7 +93,17 @@ export class ImagePromptExtractor {
     // 获取 LLM 配置
     const { config, hasApiKey } = useApiKeyStore.getState();
     if (!config || !hasApiKey) {
-      throw new Error('请先配置 LLM 服务商和 API Key');
+      throw new Error(
+        '图片拆解是高级功能，需在设置中配置 LLM 与 API Key 后使用。核心提问流程无需配置即可使用。',
+      );
+    }
+
+    // r5增强：熔断器检查，熔断期间直接抛友好错误
+    if (!useLLMAvailabilityStore.getState().shouldAttempt()) {
+      const statusMsg = useLLMAvailabilityStore.getState().getStatusMessage();
+      throw new Error(
+        statusMsg?.text ?? 'AI 智能增强暂时不可用，已切换为基础模式。请稍后重试或检查 LLM 配置。',
+      );
     }
 
     const apiKey = await useApiKeyStore.getState().getApiKey();
@@ -119,24 +134,45 @@ export class ImagePromptExtractor {
 
     try {
       const adapter = getAdapter(config.provider);
-      const response: LLMResponse = await adapter.chat(
-        {
-          messages,
-          model: config.model,
-          temperature: 0.3,
-          max_tokens: 1000,
-        },
-        apiKey,
-        config.baseUrl,
-      );
+      // 新增超时控制（视觉模型较慢，给 20s，超过则抛错让用户感知）
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS);
 
+      let response: LLMResponse;
+      try {
+        response = await adapter.chat(
+          {
+            messages,
+            model: config.model,
+            temperature: 0.3,
+            max_tokens: 1000,
+          },
+          apiKey,
+          config.baseUrl,
+          controller.signal,
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      // r5增强：调用成功，重置熔断器
+      useLLMAvailabilityStore.getState().recordSuccess();
       return parseResponse(response.content);
     } catch (error) {
       console.error('[ImagePromptExtractor] 拆解失败:', error);
+      // r5增强：记录失败，达阈值会触发熔断
+      useLLMAvailabilityStore.getState().recordFailure(error);
+
+      // r5增强：用 classifyLLMError 生成友好错误提示
+      const classified = classifyLLMError(error);
+      // 区分超时与其他错误，给用户更明确的提示
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(
+          `图片拆解超时（${EXTRACT_TIMEOUT_MS / 1000}秒），视觉模型响应过慢，请更换模型或重试`,
+        );
+      }
       throw new Error(
-        error instanceof Error
-          ? `图片拆解失败: ${error.message}`
-          : '图片拆解失败，请检查 LLM 配置是否支持视觉模型'
+        `图片拆解失败：${classified.friendlyMessage}${classified.suggestion ? `（${classified.suggestion}）` : ''}`,
       );
     }
   }

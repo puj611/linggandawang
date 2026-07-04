@@ -2,7 +2,7 @@
 // 图片提示词拆解结果展示
 
 import type { ExtractedPrompt } from '@/engine/ImagePromptExtractor';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 interface Props {
   result: ExtractedPrompt;
@@ -14,10 +14,39 @@ export function ImageExtractResult({ result, onInsert, onClose }: Props) {
   const [copied, setCopied] = useState(false);
   const [showFull, setShowFull] = useState(false);
 
+  // v2.3：复制提示状态定时器引用，组件卸载时清理，避免 setState on unmounted
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(result.fullPrompt);
+    // v2.3：clipboard API 在非 HTTPS / 非安全上下文下会抛错，需要 fallback 到 textarea
+    try {
+      await navigator.clipboard.writeText(result.fullPrompt);
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = result.fullPrompt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        return; // 复制失败，不显示"已复制"
+      }
+    }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => {
+      copyTimerRef.current = null;
+      setCopied(false);
+    }, 2000);
   };
 
   const handleInsert = () => {

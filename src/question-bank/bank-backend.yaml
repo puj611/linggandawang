@@ -675,6 +675,7 @@ questions:
         - { keyword: "文档", extract_tag: "验收: 文档完整" }
         - { keyword: "测试", extract_tag: "验收: 测试覆盖" }
     required: true
+    quick_mode: true
 
   - id: "b-021"
     stage: verify

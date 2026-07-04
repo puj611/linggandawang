@@ -18,7 +18,10 @@ async function loadTauriDeps() {
     _LogicalPosition = windowMod.LogicalPosition;
     _getCurrentWindow = windowMod.getCurrentWindow;
     _listen = eventMod.listen;
-  } catch {}
+  } catch (e) {
+    // P3-1 修复：原空 catch 吞错误导致排查困难，记录警告
+    console.warn('[useDrag] 加载 Tauri 依赖失败', e);
+  }
 }
 
 const IGNORE_DRAG_SELECTORS = [
@@ -83,10 +86,16 @@ export function useDrag() {
             try {
               const pos = await appWindow.outerPosition();
               await setPosition({ x: pos.x, y: pos.y, screen: 'default' });
-            } catch {}
+            } catch (e) {
+              // P3-1：拖动结束时持久化位置失败不影响功能，仅记录
+              console.warn('[useDrag] 持久化窗口位置失败', e);
+            }
           }, 200);
         });
-      } catch {}
+      } catch (e) {
+        // P3-1：监听 tauri://move 事件失败
+        console.warn('[useDrag] 监听窗口移动事件失败', e);
+      }
     })();
 
     return () => {

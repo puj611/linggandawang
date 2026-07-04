@@ -62,19 +62,27 @@ export interface LLMAdapter {
   /** 服务商标识 */
   provider: LLMProvider;
 
-  /** 发送请求并获取完整响应 */
-  chat(request: LLMRequest, apiKey: string, baseUrl: string): Promise<LLMResponse>;
+  /** 发送请求并获取完整响应
+   *  @param signal 可选的外部取消信号，触发时 fetch 会被中止并抛出 AbortError
+   *                调用方可用更短的超时来覆盖 adapter 内部的默认超时
+   */
+  chat(request: LLMRequest, apiKey: string, baseUrl: string, signal?: AbortSignal): Promise<LLMResponse>;
 
-  /** 发送流式请求 */
+  /** 发送流式请求
+   *  @param signal 可选的外部取消信号
+   */
   chatStream(
     request: LLMRequest,
     apiKey: string,
     baseUrl: string,
     onChunk: (chunk: LLMStreamChunk) => void,
+    signal?: AbortSignal,
   ): Promise<LLMResponse>;
 
-  /** 测试连接是否可用 */
-  testConnection(apiKey: string, baseUrl: string): Promise<boolean>;
+  /** 测试连接是否可用
+   *  @param signal 可选的外部取消信号
+   */
+  testConnection(apiKey: string, baseUrl: string, signal?: AbortSignal): Promise<boolean>;
 }
 
 /** 服务商配置（非敏感信息，存储在 SQLite） */
@@ -122,3 +130,19 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     description: '兼容 OpenAI 格式的任意 API',
   },
 ];
+
+/** 已知支持视觉（多模态图片输入）的模型关键词列表 */
+const VISION_MODEL_KEYWORDS = [
+  'gpt-4o', 'gpt-4-turbo', 'gpt-4-vision',
+  'qwen-vl', 'qwen2-vl', 'qwen-multimodal',
+  'claude-3', 'claude-sonnet', 'claude-opus', 'claude-haiku',
+  'gemini', 'llava', 'internvl', 'yi-vl',
+  'step-1v', 'step-1x', 'glm-4v',
+];
+
+/** 判断指定模型名是否支持视觉（图片）输入 */
+export function isVisionModel(model: string): boolean {
+  if (!model) return false;
+  const lower = model.toLowerCase();
+  return VISION_MODEL_KEYWORDS.some((kw) => lower.includes(kw));
+}

@@ -7,8 +7,10 @@ import { useFeatureStore } from '@/stores/featureStore';
 import type { FeatureFlags } from '@/stores/featureStore';
 import { questionLoader } from '@/engine/QuestionLoader';
 import { getHotkey, setHotkey } from '@/hooks/useHotkey';
+import { isTauri } from '@/lib/env';
 import { ClusterAnalyticsPanel } from './ClusterAnalyticsPanel';
 import { LLMConfigSection } from './LLMConfigSection';
+import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { setPreference } from '@/lib/sqlite';
 
 type TabKey = 'general' | 'analytics';
@@ -22,12 +24,15 @@ export function SettingsPanel() {
   const ctxStore = useContextStore();
   const screenshotDiagnosis = useFeatureStore((s) => s.screenshotDiagnosis);
   const setFeatures = useFeatureStore((s) => s.set);
+  const hasApiKey = useApiKeyStore((s) => s.hasApiKey);
   const features = { screenshotDiagnosis, set: setFeatures };
   const [tab, setTab] = useState<TabKey>('general');
   const [hotkey, setHotkeyState] = useState(getHotkey());
   const [recording, setRecording] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [bankReloaded, setBankReloaded] = useState(false);
+  // LLM 高级功能分区默认折叠（基础模式）/ 默认展开（智能模式）
+  const [llmExpanded, setLlmExpanded] = useState(hasApiKey);
   const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -122,6 +127,9 @@ export function SettingsPanel() {
             onSwitchTab={setTab}
             contextPreview={ctxStore.ctx}
             onExportContext={onExportContext}
+            llmExpanded={llmExpanded}
+            onToggleLlmExpanded={() => setLlmExpanded((v) => !v)}
+            hasApiKey={hasApiKey}
           />
         ) : (
           <ClusterAnalyticsPanel onBack={() => setTab('general')} />
@@ -146,12 +154,16 @@ interface GeneralProps {
   // P1.5 其他改进：上下文预览数据与导出回调
   contextPreview: import('@/types/context').LinggandawangContext;
   onExportContext: () => void;
+  // LLM 高级功能分区折叠状态
+  llmExpanded: boolean;
+  onToggleLlmExpanded: () => void;
+  hasApiKey: boolean;
 }
 
 function GeneralSettings({
   hotkey, recording, confirmClear, bankReloaded, features, closeSettings,
   startRecordHotkey, onClearContext, onReloadBank, onShowOnboarding, onSwitchTab,
-  contextPreview, onExportContext,
+  contextPreview, onExportContext, llmExpanded, onToggleLlmExpanded, hasApiKey,
 }: GeneralProps) {
   return (
     <>
@@ -166,7 +178,8 @@ function GeneralSettings({
       </div>
 
       <div className="p-5 space-y-4 overflow-y-auto">
-        {/* 热键自定义 */}
+        {/* 热键自定义（仅桌面版可用） */}
+        {isTauri() && (
         <div>
           <div className="text-[11px] text-text-secondary mb-1">全局热键</div>
           <div className="flex gap-2">
@@ -186,6 +199,7 @@ function GeneralSettings({
             全局热键由 Tauri 注册，Alt+Shift+Space 唤起/隐藏窗口
           </div>
         </div>
+        )}
 
         {/* 截图诊断开关 */}
         <div>
@@ -209,9 +223,52 @@ function GeneralSettings({
           </div>
         </div>
 
-        {/* AI 模型配置 */}
+        {/* AI 模型配置（高级功能，可折叠） */}
         <div className="pt-3 border-t border-border">
-          <LLMConfigSection />
+          {/* 折叠标题栏：点击展开/收起 */}
+          <button
+            onClick={onToggleLlmExpanded}
+            className="w-full flex items-center justify-between text-left group"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-text-secondary">高级功能</span>
+              <span
+                className={`px-1.5 py-0.5 text-[9px] rounded border ${
+                  hasApiKey
+                    ? 'bg-semantic-success/10 text-semantic-success border-semantic-success/30'
+                    : 'bg-surface-3 text-text-tertiary border-border-light'
+                }`}
+              >
+                {hasApiKey ? '已启用' : '可选'}
+              </span>
+              {!hasApiKey && (
+                <span className="text-[10px] text-text-tertiary">
+                  · 不配置也能用核心功能
+                </span>
+              )}
+            </div>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`text-text-tertiary transition-transform group-hover:text-text-secondary ${
+                llmExpanded ? 'rotate-180' : ''
+              }`}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          {/* 折叠内容 */}
+          {llmExpanded && (
+            <div className="mt-3">
+              <LLMConfigSection />
+            </div>
+          )}
         </div>
 
         {/* 词簇分析入口 */}

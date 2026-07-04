@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getAdapter } from '@/lib/llm';
 import type { LLMResponse } from '@/lib/llm/types';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
+import { useLLMAvailabilityStore } from '@/stores/llmAvailabilityStore';
 import {
   buildFollowupMessages,
   type FollowupTrigger,
@@ -47,7 +48,7 @@ export interface FollowupEvalContext {
   recentQA: ContextRecentQA[];
   /** 用户原始种子输入 */
   seed: string;
-  /** 提问模式：direct 模式不触发追问 */
+  /** 提问模式：direct/quick 模式不触发追问 */
   mode: 'direct' | 'quick' | 'full';
 }
 
@@ -57,8 +58,9 @@ export interface FollowupEvalContext {
  * - 返回 FollowupDecision：触发，调用方应调用 generateFollowupQuestion(decision)
  */
 export function evaluateFollowup(ctx: FollowupEvalContext): FollowupDecision | null {
-  // 排除条件：direct 模式 / 已触发过 / 引擎已完成（nextQuestion 为 null）
-  if (ctx.mode === 'direct' || ctx.alreadyTriggered) return null;
+  // 排除条件：direct 模式 / quick 模式 / 已触发过 / 引擎已完成（nextQuestion 为 null）
+  // P2 优化：quick 模式目标是快速出结果，动态追问会插入计划外问题，与"快速"目标冲突
+  if (ctx.mode === 'direct' || ctx.mode === 'quick' || ctx.alreadyTriggered) return null;
   if (!ctx.nextQuestion) return null;
 
   // 触发条件 1：高歧义（仅在 perceive 阶段首题刚答完时触发）
@@ -173,16 +175,28 @@ function hasSkippedInStage(
 /**
  * 调用 LLM 生成追问题（异步，8s 超时降级）
  * - 成功：返回构造好的 Question 对象（id 为 dyn-followup-xxx）
- * - 失败/超时/未配置：返回 null，调用方应继续原 nextQuestion 流程
+ * - 失败/超时/未配置：尝试规则兜底追问（r2增强），仍失败返回 null
  */
 export async function generateFollowupQuestion(
   decision: FollowupDecision,
 ): Promise<{ question: Question; reason: string } | null> {
   const { config, hasApiKey } = useApiKeyStore.getState();
-  if (!config || !hasApiKey) return null;
+
+  // r2增强：未配置 LLM 时直接走规则兜底
+  if (!config || !hasApiKey) {
+    return generateRuleBasedFollowup(decision);
+  }
+
+  // r5增强：熔断器检查，熔断期间直接走规则兜底
+  if (!useLLMAvailabilityStore.getState().shouldAttempt()) {
+    console.info('[SmartFollowup] 熔断中，直接走规则兜底');
+    return generateRuleBasedFollowup(decision);
+  }
 
   const apiKey = await useApiKeyStore.getState().getApiKey();
-  if (!apiKey) return null;
+  if (!apiKey) {
+    return generateRuleBasedFollowup(decision);
+  }
 
   const adapter = getAdapter(config.provider);
   const messages = buildFollowupMessages(decision.promptInput);
@@ -200,12 +214,16 @@ export async function generateFollowupQuestion(
       },
       apiKey,
       config.baseUrl,
+      controller.signal, // 传入外部 signal，使 8s 超时实际生效
     );
 
     clearTimeout(timeout);
 
     const output = parseFollowupResponse(response.content);
-    if (!output) return null;
+    if (!output) {
+      // r2增强：LLM 返回无法解析时走规则兜底
+      return generateRuleBasedFollowup(decision);
+    }
 
     // 构造 Question 对象
     const stage: PromptStage = (decision.promptInput.currentStage as PromptStage) ?? 'perceive';
@@ -234,12 +252,138 @@ export async function generateFollowupQuestion(
       options_count: question.options.length,
     });
 
+    // r5增强：调用成功，重置熔断器
+    useLLMAvailabilityStore.getState().recordSuccess();
     return { question, reason: decision.reason };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.warn('[SmartFollowup] LLM 生成追问失败，跳过', msg);
+    console.warn('[SmartFollowup] LLM 生成追问失败，尝试规则兜底', msg);
+    // r5增强：记录失败，达阈值会触发熔断
+    useLLMAvailabilityStore.getState().recordFailure(e);
+    // r2增强：LLM 失败时走规则兜底，而不是直接返回 null
+    return generateRuleBasedFollowup(decision);
+  }
+}
+
+// =============== r2增强：规则追问兜底 ===============
+
+/**
+ * 规则追问模板（按 trigger + stage 索引）
+ * 每个模板包含：题干、选项（带 target_tag）、why 说明
+ */
+interface RuleFollowupTemplate {
+  text: string;
+  why: string;
+  options: { label: string; target_tag: string }[];
+  placeholder?: string;
+}
+
+const RULE_FOLLOWUP_TEMPLATES: Record<string, RuleFollowupTemplate> = {
+  // 连续自定义输入 → 追问具体需求
+  'consecutive-custom::perceive': {
+    text: '你刚才两次用自己的话描述，能再具体一点吗？比如哪个数值、哪种效果？',
+    why: '连续自定义输入说明已有选项未覆盖你的需求，追问具体细节有助于精准生成',
+    options: [
+      { label: '具体数值（如 16px、24px）', target_tag: '具体数值' },
+      { label: '具体效果（如悬浮、渐变）', target_tag: '具体效果' },
+      { label: '具体场景（如移动端、暗色模式）', target_tag: '具体场景' },
+    ],
+    placeholder: '或自己描述具体细节...',
+  },
+  'consecutive-custom::name': {
+    text: '你刚才的描述我没完全跟上，能具体说说是哪种风格/方向吗？',
+    why: '连续自定义输入说明已有选项未覆盖你的需求，追问具体方向有助于精准生成',
+    options: [
+      { label: '偏现代/科技感', target_tag: '现代科技' },
+      { label: '偏温馨/亲和', target_tag: '温馨亲和' },
+      { label: '偏极简/留白', target_tag: '极简留白' },
+    ],
+    placeholder: '或自己描述风格方向...',
+  },
+  'consecutive-custom::spec': {
+    text: '你两次自定义输入了规格需求，能拆成最关键的 1-2 条吗？',
+    why: '规格阶段自定义输入容易模糊，拆解为关键点便于精准生成',
+    options: [
+      { label: '只关心第一条', target_tag: '首要规格' },
+      { label: '两条都要', target_tag: '全部规格' },
+      { label: '其实只想要默认值', target_tag: '默认规格' },
+    ],
+    placeholder: '或自己说明优先级...',
+  },
+  // 阶段切换带跳过 → 确认是否用默认值
+  'stage-transition-with-skip::perceive': {
+    text: '刚才有几题跳过了，spec 阶段我直接用默认值，可以吗？',
+    why: '跳过的题会用默认值，确认后避免后续生成偏离预期',
+    options: [
+      { label: '用默认值即可', target_tag: '默认值确认' },
+      { label: '我想补充一下', target_tag: '补充需求' },
+      { label: '重新问那几题', target_tag: '重新提问' },
+    ],
+    placeholder: '或说明你的偏好...',
+  },
+  'stage-transition-with-skip::name': {
+    text: '刚才 name 阶段有跳过，spec 阶段我会用通用方案，可以吗？',
+    why: 'name 阶段跳过会影响 spec 的方向，确认后避免后续生成偏离',
+    options: [
+      { label: '用通用方案', target_tag: '通用方案确认' },
+      { label: '我想指定方向', target_tag: '指定方向' },
+    ],
+    placeholder: '或说明方向偏好...',
+  },
+  'stage-transition-with-skip::spec': {
+    text: 'spec 阶段有题跳过了，execute 阶段我会用默认技术方案，可以吗？',
+    why: 'spec 跳过会影响 execute 的技术选型，确认后避免偏离',
+    options: [
+      { label: '用默认方案', target_tag: '默认方案确认' },
+      { label: '我想指定技术栈', target_tag: '指定技术栈' },
+    ],
+    placeholder: '或说明技术偏好...',
+  },
+};
+
+/**
+ * r2增强：规则兜底追问生成器
+ * 不依赖 LLM，根据 trigger + stage 从模板表生成追问题。
+ * 无匹配模板时返回 null（调用方继续原 nextQuestion 流程）。
+ */
+export function generateRuleBasedFollowup(
+  decision: FollowupDecision,
+): { question: Question; reason: string } | null {
+  const stage = (decision.promptInput.currentStage as PromptStage) ?? 'perceive';
+  const key = `${decision.trigger}::${stage}`;
+  const template = RULE_FOLLOWUP_TEMPLATES[key];
+
+  if (!template) {
+    // 无匹配模板，返回 null（调用方继续原流程）
     return null;
   }
+
+  const question: Question = {
+    id: `dyn-rule-followup-${decision.trigger}-${stage}`,
+    stage,
+    order: 999,
+    text: template.text,
+    type: 'single-choice',
+    options: template.options.map((o) => ({
+      label: o.label,
+      value: o.target_tag,
+      tags: [o.target_tag],
+    })),
+    allow_custom: true,
+    placeholder: template.placeholder ?? '或自己描述...',
+    trigger_tags: [],
+    jumps: [],
+    required: false,
+    why: template.why,
+  };
+
+  console.info('[SmartFollowup] 规则兜底追问生成', {
+    trigger: decision.trigger,
+    stage,
+    question_text: question.text,
+  });
+
+  return { question, reason: `${decision.reason}（规则兜底）` };
 }
 
 /** 解析 LLM 返回的 JSON，容错处理 */
@@ -274,30 +418,31 @@ function parseFollowupResponse(content: string): FollowupLLMOutput | null {
   return null;
 }
 
-/** 规范化 LLM 输出 */
-function normalizeOutput(raw: any): FollowupLLMOutput | null {
+/** 规范化 LLM 输出（导出用于单元测试） */
+export function normalizeOutput(raw: unknown): FollowupLLMOutput | null {
   if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
 
-  const question_text = String(raw.question_text ?? '').trim();
+  const question_text = String(r.question_text ?? '').trim();
   if (!question_text) return null;
 
-  const why = String(raw.why ?? '').trim() || '基于上下文动态生成';
+  const why = String(r.why ?? '').trim() || '基于上下文动态生成';
 
-  const options = Array.isArray(raw.options)
-    ? raw.options
-        .filter((o: any) => o && typeof o === 'object')
+  const options = Array.isArray(r.options)
+    ? (r.options as unknown[])
+        .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
         .slice(0, 5)
-        .map((o: any) => ({
+        .map((o) => ({
           label: String(o.label ?? '').trim(),
           target_tag: String(o.target_tag ?? '').trim(),
         }))
-        .filter((o: any) => o.label && o.target_tag)
+        .filter((o) => o.label && o.target_tag)
     : [];
 
   if (options.length < 2) return null; // 至少 2 个选项
 
-  const allow_custom = raw.allow_custom !== false; // 默认 true
-  const placeholder = raw.placeholder ? String(raw.placeholder) : undefined;
+  const allow_custom = r.allow_custom !== false; // 默认 true
+  const placeholder = r.placeholder ? String(r.placeholder) : undefined;
 
   return { question_text, why, options, allow_custom, placeholder };
 }

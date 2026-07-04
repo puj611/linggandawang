@@ -37,30 +37,47 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      await loadFeatures();
-      await loadHotkey();
-      await loadCtx();
-      loadPosition();
-      loadAlwaysOnTop();
-      loadAnalytics();
-      loadProject();
-      loadApiKeyConfig();
-      // 启动时检查上下文是否过期归档（FR-005 验收标准 3）
-      await useContextStore.getState().archiveIfStale();
+      // v2.3：独立的 load 操作并行化（Promise.allSettled 容错），减少启动瀑布
+      // 原来串行 await 8 个 load 导致启动耗时为各 load 之和，现在并行后为最大值
+      await Promise.allSettled([
+        loadFeatures(),
+        loadHotkey(),
+        loadCtx(),
+        loadPosition(),
+        loadAlwaysOnTop(),
+        loadAnalytics(),
+        loadProject(),
+        loadApiKeyConfig(),
+      ]);
+
+      // 依赖 ctx 已 load 的操作：启动时检查上下文是否过期归档（FR-005 验收标准 3）
       try {
-        await questionLoader.preloadUserBank();
-        questionLoader.load();
+        await useContextStore.getState().archiveIfStale();
       } catch (e) {
-        console.error('[App] 问题库加载失败', e);
+        console.error('[App] 上下文归档检查失败', e);
       }
-      // 启动时检查是否已看过新手引导（P1.4）
-      try {
-        const seen = await getPreference<string>(ONBOARDING_SEEN_KEY, '');
-        setOnboardingVisible(seen !== '1');
-      } catch (e) {
-        console.error('[App] 读取引导标记失败', e);
-        setOnboardingVisible(false);
-      }
+
+      // 问题库加载 + 引导标记检查相互独立，并行执行
+      await Promise.allSettled([
+        (async () => {
+          try {
+            await questionLoader.preloadUserBank();
+            questionLoader.load();
+          } catch (e) {
+            console.error('[App] 问题库加载失败', e);
+          }
+        })(),
+        (async () => {
+          // 启动时检查是否已看过新手引导（P1.4）
+          try {
+            const seen = await getPreference<string>(ONBOARDING_SEEN_KEY, '');
+            setOnboardingVisible(seen !== '1');
+          } catch (e) {
+            console.error('[App] 读取引导标记失败', e);
+            setOnboardingVisible(false);
+          }
+        })(),
+      ]);
     })();
   }, [loadCtx, loadFeatures, loadPosition, loadAlwaysOnTop, loadAnalytics, loadProject, loadApiKeyConfig]);
 

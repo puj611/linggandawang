@@ -15,6 +15,15 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: false,
     chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        // v2.3：拆分 vendor 包，利用浏览器缓存，减少主包体积
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'zustand-vendor': ['zustand'],
+        },
+      },
+    },
   },
   server: {
     watch: {

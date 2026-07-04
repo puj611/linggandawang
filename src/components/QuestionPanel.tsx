@@ -14,7 +14,11 @@ import { useAppStore } from '@/stores/appStore';
 const STAGES: PromptStage[] = ['perceive', 'name', 'spec', 'execute', 'verify'];
 
 export function QuestionPanel() {
-  const { currentQuestion, intentTags, consecutiveSkips, canUndo } = useEngineStore();
+  // v2.3：逐个 selector 精准订阅，避免整 store 订阅导致无关状态变化触发重渲染
+  const currentQuestion = useEngineStore((s) => s.currentQuestion);
+  const intentTags = useEngineStore((s) => s.intentTags);
+  const consecutiveSkips = useEngineStore((s) => s.consecutiveSkips);
+  const canUndo = useEngineStore((s) => s.canUndo);
   const { answer, skip, goBack } = useFlow();
   const [customInput, setCustomInput] = useState('');
   const [answering, setAnswering] = useState(false);
@@ -43,11 +47,17 @@ export function QuestionPanel() {
 
   const stageIdx = STAGES.indexOf(currentQuestion.stage);
 
+  // P1-6 修复：增加 catch 块，错误日志 + 用户提示，避免 unhandled rejection 导致 UI 卡住
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const handleOption = async (value: string, label: string, tags: string[]) => {
     if (answering) return;
     setAnswering(true);
+    setErrorMsg(null);
     try {
       await answer(value, label, tags);
+    } catch (e) {
+      console.error('[QuestionPanel] answer 失败', e);
+      setErrorMsg(e instanceof Error ? e.message : '提交答案失败，请重试');
     } finally {
       setAnswering(false);
     }
@@ -57,9 +67,13 @@ export function QuestionPanel() {
     e.preventDefault();
     if (!customInput.trim() || answering) return;
     setAnswering(true);
+    setErrorMsg(null);
     try {
       await answer(customInput.trim(), customInput.trim(), []);
       setCustomInput('');
+    } catch (e) {
+      console.error('[QuestionPanel] 自定义答案提交失败', e);
+      setErrorMsg(e instanceof Error ? e.message : '提交答案失败，请重试');
     } finally {
       setAnswering(false);
     }
@@ -68,8 +82,12 @@ export function QuestionPanel() {
   const onSkip = async () => {
     if (answering) return;
     setAnswering(true);
+    setErrorMsg(null);
     try {
       await skip();
+    } catch (e) {
+      console.error('[QuestionPanel] skip 失败', e);
+      setErrorMsg(e instanceof Error ? e.message : '跳过失败，请重试');
     } finally {
       setAnswering(false);
     }
@@ -148,6 +166,12 @@ export function QuestionPanel() {
 
         {/* 中部：问题（可滚动） */}
         <div className="px-4 py-4 flex-1 overflow-y-auto">
+          {/* P1-6：错误提示 */}
+          {errorMsg && (
+            <div className="mb-3 px-3 py-2 rounded-btn bg-semantic-error/10 border border-semantic-error/30 text-semantic-error text-[11px] text-center">
+              {errorMsg}
+            </div>
+          )}
           <div className="flex flex-col items-center text-center">
             <p className="text-text-primary text-lg font-semibold leading-snug mb-2 tracking-tight text-balance">
               {currentQuestion.text}

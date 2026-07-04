@@ -6,18 +6,31 @@ import { useDrag } from '@/hooks/useDrag';
 import { useResize } from '@/hooks/useResize';
 import { IntentTagChips } from './IntentTagChips';
 import { RawQuotesPanel } from './RawQuotesPanel';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import type { SegmentKey } from '@/engine/PromptGenerator';
 
 export function ResultPanel() {
-  const { result, intentTags } = useEngineStore();
+  // v2.3：逐个 selector 精准订阅
+  const result = useEngineStore((s) => s.result);
+  const intentTags = useEngineStore((s) => s.intentTags);
   const { copyPrompt, exportPrompt, restart, removeTag, updateSection } = useFlow();
   const [copied, setCopied] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const { dragProps, offset, dragging } = useDrag();
   const { resizeProps, width } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
+
+  // v2.3：复制提示状态定时器引用，组件卸载时清理，避免 setState on unmounted
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
 
   if (!result) {
     return (
@@ -42,7 +55,12 @@ export function ResultPanel() {
     const ok = await copyPrompt(result);
     if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      // v2.3：清理旧定时器再用 ref 跟踪新定时器，确保卸载时能清理
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopied(false);
+      }, 1500);
     }
   };
 

@@ -24,7 +24,9 @@ export function useResize() {
       MAX_WINDOW_WIDTH,
       Math.max(MIN_WINDOW_WIDTH, Math.round(startWidthRef.current + dx)),
     );
-    // 即时更新 store（setWidth 会 clamp，set 部分同步内存）
+    // P2-4 说明：拖动 60fps 高频更新内存中的 width，跳过 setWidth 是有意的，
+    // 避免每帧写 SQLite（性能差）。clamp 已在此处完成。
+    // 持久化由 useEffect 中的 setInterval(300ms) + onPointerUp 兜底处理
     useWindowStore.setState({ width: next });
   }, []);
 

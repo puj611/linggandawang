@@ -9,7 +9,8 @@ interface Props {
 }
 
 export function ScreenshotDropZone({ onScreenshot }: Props) {
-  const features = useFeatureStore();
+  // v2.3：逐个 selector 精准订阅
+  const screenshotDiagnosis = useFeatureStore((s) => s.screenshotDiagnosis);
   const [preview, setPreview] = useState<string | null>(null);
 
   const handleScreenshot = (p: ScreenshotPayload) => {
@@ -18,11 +19,11 @@ export function ScreenshotDropZone({ onScreenshot }: Props) {
   };
 
   const { isDragging, onDrop, onDragOver, onDragLeave } = useScreenshotPaste(
-    features.screenshotDiagnosis,
+    screenshotDiagnosis,
     handleScreenshot,
   );
 
-  if (!features.screenshotDiagnosis) {
+  if (!screenshotDiagnosis) {
     // DOWNGRADE: 截图诊断运行时开关关闭时置灰
     return (
       <div className="border border-dashed border-border rounded-btn p-3 text-center opacity-50">

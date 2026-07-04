@@ -25,6 +25,8 @@ interface GenerateInput {
   recentQA?: ContextRecentQA[];
   /** v2.0 新增：用户已确认偏好，注入约束段 */
   preferences?: ContextPreference[];
+  /** P3 新增：提问模式，quick 模式下 verify 段无答案时自动推断验证标准 */
+  mode?: 'quick' | 'full';
 }
 
 /** v1.2 新增：可编辑的段落键名 */
@@ -41,13 +43,13 @@ const STAGE_TO_LABEL: Record<string, string> = {
 export class PromptGenerator {
   /** 从 EngineState 生成 PromptResult */
   generate(input: GenerateInput): PromptResult {
-    const { intentTags, answers, seedInput, project, recentQA, preferences } = input;
+    const { intentTags, answers, seedInput, project, recentQA, preferences, mode } = input;
     const rawQuotes = this.collectRawQuotes(answers, seedInput, recentQA);
     const projectCtx = project ? this.buildProjectContext(project) : null;
     const action = this.buildAction(intentTags, answers, seedInput, recentQA);
     const spec = this.buildSpec(intentTags, answers, seedInput, project);
     const constraint = this.buildConstraint(intentTags, answers, project, preferences);
-    const verify = this.buildVerify(intentTags, answers);
+    const verify = this.buildVerify(intentTags, answers, seedInput, mode);
     return {
       project_context: projectCtx,
       action,
@@ -360,7 +362,7 @@ export class PromptGenerator {
     const expandedSpecs = expandToSpecs(allText);
     for (const s of expandedSpecs) {
       if (!lines.some((l) => l.includes(s.slice(0, 10)))) {
-        lines.push(`（评价展开）${s}`);
+        lines.push(s);
       }
     }
 
@@ -450,7 +452,12 @@ export class PromptGenerator {
     };
   }
 
-  private buildVerify(tags: IntentTag[], answers: Record<string, Answer>): PromptSegment {
+  private buildVerify(
+    tags: IntentTag[],
+    answers: Record<string, Answer>,
+    seedInput: string,
+    mode?: 'quick' | 'full',
+  ): PromptSegment {
     // 验证段：从 verify 阶段回答生成可观测条件
     const verifyAnswers = this.answersByStage(answers, 'verify');
     const lines: string[] = [];
@@ -480,6 +487,12 @@ export class PromptGenerator {
       if (padding) lines.push(`内边距实测值 = ${padding.value}`);
     }
 
+    // P3 增强：quick 模式下若 verify 段无答案，基于种子推断验证标准
+    // 避免空泛的"肉眼确认"，给 AI 可执行的验证条件
+    if (lines.length === 0 && mode === 'quick' && seedInput) {
+      lines.push(...this.inferVerifyFromSeed(seedInput));
+    }
+
     if (lines.length === 0) {
       lines.push('改动后截图，肉眼确认符合上述规格段全部数值');
     }
@@ -490,6 +503,40 @@ export class PromptGenerator {
       content: lines.join('\n'),
       raw_quote: raw || undefined,
     };
+  }
+
+  /** P3 新增：quick 模式下基于种子推断验证标准 */
+  private inferVerifyFromSeed(seed: string): string[] {
+    const lines: string[] = [];
+    const lower = seed.toLowerCase();
+
+    // 通用基础验证
+    lines.push('代码可通过编译/构建（无 TypeScript 错误）');
+
+    // 基于关键词推断具体验证标准
+    if (/间距|padding|margin|留白/.test(seed)) {
+      lines.push('间距实测值符合规格段要求（偏差 ≤ 2px）');
+    }
+    if (/颜色|配色|对比|color|contrast/.test(lower)) {
+      lines.push('文字与背景对比度 ≥ 4.5:1（WCAG AA）');
+    }
+    if (/圆角|radius/.test(lower)) {
+      lines.push('圆角实测值符合规格段要求');
+    }
+    if (/字号|字体|font/.test(lower)) {
+      lines.push('字号实测值符合规格段要求');
+    }
+    if (/响应|移动|mobile|responsive/.test(lower)) {
+      lines.push('移动端/桌面端布局均不溢出');
+    }
+    if (/动画|过渡|animation|transition/.test(lower)) {
+      lines.push('动画过渡平滑，无明显卡顿');
+    }
+
+    // 通用功能验证
+    lines.push('主要功能可正常运行（点击/输入/跳转无报错）');
+
+    return lines;
   }
 
   // ──────── 工具方法 ────────

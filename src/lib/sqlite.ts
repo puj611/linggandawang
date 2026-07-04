@@ -23,12 +23,34 @@ export async function getDb(): Promise<DatabaseType | null> {
       const Database = (mod as any).Database || (mod as any).default;
       return Database.load(DB_NAME);
     })
-    .catch(() => null)
+    .catch((e) => {
+      // P3-4 修复：加载失败时清空 promise，允许下次重试
+      console.warn('[sqlite] 加载数据库失败', e);
+      dbPromise = null;
+      return null;
+    })
     .then((db) => {
       dbInstance = db;
       return db;
     });
   return dbPromise;
+}
+
+// P3-4 修复：执行 SQL 出错时若是连接断开，重置 dbInstance 让下次 getDb 重连
+export async function executeSql(
+  sql: string,
+  params?: unknown[],
+): Promise<unknown> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    return await db.execute(sql, params);
+  } catch (e) {
+    console.warn('[sqlite] execute 失败，重置连接', e);
+    dbInstance = null;
+    dbPromise = null;
+    throw e;
+  }
 }
 
 export async function closeDb(): Promise<void> {
@@ -67,7 +89,10 @@ function readPromptHistoryFromStorage(): PromptHistoryRecord[] {
 function writePromptHistoryToStorage(list: PromptHistoryRecord[]): void {
   try {
     localStorage.setItem(LS_PROMPT_HISTORY, JSON.stringify(list));
-  } catch {}
+  } catch (e) {
+    // P3-2 修复：localStorage 满/禁用时记录警告，便于用户排查
+    console.warn('[sqlite] localStorage 写入失败（可能配额满或被禁用）', e);
+  }
 }
 
 export async function insertPromptHistory(record: Omit<PromptHistoryRecord, 'id'>): Promise<number> {
