@@ -1,8 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+/// 全局状态：记录用户最近一次通过 pick_project_folder 选择的目录
+/// P1 安全修复：scan_project 仅允许扫描该目录，防止任意目录枚举
+struct ProjectScanState(Mutex<Option<String>>);
 
 fn app_config_dir(app: &tauri::AppHandle) -> PathBuf {
     let dir = app.path().app_config_dir().unwrap_or_else(|_| {
@@ -237,6 +242,35 @@ pub struct ImageDataResult {
 }
 
 // 读取本地图片文件为 data URL。
+/// 白名单校验：路径是否位于用户主目录或临时目录下
+/// P1 安全修复：从纯黑名单改为"白名单优先 + 增强黑名单"双层校验
+fn is_in_user_scope(canonical: &PathBuf) -> bool {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()
+        .map(PathBuf::from);
+    let temp = std::env::var("TEMP")
+        .or_else(|_| std::env::var("TMP"))
+        .ok()
+        .map(PathBuf::from);
+
+    if let Some(home) = home {
+        if let Ok(home_canon) = home.canonicalize() {
+            if canonical.starts_with(&home_canon) {
+                return true;
+            }
+        }
+    }
+    if let Some(temp) = temp {
+        if let Ok(temp_canon) = temp.canonicalize() {
+            if canonical.starts_with(&temp_canon) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // 用于支持从资源管理器拖入图片到悬浮窗。
 // 安全限制：仅允许读取用户通过文件选择器选定的目录下的图片，或临时文件目录。
 #[tauri::command]
@@ -248,20 +282,29 @@ fn read_image_file(path: String, app: tauri::AppHandle) -> Result<ImageDataResul
         return Err(format!("文件不存在: {}", path));
     }
 
-    // 安全校验：拒绝读取系统敏感目录
+    // 安全校验：白名单优先 + 增强黑名单（P1 安全修复）
     let canonical = pb.canonicalize().map_err(|e| format!("路径解析失败: {}", e))?;
     let path_str = canonical.to_string_lossy().to_lowercase();
 
-    // 拒绝系统关键目录
-    const BLOCKED_PATHS: &[&str] = &[
-        "windows\\system32",
-        "bootmgr",
-        "\\etc\\",
-        "programdata\\microsoft\\crypto",
-    ];
-    for blocked in BLOCKED_PATHS {
-        if path_str.contains(blocked) {
-            return Err("无权限读取此路径".to_string());
+    // 白名单：用户主目录和临时目录直接放行（后续仍检查敏感文件名/大小）
+    if !is_in_user_scope(&canonical) {
+        // 不在白名单目录（如外接硬盘），检查系统关键目录黑名单
+        const BLOCKED_PATHS: &[&str] = &[
+            "windows\\system32",
+            "windows\\system",
+            "windows\\",
+            "bootmgr",
+            "\\etc\\",
+            "programdata\\microsoft\\crypto",
+            "program files\\",
+            "program files (x86)\\",
+            "\\$recycle.bin",
+            "config\\systemprofile",
+        ];
+        for blocked in BLOCKED_PATHS {
+            if path_str.contains(blocked) {
+                return Err("无权限读取此路径".to_string());
+            }
         }
     }
 
@@ -565,7 +608,10 @@ fn read_package_json(path: &PathBuf) -> Option<PkgJsonPayload> {
 }
 
 #[tauri::command]
-async fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn pick_project_folder(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ProjectScanState>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     // P1-3 修复：原实现用 std::sync::mpsc + rx.recv() 阻塞主线程，
     // 改为 tokio::sync::oneshot + .await，让 Tauri 异步运行时调度，UI 不冻结
@@ -575,7 +621,15 @@ async fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, St
         let _ = tx.send(result);
     });
     match rx.await {
-        Ok(p) => Ok(p),
+        Ok(p) => {
+            // P1 安全修复：记录用户选择的目录，供 scan_project 校验
+            if let Some(ref path) = p {
+                if let Ok(mut guard) = state.0.lock() {
+                    *guard = Some(path.clone());
+                }
+            }
+            Ok(p)
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -621,7 +675,35 @@ fn is_sensitive_file(name: &str) -> bool {
 }
 
 #[tauri::command]
-fn scan_project(path: String) -> Result<ScanProjectResult, String> {
+fn scan_project(
+    path: String,
+    state: tauri::State<'_, ProjectScanState>,
+) -> Result<ScanProjectResult, String> {
+    // P1 安全修复：仅允许扫描用户通过 pick_project_folder 选择的目录
+    let allowed = state
+        .0
+        .lock()
+        .map(|guard| guard.as_ref().map(|s| s.to_string()))
+        .ok()
+        .flatten();
+
+    match allowed {
+        Some(allowed_path) => {
+            let req_canonical = PathBuf::from(&path)
+                .canonicalize()
+                .map_err(|e| format!("路径解析失败: {}", e))?;
+            let allowed_canonical = PathBuf::from(&allowed_path)
+                .canonicalize()
+                .map_err(|e| format!("已选路径解析失败: {}", e))?;
+            if req_canonical != allowed_canonical {
+                return Err("无权限扫描此目录（请先通过文件夹选择器选择目录）".to_string());
+            }
+        }
+        None => {
+            return Err("请先通过文件夹选择器选择要扫描的项目目录".to_string());
+        }
+    }
+
     let root = PathBuf::from(&path);
     if !root.exists() {
         return Err(format!("路径不存在: {}", path));
@@ -713,6 +795,7 @@ pub fn run() {
             load_api_key,
             delete_api_key,
         ])
+        .manage(ProjectScanState(Mutex::new(None)))
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
