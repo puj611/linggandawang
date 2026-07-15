@@ -1,10 +1,10 @@
 // src/lib/__tests__/vectorStore.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { cosineSimilarity } from '../vectorStore';
 
 // Mock @xenova/transformers（避免测试时下载模型）
 vi.mock('@xenova/transformers', () => ({
-  pipeline: vi.fn().mockResolvedValue(async (text: string) => ({
+  pipeline: vi.fn().mockResolvedValue(async (_text: string) => ({
     data: new Float32Array([1, 0, 0, 0]), // 4 维 mock 向量
   })),
 }));

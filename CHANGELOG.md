@@ -125,6 +125,29 @@
 - vitest run：217/217 通过
 - 新增 vectorStore 测试 5 用例（cosineSimilarity 边界）
 
+## [0.8.0] - 2026-07-15 - 智能化升级：规则模板库 + 行为学习
+
+### 规则模板库（方案 B）
+- **TemplateRetriever**（`src/engine/TemplateRetriever.ts`）：10 套预置场景模板
+- 覆盖场景：修间距/圆角/配色/字体/极简风格/科技风格/hover反馈/加载状态/对比度/复制特性
+- 检索逻辑：种子标签匹配(50%) + 意图标签匹配(30%) + 历史匹配(10%) + 人气权重(10%)
+- 阈值：score > 0.15 返回最佳模板
+
+### 行为学习（方案 D）
+- **PreferenceLearner**（`src/engine/PreferenceLearner.ts`）：用户偏好挖掘
+- 频率统计：每题最常选的选项 + 一致性比例
+- 模式挖掘：高频(≥3次)高一致性(≥70%)的偏好模式
+- 推荐引擎：recommendAnswers() 基于画像预填 + recommendFromPreferences() 基于偏好数组预填
+
+### 测试
+- TemplateRetriever 测试 12 用例（retrieve/retrieveTopK/getById/getAll）
+- PreferenceLearner 测试 9 用例（extract/buildProfile/recommend）
+- 测试总数：217 → 238（+21）
+
+### 验证
+- tsc --noEmit：0 错误
+- vitest run：238/238 通过
+
 ## [0.2.0] - 2026-07-04 - LLM 稳定性 + 快速提问增强 + 全面 bug 修复
 
 ### 新功能（LLM 稳定性层）
