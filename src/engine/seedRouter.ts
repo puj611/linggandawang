@@ -7,7 +7,7 @@
 //   4. 否则基于形容词簇做权重聚合：否定簇权重转负，返回 tagScores 让 Selector 选下一题
 //   5. 若命中簇且该簇有 clarification_question，返回动态澄清题
 //   6. 旧接口字段（question / matchedKeywords）保持不变，新增 scene 字段
-import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight } from './types';
+import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight, SceneType } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { getAllAdjectiveClusters } from './AdjectiveClusterLoader';
 import type { LLMIntentAnalysis } from './LLMIntentAnalyzer';
@@ -77,9 +77,6 @@ function isKeywordNegated(keyword: string, negatedWords: string[]): boolean {
   }
   return false;
 }
-
-/** 支持的场景类型 */
-export type SceneType = 'frontend-ui' | 'backend-api';
 
 interface SeedRoute {
   keywords: string[];

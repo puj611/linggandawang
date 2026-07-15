@@ -8,6 +8,9 @@ export type StageName = 'IDLE' | 'PERCEIVE' | 'NAME' | 'SPEC' | 'EXECUTE' | 'VER
 /** 提问流程模式：direct=直接生成 / quick=快速提问(仅核心题) / full=详细诊断(全部题) */
 export type FlowMode = 'direct' | 'quick' | 'full';
 
+/** 支持的场景类型 */
+export type SceneType = 'frontend-ui' | 'backend-api';
+
 export type QuestionType = 'single-choice' | 'multi-choice' | 'open' | 'scale';
 
 export interface QuestionOption {

@@ -7,8 +7,7 @@ import type { LLMResponse } from '@/lib/llm/types';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { useLLMAvailabilityStore } from '@/stores/llmAvailabilityStore';
 import { buildIntentAnalysisMessages } from './prompts/intent-analysis';
-import type { TagScore } from './types';
-import type { SceneType } from './seedRouter';
+import type { TagScore, SceneType } from './types';
 
 /** LLM 意图分析结果 */
 export interface LLMIntentAnalysis {

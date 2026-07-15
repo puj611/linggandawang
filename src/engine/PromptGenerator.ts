@@ -7,7 +7,7 @@ import type { ProjectFingerprint } from '@/types/project';
 import type { ContextRecentQA, ContextPreference } from '@/types/context';
 import type { PromptStage } from './types';
 import { STAGE_ORDER } from './types';
-import { expandToSpecs } from './评价词典';
+import { expandToSpecs } from './EvaluationDict';
 import {
   FRAMEWORK_LABELS,
   CSS_LABELS,

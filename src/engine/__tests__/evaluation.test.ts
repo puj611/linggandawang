@@ -1,6 +1,6 @@
 // src/engine/__tests__/evaluation.test.ts
 import { describe, it, expect } from 'vitest';
-import { EVALUATION_DICT, matchEvaluations, expandToSpecs } from '../评价词典';
+import { EVALUATION_DICT, matchEvaluations, expandToSpecs } from '../EvaluationDict';
 
 describe('评价词典', () => {
   it('覆盖 PRD 列出的 8 个评价关键词', () => {
