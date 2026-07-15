@@ -155,21 +155,22 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
   ): Promise<LLMResponse> {
     validateBaseUrl(baseUrl);
     const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+    const isLocal = this.provider === 'local';
     const body = {
-      model: request.model || 'gpt-4o-mini',
+      model: isLocal ? (request.model || 'local') : (request.model || 'gpt-4o-mini'),
       messages: request.messages,
       temperature: request.temperature ?? 0.7,
       max_tokens: request.max_tokens,
       stream: false,
     };
 
-    // r5增强：用 withRetry 包裹核心请求逻辑，对可重试错误自动指数退避
-    return withRetry(async () => {
-      // 内部 controller 用于自己的 30s 兜底超时（每次重试都新建）
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+    // 本地推理超时更长（CPU 推理较慢），云端保持 30s
+    const timeoutMs = isLocal ? 120000 : 30000;
 
-      // 外部 signal 联动：触发时也 abort 内部 controller
+    return withRetry(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
       const onExternalAbort = () => controller.abort();
       if (signal) {
         if (signal.aborted) {
@@ -180,12 +181,17 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
       }
 
       try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        // 本地模型不需要 Authorization header
+        if (!isLocal && apiKey) {
+          headers.Authorization = `Bearer ${apiKey}`;
+        }
+
         const resp = await fetch(url, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
+          headers,
           body: JSON.stringify(body),
           signal: controller.signal,
         });
@@ -205,11 +211,12 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
         };
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') {
-          // 区分是外部 signal 还是内部 timeout 触发的
           if (signal?.aborted) {
             throw new Error('LLM 请求被外部取消（调用方超时或主动取消）');
           }
-          throw new Error('LLM 请求超时（30秒），请检查网络或更换服务商');
+          throw new Error(isLocal
+            ? `本地模型推理超时（${timeoutMs / 1000}秒），请检查模型文件或硬件配置`
+            : 'LLM 请求超时（30秒），请检查网络或更换服务商');
         }
         throw e;
       } finally {
@@ -228,18 +235,19 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
   ): Promise<LLMResponse> {
     validateBaseUrl(baseUrl);
     const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+    const isLocal = this.provider === 'local';
     const body = {
-      model: request.model || 'gpt-4o-mini',
+      model: isLocal ? (request.model || 'local') : (request.model || 'gpt-4o-mini'),
       messages: request.messages,
       temperature: request.temperature ?? 0.7,
       max_tokens: request.max_tokens,
       stream: true,
     };
 
+    const timeoutMs = isLocal ? 180000 : 120000;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    // 外部 signal 联动
     const onExternalAbort = () => controller.abort();
     if (signal) {
       if (signal.aborted) {
@@ -249,12 +257,16 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
       }
     }
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (!isLocal && apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
     const resp = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -322,11 +334,11 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
 
   async testConnection(apiKey: string, baseUrl: string, signal?: AbortSignal): Promise<boolean> {
     validateBaseUrl(baseUrl);
+    const isLocal = this.provider === 'local';
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+      const timeout = setTimeout(() => controller.abort(), isLocal ? 5000 : 10000);
 
-      // 外部 signal 联动
       const onExternalAbort = () => controller.abort();
       if (signal) {
         if (signal.aborted) {
@@ -337,8 +349,12 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
       }
 
       try {
+        const headers: Record<string, string> = {};
+        if (!isLocal && apiKey) {
+          headers.Authorization = `Bearer ${apiKey}`;
+        }
         const resp = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
+          headers,
           signal: controller.signal,
         });
         return resp.ok;

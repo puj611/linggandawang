@@ -22,6 +22,7 @@ import type { Answer } from '@/types/state';
 import type { ContextRecentQA } from '@/types/context';
 
 const TIMEOUT_MS = 8000;
+const LOCAL_TIMEOUT_MS = 20000; // Phase B：本地模型追问超时 20 秒
 
 /** 触发决策（评估通过后返回，调用方据此调 LLM 生成 Question） */
 export interface FollowupDecision {
@@ -201,9 +202,13 @@ export async function generateFollowupQuestion(
   const adapter = getAdapter(config.provider);
   const messages = buildFollowupMessages(decision.promptInput);
 
+  // Phase B：本地模型用更长超时
+  const isLocal = config.provider === 'local';
+  const timeoutMs = isLocal ? LOCAL_TIMEOUT_MS : TIMEOUT_MS;
+
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     const response: LLMResponse = await adapter.chat(
       {

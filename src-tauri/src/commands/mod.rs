@@ -6,6 +6,7 @@ pub mod context;
 pub mod image;
 pub mod project;
 pub mod requirement;
+pub mod sidecar;
 pub mod window;
 
 use std::path::PathBuf;

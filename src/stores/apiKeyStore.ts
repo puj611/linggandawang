@@ -59,13 +59,15 @@ export const useApiKeyStore = create<ApiKeyState>((set, get) => ({
 
       let hasApiKey = false;
       if (config) {
-        if (isTauri()) {
+        // 本地模型不需要 API Key
+        if (config.provider === 'local') {
+          hasApiKey = true;
+        } else if (isTauri()) {
           const key = await invoke<string | null>('load_api_key', {
             provider: config.provider,
           });
           hasApiKey = !!key;
         } else {
-          // P1-3 安全：浏览器降级从 sessionStorage 读取，关闭浏览器即清除
           hasApiKey = !!sessionStorage.getItem(SS_APIKEY_PREFIX + config.provider);
         }
       }
@@ -124,14 +126,15 @@ export const useApiKeyStore = create<ApiKeyState>((set, get) => ({
 
     set({ testing: true, testResult: 'idle' });
     try {
-      const apiKey = await get().getApiKey();
-      if (!apiKey) {
+      // 本地模型不需要 API Key
+      const apiKey = config.provider === 'local' ? '' : await get().getApiKey();
+      if (config.provider !== 'local' && !apiKey) {
         set({ testing: false, testResult: 'fail' });
         return false;
       }
 
       const adapter = getAdapter(config.provider);
-      const ok = await adapter.testConnection(apiKey, config.baseUrl);
+      const ok = await adapter.testConnection(apiKey || '', config.baseUrl);
       set({ testing: false, testResult: ok ? 'success' : 'fail' });
       return ok;
     } catch {

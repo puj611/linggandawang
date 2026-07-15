@@ -31,7 +31,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.deepseek.com https://api.openai.com https://dashscope.aliyuncs.com http://localhost:11434 http://127.0.0.1:11434; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.deepseek.com https://api.openai.com https://dashscope.aliyuncs.com http://localhost:11434 http://127.0.0.1:11434 http://localhost:8080 http://127.0.0.1:8080; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'self'",
       "freezePrototype": true
     }
   },

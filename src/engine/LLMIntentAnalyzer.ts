@@ -62,6 +62,9 @@ export function analysisToIntentTags(
 
 const DEFAULT_TIMEOUT_MS = 8000; // full 模式 LLM 分析超时 8 秒
 const QUICK_TIMEOUT_MS = 4000; // quick 模式 LLM 分析超时 4 秒（P3 快速通道：更快降级到规则路由）
+// Phase B：本地模型推理较慢，超时时间更长
+const LOCAL_DEFAULT_TIMEOUT_MS = 30000; // 本地模型 full 模式 30 秒
+const LOCAL_QUICK_TIMEOUT_MS = 15000; // 本地模型 quick 模式 15 秒
 
 /**
  * 分析用户意图
@@ -92,8 +95,11 @@ export async function analyzeIntent(
   const adapter = getAdapter(config.provider);
   const messages = buildIntentAnalysisMessages(seed, projectStack, recentQA);
 
-  // P3 快速通道：quick 模式用更短超时
-  const timeoutMs = mode === 'quick' ? QUICK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+  // Phase B：本地模型用更长超时，云端保持原有超时
+  const isLocal = config.provider === 'local';
+  const timeoutMs = mode === 'quick'
+    ? (isLocal ? LOCAL_QUICK_TIMEOUT_MS : QUICK_TIMEOUT_MS)
+    : (isLocal ? LOCAL_DEFAULT_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
 
   try {
     const controller = new AbortController();

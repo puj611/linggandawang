@@ -29,3 +29,6 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 keyring = "3"
 # P1-3 修复：pick_project_folder 改为 async，用 tokio::sync::oneshot 等待异步回调
 tokio = { version = "1", features = ["sync"] }
+# Phase B: 本地 SLM sidecar 管理
+reqwest = { version = "0.12", features = ["json"] }
+which = "7"

@@ -2,7 +2,7 @@
 // 统一所有 LLM 服务商的接口格式
 
 /** LLM 服务商标识 */
-export type LLMProvider = 'openai' | 'deepseek' | 'tongyi' | 'custom';
+export type LLMProvider = 'openai' | 'deepseek' | 'tongyi' | 'custom' | 'local';
 
 /** 聊天消息角色 */
 export type ChatRole = 'system' | 'user' | 'assistant';
@@ -128,6 +128,14 @@ export const PROVIDER_PRESETS: ProviderConfig[] = [
     defaultModel: '',
     models: [],
     description: '兼容 OpenAI 格式的任意 API',
+  },
+  {
+    provider: 'local',
+    label: '本地模型',
+    baseUrl: 'http://127.0.0.1:11434/v1',
+    defaultModel: 'local',
+    models: ['local'],
+    description: 'llama.cpp 本地推理，零成本、离线可用、隐私安全',
   },
 ];
 

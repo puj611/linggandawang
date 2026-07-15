@@ -13,7 +13,9 @@ use commands::project;
 use commands::window;
 use commands::image;
 use commands::requirement;
+use commands::sidecar;
 use commands::project::ProjectScanState;
+use commands::sidecar::LocalLLMState;
 
 use std::sync::Mutex;
 
@@ -90,8 +92,14 @@ pub fn run() {
             // Requirement commands
             requirement::load_requirements,
             requirement::save_requirements,
+            // Local LLM sidecar commands
+            sidecar::start_local_llm,
+            sidecar::stop_local_llm,
+            sidecar::check_local_llm_health,
+            sidecar::get_local_llm_status,
         ])
         .manage(ProjectScanState(Mutex::new(None)))
+        .manage(LocalLLMState::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
