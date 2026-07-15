@@ -50,6 +50,12 @@ fn sqlite_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0004_add_favorite_to_prompt_history.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "create_vector_store",
+            sql: include_str!("../migrations/0005_create_vector_store.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

@@ -2,8 +2,10 @@
 // RAG-Lite 向量存储：本地嵌入 + 余弦相似度检索
 // 使用 @xenova/transformers 的 all-MiniLM-L6-v2 模型（~90MB，CPU 可跑）
 // 用途：将用户历史答案向量化，提问时检索 Top-K 相似历史增强上下文
+// Phase C：持久化升级为 SQLite（Tauri）/ localStorage（浏览器降级）
 
 import type { ContextRecentQA } from '@/types/context';
+import { isTauri } from '@/lib/env';
 
 // 嵌入维度（all-MiniLM-L6-v2 输出 384 维）
 const EMBEDDING_DIM = 384;
@@ -191,33 +193,77 @@ export function getVectorStoreStats(): {
 }
 
 /**
- * 持久化向量存储到 localStorage（仅元数据，不含向量）
+ * 持久化向量存储到 SQLite（Tauri）或 localStorage（浏览器降级）
+ * 仅存储元数据，不含向量（向量在恢复时重新生成）
  */
-export function persistVectorStore(): void {
+export async function persistVectorStore(): Promise<void> {
   try {
     const data = vectorStore.map((e) => ({
       id: e.id,
       text: e.text,
       metadata: e.metadata,
     }));
-    localStorage.setItem('linggan_vector_store', JSON.stringify(data));
+
+    if (isTauri()) {
+      // SQLite 持久化
+      const { executeSql } = await import('@/lib/sqlite');
+      // 创建表（如果不存在）
+      await executeSql(`
+        CREATE TABLE IF NOT EXISTS vector_store (
+          id TEXT PRIMARY KEY,
+          text TEXT NOT NULL,
+          metadata_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      `);
+      // 清空旧数据并插入新数据
+      await executeSql('DELETE FROM vector_store');
+      for (const item of data) {
+        await executeSql(
+          'INSERT INTO vector_store (id, text, metadata_json, created_at) VALUES ($1, $2, $3, $4)',
+          [item.id, item.text, JSON.stringify(item.metadata), new Date().toISOString()]
+        );
+      }
+    } else {
+      // 浏览器降级：localStorage
+      localStorage.setItem('linggan_vector_store', JSON.stringify(data));
+    }
   } catch (e) {
     console.warn('[vectorStore] persist 失败', e);
   }
 }
 
 /**
- * 从 localStorage 恢复向量存储（需要重新嵌入）
+ * 从 SQLite（Tauri）或 localStorage（浏览器降级）恢复向量存储
+ * 需要重新嵌入文本生成向量
  */
 export async function restoreVectorStore(): Promise<void> {
   try {
-    const raw = localStorage.getItem('linggan_vector_store');
-    if (!raw) return;
-    const data = JSON.parse(raw) as Array<{
-      id: string;
-      text: string;
-      metadata: VectorEntry['metadata'];
-    }>;
+    let data: Array<{ id: string; text: string; metadata: VectorEntry['metadata'] }> = [];
+
+    if (isTauri()) {
+      // SQLite 恢复
+      const { getDb } = await import('@/lib/sqlite');
+      const db = await getDb();
+      if (db) {
+        const rows = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<Array<{ id: string; text: string; metadata_json: string }>>(
+          'SELECT id, text, metadata_json FROM vector_store ORDER BY created_at'
+        );
+        data = rows.map((r: { id: string; text: string; metadata_json: string }) => ({
+          id: r.id,
+          text: r.text,
+          metadata: JSON.parse(r.metadata_json),
+        }));
+      }
+    } else {
+      // 浏览器降级：localStorage
+      const raw = localStorage.getItem('linggan_vector_store');
+      if (raw) {
+        data = JSON.parse(raw);
+      }
+    }
+
+    if (data.length === 0) return;
 
     // 重新嵌入（模型已缓存时很快）
     for (const item of data) {

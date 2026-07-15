@@ -12,6 +12,7 @@ import { ClusterAnalyticsPanel } from './ClusterAnalyticsPanel';
 import { LLMConfigSection } from './LLMConfigSection';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { setPreference } from '@/lib/sqlite';
+import { useVectorStore } from '@/hooks/useVectorStore';
 
 type TabKey = 'general' | 'analytics';
 
@@ -265,8 +266,9 @@ function GeneralSettings({
           </button>
           {/* 折叠内容 */}
           {llmExpanded && (
-            <div className="mt-3">
+            <div className="mt-3 space-y-3">
               <LLMConfigSection />
+              <RAGStatusSection />
             </div>
           )}
         </div>
@@ -365,5 +367,50 @@ function GeneralSettings({
         </div>
       </div>
     </>
+  );
+}
+
+// RAG 向量检索状态组件
+function RAGStatusSection() {
+  const { ready, loading, size, error, reindex } = useVectorStore();
+
+  return (
+    <div className="pt-3 border-t border-border">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-text-secondary">向量检索（RAG）</span>
+          <span className={`px-1.5 py-0.5 text-[9px] rounded ${
+            ready ? 'bg-semantic-success/10 text-semantic-success' : 'bg-surface-3 text-text-tertiary'
+          }`}>
+            {ready ? '就绪' : loading ? '加载中' : '未就绪'}
+          </span>
+        </div>
+      </div>
+
+      <div className="text-[10px] text-text-tertiary mb-2">
+        {size > 0 ? (
+          <span>已索引 {size} 条历史 QA，用于智能上下文增强</span>
+        ) : (
+          <span>暂无历史数据，回答问题后自动建立向量索引</span>
+        )}
+      </div>
+
+      {error && (
+        <div className="text-[9px] text-semantic-error mb-2">{error}</div>
+      )}
+
+      <button
+        onClick={reindex}
+        disabled={loading}
+        className="w-full px-3 py-1.5 text-xs rounded-btn border border-border text-text-primary hover:bg-surface-2 transition-colors disabled:opacity-50"
+      >
+        {loading ? '重建中…' : '重建索引'}
+      </button>
+
+      <div className="text-[9px] text-text-tertiary mt-2 leading-relaxed">
+        RAG 会将历史问答向量化存储，提问时自动检索相似历史增强上下文连续性。
+        本地嵌入模型（all-MiniLM-L6-v2，~90MB）首次加载需下载。
+      </div>
+    </div>
   );
 }

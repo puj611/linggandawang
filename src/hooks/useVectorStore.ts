@@ -73,6 +73,8 @@ export function useVectorStore(): UseVectorStoreReturn {
         await indexQABatch(recentQA);
         const stats = getVectorStoreStats();
         setSize(stats.size);
+        // 增量索引后持久化
+        await persistVectorStore();
       } catch (e) {
         console.warn('[useVectorStore] 增量索引失败', e);
       }
@@ -106,8 +108,8 @@ export function useVectorStore(): UseVectorStoreReturn {
       }
       const stats = getVectorStoreStats();
       setSize(stats.size);
-      // 持久化
-      persistVectorStore();
+      // 持久化（异步）
+      await persistVectorStore();
     } catch (e) {
       console.warn('[useVectorStore] 重新索引失败', e);
     } finally {
