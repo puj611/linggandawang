@@ -85,3 +85,64 @@ export const EMPTY_FINGERPRINT: ProjectFingerprint = {
     root_layout: [],
   },
 };
+
+// ─── M10: 项目深度扫描类型 ──────────────────────────────────
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  ext?: string;
+}
+
+export interface FileTree {
+  root: string;
+  total_files: number;
+  total_dirs: number;
+  total_size: number;
+  entries: FileEntry[];
+  by_extension: Record<string, number>;
+}
+
+export interface GitFileChange {
+  status: string;
+  path: string;
+}
+
+export interface GitCommit {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+export interface GitStatus {
+  is_repo: boolean;
+  branch?: string;
+  changed_files: GitFileChange[];
+  recent_commits: GitCommit[];
+}
+
+export interface DependencyGraph {
+  dependencies: Record<string, string>;
+  dev_dependencies: Record<string, string>;
+  scripts: Record<string, string>;
+  tsconfig_paths?: Record<string, string>;
+  lock_file?: string;
+}
+
+export interface TodoItem {
+  file: string;
+  line: number;
+  tag: string;
+  content: string;
+}
+
+export interface FullScanResult {
+  file_tree: FileTree;
+  git: GitStatus;
+  dependencies: DependencyGraph;
+  todos: TodoItem[];
+  scan_time_ms: number;
+}

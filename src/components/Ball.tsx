@@ -1,7 +1,7 @@
 // src/components/Ball.tsx
 // 收起态：悬浮球
 // 右键菜单（P1.5 其他改进）：暂停驻留 / 设置 / 退出
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useDrag } from '@/hooks/useDrag';
 import { useHotkey, useEscKey } from '@/hooks/useHotkey';
@@ -27,6 +27,11 @@ export function Ball() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<MenuPos>({ x: 0, y: 0 });
 
+  // 拖动检测：记录 pointerdown 位置，pointerup 时判断是否发生了拖动
+  const didDragRef = useRef(false);
+  const pointerStartRef = useRef({ x: 0, y: 0 });
+  const DRAG_THRESHOLD = 4; // 超过 4px 视为拖动
+
   // 暂停驻留 = 切换窗口置顶（alwaysOnTop）
   const alwaysOnTop = useWindowStore((s) => s.alwaysOnTop);
   const toggleAlwaysOnTop = useWindowStore((s) => s.toggleAlwaysOnTop);
@@ -41,7 +46,31 @@ export function Ball() {
       setMenuOpen(false);
       return;
     }
+    // 如果发生了拖动，不触发点击展开
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
     toggleExpand();
+  };
+
+  const onBallPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    didDragRef.current = false;
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const onBallPointerMove = (e: React.PointerEvent) => {
+    if (!pointerStartRef.current) return;
+    const dx = Math.abs(e.clientX - pointerStartRef.current.x);
+    const dy = Math.abs(e.clientY - pointerStartRef.current.y);
+    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+      didDragRef.current = true;
+    }
+  };
+
+  const onBallPointerUp = () => {
+    pointerStartRef.current = { x: 0, y: 0 };
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -100,6 +129,9 @@ export function Ball() {
         {...dragProps}
         onClick={onClick}
         onContextMenu={onContextMenu}
+        onPointerDown={onBallPointerDown}
+        onPointerMove={onBallPointerMove}
+        onPointerUp={onBallPointerUp}
         className={`fixed group z-[9999] rounded-full flex items-center justify-center select-none ${
           dragging ? '' : 'transition-all duration-200 hover:scale-110'
         }`}

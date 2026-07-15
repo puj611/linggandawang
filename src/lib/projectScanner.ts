@@ -2,7 +2,7 @@
 // 项目扫描前端层：Tauri 环境走 invoke，Web dev 环境内置自身扫描用于演示
 import { isTauri } from '@/lib/env';
 import { analyzeFingerprint, type ScanInput } from '@/lib/tech-rules';
-import type { ProjectFingerprint } from '@/types/project';
+import type { ProjectFingerprint, FullScanResult } from '@/types/project';
 
 // Tauri 侧待实现的命令名
 const CMD_PICK_FOLDER = 'pick_project_folder';
@@ -60,6 +60,27 @@ export async function scanProject(path: string): Promise<ProjectFingerprint> {
     }
   }
   return scanMock(path);
+}
+
+// ─── M10: 项目深度扫描 ────────────────────────────────────────
+
+const CMD_FULL_SCAN = 'full_scan_project';
+
+/**
+ * 深度扫描项目：文件结构 + Git 状态 + 依赖图 + TODO/FIXME
+ * Tauri 环境通过 Rust 命令执行；Web 环境返回 null。
+ */
+export async function fullScanProject(path: string, maxDepth?: number): Promise<FullScanResult | null> {
+  const invoke = await getInvoke();
+  if (!invoke) return null;
+  try {
+    const args: Record<string, unknown> = { path };
+    if (maxDepth !== undefined) args.maxDepth = maxDepth;
+    return await invoke<FullScanResult>(CMD_FULL_SCAN, args);
+  } catch (e) {
+    console.warn('[projectScanner] full_scan_project 失败：', e);
+    return null;
+  }
 }
 
 // ─── Web dev 内置扫描（仅用于浏览器演示，扫描灵感大王自身）───────────────

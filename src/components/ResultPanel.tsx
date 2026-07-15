@@ -39,12 +39,16 @@ export function ResultPanel() {
         style={{ zIndex: 9999 }}
       >
         <div
-          className="window-panel p-6 text-text-secondary flex items-center justify-center"
+          className="window-panel p-6 text-text-secondary flex flex-col items-center justify-center gap-3"
           style={{ width: `${width}px`, minHeight: '200px' }}
         >
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">生成中…</span>
+          <div className="relative">
+            <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+            <div className="absolute inset-0 w-8 h-8 border border-brand/30 rounded-full animate-pulse-soft" />
+          </div>
+          <div className="text-center">
+            <p className="text-text-primary text-sm font-medium">正在生成提示词</p>
+            <p className="text-xs text-text-tertiary mt-1">灵感大王正在组织你的意图标签和规格...</p>
           </div>
         </div>
       </div>

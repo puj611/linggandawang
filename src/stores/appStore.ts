@@ -19,8 +19,7 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
-  // 大赛审核场景：打开链接后默认居中展开，避免右下角悬浮球被忽略
-  state: 'expanded',
+  state: 'ball',
   settingsOpen: false,
   skipConfirmOpen: false,
   transition: (next) => set({ state: next }),

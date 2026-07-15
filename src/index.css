@@ -193,4 +193,28 @@ textarea::placeholder {
   .text-balance {
     text-wrap: balance;
   }
+  .animate-fade-in {
+    animation: fadeIn 200ms var(--ease-out) forwards;
+  }
+  .animate-slide-up {
+    animation: slideUp 250ms var(--ease-out) forwards;
+  }
+  .animate-pulse-soft {
+    animation: pulseSoft 2s var(--ease-in-out) infinite;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }

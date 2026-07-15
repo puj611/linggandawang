@@ -10,6 +10,8 @@ import {
   PM_LABELS,
   PROJECT_TYPE_LABELS,
 } from '@/lib/tech-rules';
+import { ProjectScanDashboard } from './ProjectScanDashboard';
+import { RequirementSyncPanel } from './RequirementSyncPanel';
 
 interface Props {
   onClose: () => void;
@@ -25,6 +27,8 @@ export function ProjectPanel({ onClose }: Props) {
   const clearProject = useProjectStore((s) => s.clear);
 
   const [confirmUnbind, setConfirmUnbind] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [showRequirementSync, setShowRequirementSync] = useState(false);
 
   // ESC 关闭
   useEffect(() => {
@@ -255,6 +259,20 @@ export function ProjectPanel({ onClose }: Props) {
               演示扫描
             </button>
             <button
+              onClick={() => setShowDashboard(true)}
+              className="px-2.5 py-1 text-[10px] rounded-btn border border-border text-text-secondary hover:text-text-primary hover:bg-bg-card-hover transition-colors"
+              title="查看深度扫描结果"
+            >
+              仪表盘
+            </button>
+            <button
+              onClick={() => setShowRequirementSync(true)}
+              className="px-2.5 py-1 text-[10px] rounded-btn border border-border text-text-secondary hover:text-text-primary hover:bg-bg-card-hover transition-colors"
+              title="需求同步器 - 拆解需求为子任务"
+            >
+              📋 需求
+            </button>
+            <button
               onClick={handleRescan}
               disabled={scanning}
               className="px-2.5 py-1 text-[10px] rounded-btn bg-brand hover:bg-brand-hover text-white transition-colors disabled:opacity-50"
@@ -264,6 +282,8 @@ export function ProjectPanel({ onClose }: Props) {
           </div>
         </div>
       </div>
+      {showDashboard && <ProjectScanDashboard onClose={() => setShowDashboard(false)} />}
+      {showRequirementSync && <RequirementSyncPanel onClose={() => setShowRequirementSync(false)} />}
     </div>
   );
 }

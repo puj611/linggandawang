@@ -1,3 +1,5 @@
+mod scanner;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -32,6 +34,36 @@ fn user_bank_path(app: &tauri::AppHandle) -> PathBuf {
 
 fn window_position_path(app: &tauri::AppHandle) -> PathBuf {
     app_config_dir(app).join("window-position.json")
+}
+
+// =============== requirements.json ===============
+
+fn requirements_path(app: &tauri::AppHandle) -> PathBuf {
+    app_config_dir(app).join("requirements.json")
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RequirementsPayload {
+    pub requirements: Vec<serde_json::Value>,
+}
+
+#[tauri::command]
+fn load_requirements(app: tauri::AppHandle) -> Result<RequirementsPayload, String> {
+    let path = requirements_path(&app);
+    if !path.exists() {
+        return Ok(RequirementsPayload { requirements: Vec::new() });
+    }
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let payload: RequirementsPayload = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    Ok(payload)
+}
+
+#[tauri::command]
+fn save_requirements(app: tauri::AppHandle, requirements: Vec<serde_json::Value>) -> Result<(), String> {
+    let path = requirements_path(&app);
+    let payload = RequirementsPayload { requirements };
+    let content = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
+    fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 fn archive_dir(app: &tauri::AppHandle) -> PathBuf {
@@ -738,6 +770,81 @@ fn scan_project(
     })
 }
 
+// =============== M10: 项目深度扫描 ===============
+
+#[tauri::command]
+fn full_scan_project(
+    path: String,
+    max_depth: Option<usize>,
+    state: tauri::State<'_, ProjectScanState>,
+) -> Result<scanner::FullScanResult, String> {
+    // P1 安全修复：复用 scan_project 的白名单校验
+    let allowed = state
+        .0
+        .lock()
+        .map(|guard| guard.as_ref().map(|s| s.to_string()))
+        .ok()
+        .flatten();
+
+    match allowed {
+        Some(allowed_path) => {
+            let req_canonical = PathBuf::from(&path)
+                .canonicalize()
+                .map_err(|e| format!("路径解析失败: {}", e))?;
+            let allowed_canonical = PathBuf::from(&allowed_path)
+                .canonicalize()
+                .map_err(|e| format!("已选路径解析失败: {}", e))?;
+            if req_canonical != allowed_canonical {
+                return Err("无权限扫描此目录（请先通过文件夹选择器选择目录）".to_string());
+            }
+        }
+        None => {
+            return Err("请先通过文件夹选择器选择要扫描的项目目录".to_string());
+        }
+    }
+
+    let root = PathBuf::from(&path);
+    if !root.exists() {
+        return Err(format!("路径不存在: {}", path));
+    }
+    if !root.is_dir() {
+        return Err(format!("不是目录: {}", path));
+    }
+
+    let depth = max_depth.unwrap_or(6);
+    Ok(scanner::full_scan(&root, depth))
+}
+
+#[tauri::command]
+fn scan_file_tree_cmd(
+    path: String,
+    max_depth: Option<usize>,
+) -> Result<scanner::FileTree, String> {
+    let root = PathBuf::from(&path);
+    if !root.exists() || !root.is_dir() {
+        return Err(format!("无效目录: {}", path));
+    }
+    Ok(scanner::scan_file_tree(&root, max_depth.unwrap_or(6)))
+}
+
+#[tauri::command]
+fn git_status_cmd(path: String) -> Result<scanner::GitStatus, String> {
+    let root = PathBuf::from(&path);
+    if !root.exists() || !root.is_dir() {
+        return Err(format!("无效目录: {}", path));
+    }
+    Ok(scanner::parse_git_status(&root))
+}
+
+#[tauri::command]
+fn analyze_deps_cmd(path: String) -> Result<scanner::DependencyGraph, String> {
+    let root = PathBuf::from(&path);
+    if !root.exists() || !root.is_dir() {
+        return Err(format!("无效目录: {}", path));
+    }
+    Ok(scanner::analyze_dependencies(&root))
+}
+
 fn sqlite_migrations() -> Vec<Migration> {
     vec![
         Migration {
@@ -791,9 +898,15 @@ pub fn run() {
             load_user_preference,
             pick_project_folder,
             scan_project,
+            full_scan_project,
+            scan_file_tree_cmd,
+            git_status_cmd,
+            analyze_deps_cmd,
             save_api_key,
             load_api_key,
             delete_api_key,
+            load_requirements,
+            save_requirements,
         ])
         .manage(ProjectScanState(Mutex::new(None)))
         .setup(|app| {

@@ -1,12 +1,12 @@
-# 灵感大王问题库 v1.1
+# 灵感大王问题库 v1.2
 # 覆盖场景：前端 UI（D3 决策：窄而深）
-# 分布：perceive 6 / name 7 / spec 8 / execute 5 / verify 5 = 31 条
+# 分布：perceive 9 / name 10 / spec 12 / execute 7 / verify 7 = 45 条
 # 维护人：寇豆码（PM 许清楚 W1 末交付前先填一版）
 # Schema 见 src/question-bank/schema.json
 schema_version: "1.0"
 bank_id: "frontend-ui-v1"
 scene: "frontend-ui"
-total_questions: 31
+total_questions: 45
 
 stages:
   - id: perceive
@@ -955,3 +955,349 @@ questions:
     intent_extraction: {}
     required: false
     quick_mode: true
+
+  # ───────── perceive 6→9 条：新增 accessibility/动画/性能感知 ─────────
+  - id: "p-007"
+    stage: perceive
+    order: 7
+    text: "有没有无障碍方面的需求？"
+    why: "无障碍适配（屏幕阅读器/键盘导航/色彩对比）会显著影响实现方案"
+    type: "single-choice"
+    options:
+      - label: "不需要，普通用户用就行"
+        value: "none"
+        tags: ["无障碍: 无"]
+      - label: "需要基本的键盘导航支持"
+        value: "keyboard"
+        tags: ["无障碍: 键盘导航"]
+      - label: "需要完整的 WCAG 合规"
+        value: "wcag"
+        tags: ["无障碍: WCAG"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "p-008"
+    stage: perceive
+    order: 8
+    text: "对页面加载速度有什么期望？"
+    why: "性能预期影响技术选型（懒加载/虚拟滚动/图片优化），避免过度设计"
+    type: "single-choice"
+    options:
+      - label: "能用就行，速度不敏感"
+        value: "normal"
+        tags: ["性能: 普通"]
+      - label: "希望首屏加载快一点"
+        value: "fast"
+        tags: ["性能: 快速"]
+      - label: "要极致性能（骨架屏/懒加载/虚拟滚动）"
+        value: "极致"
+        tags: ["性能: 极致"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "p-009"
+    stage: perceive
+    order: 9
+    text: "这次改动有没有时间压力？"
+    why: "时间约束影响方案复杂度，紧急需求优先简单方案"
+    type: "single-choice"
+    options:
+      - label: "不急，可以慢慢打磨"
+        value: "relaxed"
+        tags: ["时间: 宽裕"]
+      - label: "一般，正常节奏"
+        value: "normal"
+        tags: ["时间: 正常"]
+      - label: "很急，要尽快上线"
+        value: "urgent"
+        tags: ["时间: 紧急"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── name 7→10 条：新增动效/图标/加载态命名 ─────────
+  - id: "n-008"
+    stage: name
+    order: 8
+    text: '"加载慢"具体是哪种慢？'
+    why: "加载慢可能是首屏/切换/数据请求不同原因，定位后才能给对应优化方案"
+    type: "single-choice"
+    options:
+      - label: "首次打开白屏时间长"
+        value: "first-paint"
+        tags: ["维度: 首屏慢"]
+      - label: "页面切换/跳转卡顿"
+        value: "navigation"
+        tags: ["维度: 导航卡顿"]
+      - label: "列表/表格数据加载慢"
+        value: "data-loading"
+        tags: ["维度: 数据加载慢"]
+      - label: "图片/资源加载慢"
+        value: "asset-loading"
+        tags: ["维度: 资源加载慢"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["痛点: 加载慢"]
+    trigger_clusters: ["慢", "卡", "等待", "白屏"]
+    jumps: []
+    intent_extraction: {}
+    required: true
+
+  - id: "n-009"
+    stage: name
+    order: 9
+    text: '"图标/图标"哪里不对？'
+    why: "图标问题可能是风格/大小/粗细/颜色，定位后才能统一规范"
+    type: "single-choice"
+    options:
+      - label: "图标风格不统一（有的线性有的面性）"
+        value: "style-inconsistent"
+        tags: ["维度: 图标风格不统一"]
+      - label: "图标太小/太大，比例失调"
+        value: "size"
+        tags: ["维度: 图标尺寸"]
+      - label: "图标线条太粗/太细"
+        value: "stroke"
+        tags: ["维度: 图标线条粗细"]
+      - label: "图标颜色和整体不搭"
+        value: "color"
+        tags: ["维度: 图标配色"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: ["痛点: 图标问题"]
+    trigger_clusters: ["图标", "icon", "符号"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "n-010"
+    stage: name
+    order: 10
+    text: '"空状态/加载态"想改成什么样？'
+    why: "空状态和加载态是体验细节，明确类型才能给对应实现方案"
+    type: "single-choice"
+    options:
+      - label: "加个加载骨架屏（占位动画）"
+        value: "skeleton"
+        tags: ["维度: 骨架屏"]
+      - label: "加个空状态插画+引导文案"
+        value: "empty-illustration"
+        tags: ["维度: 空状态插画"]
+      - label: "加个进度条/旋转指示器"
+        value: "progress"
+        tags: ["维度: 进度指示"]
+      - label: "加个错误提示+重试按钮"
+        value: "error-retry"
+        tags: ["维度: 错误重试"]
+    allow_custom: true
+    placeholder: "或者描述你想要的感觉..."
+    trigger_tags: ["目标: 空状态", "目标: 加载态"]
+    trigger_clusters: ["加载", "空", "白屏", "等待"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── spec 8→12 条：新增动画/图标/响应式/字号规格 ─────────
+  - id: "s-009"
+    stage: spec
+    order: 9
+    text: "动画速度偏好哪种？"
+    why: "动画时长影响感知流畅度，太快/太慢都会影响体验"
+    type: "single-choice"
+    options:
+      - label: "快速干脆（150ms，适合微交互）"
+        value: "fast"
+        tags: ["动画: 150ms", "缓动: ease-out"]
+      - label: "标准舒适（250-300ms，推荐）"
+        value: "standard"
+        tags: ["动画: 250ms", "缓动: ease-in-out"]
+      - label: "缓慢优雅（400ms+，适合大面积过渡）"
+        value: "slow"
+        tags: ["动画: 400ms", "缓动: ease"]
+    allow_custom: true
+    placeholder: "或者说个感觉..."
+    trigger_tags: ["维度: 进出动效", "维度: 状态过渡"]
+    trigger_clusters: ["动效", "动画", "过渡", "流畅"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "s-010"
+    stage: spec
+    order: 10
+    text: "图标用什么风格？"
+    why: "图标风格是视觉一致性的重要组成部分"
+    type: "single-choice"
+    options:
+      - label: "线性图标（像 Linear/Vercel，简洁）"
+        value: "outline"
+        tags: ["图标: 线性"]
+      - label: "面性图标（像 Notion，稳重）"
+        value: "filled"
+        tags: ["图标: 面性"]
+      - label: "双色图标（像 Figma，有层次感）"
+        value: "duotone"
+        tags: ["图标: 双色"]
+      - label: "和现有图标保持一致就行"
+        value: "existing"
+        tags: ["图标: 保持现有"]
+    allow_custom: true
+    placeholder: "或者说个参考产品..."
+    trigger_tags: ["维度: 图标风格不统一"]
+    trigger_clusters: ["图标", "icon"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "s-011"
+    stage: spec
+    order: 11
+    text: "正文字号偏好多大？"
+    why: "正文字号直接影响阅读舒适度，12/14/16px 对应不同信息密度"
+    type: "single-choice"
+    options:
+      - label: "小号（12px，信息密度高，适合后台）"
+        value: "12"
+        tags: ["正文字号: 12px"]
+      - label: "标准（14px，大多数网站，推荐）"
+        value: "14"
+        tags: ["正文字号: 14px"]
+      - label: "大号（16px，阅读舒适，适合博客）"
+        value: "16"
+        tags: ["正文字号: 16px"]
+    allow_custom: true
+    placeholder: "或者说个感觉..."
+    trigger_tags: ["维度: 字号层级缺失", "维度: 字号过小"]
+    trigger_clusters: ["字", "字号", "字体", "大小"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "s-012"
+    stage: spec
+    order: 12
+    text: "行高偏好多大？"
+    why: "行高影响阅读节奏，紧凑/标准/宽松对应不同阅读场景"
+    type: "single-choice"
+    options:
+      - label: "紧凑（1.4，信息密度高）"
+        value: "1.4"
+        tags: ["行高: 1.4"]
+      - label: "标准（1.6，阅读舒适，推荐）"
+        value: "1.6"
+        tags: ["行高: 1.6"]
+      - label: "宽松（1.8，大量留白，高级感）"
+        value: "1.8"
+        tags: ["行高: 1.8"]
+    allow_custom: true
+    placeholder: "或者说个感觉..."
+    trigger_tags: ["维度: 留白不足"]
+    trigger_clusters: ["行高", "行距", "阅读"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── execute 5→7 条：新增测试/部署执行 ─────────
+  - id: "e-006"
+    stage: execute
+    order: 6
+    text: "改动后需要跑测试吗？"
+    why: "是否需要测试影响代码组织方式和改动范围"
+    type: "single-choice"
+    options:
+      - label: "不用，改完直接看效果"
+        value: "none"
+        tags: ["测试: 无"]
+      - label: "跑一下现有测试别挂就行"
+        value: "existing"
+        tags: ["测试: 现有回归"]
+      - label: "需要补充新测试用例"
+        value: "new-tests"
+        tags: ["测试: 新增用例"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "e-007"
+    stage: execute
+    order: 7
+    text: "改动后需要部署到测试环境吗？"
+    why: "部署需求影响改动的完整性和提交规范"
+    type: "single-choice"
+    options:
+      - label: "不用，本地看效果就行"
+        value: "local"
+        tags: ["部署: 本地"]
+      - label: "需要部署到测试环境验证"
+        value: "staging"
+        tags: ["部署: 测试环境"]
+      - label: "直接部署到生产环境"
+        value: "production"
+        tags: ["部署: 生产"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: []
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── verify 5→7 条：新增性能/无障碍验证 ─────────
+  - id: "v-006"
+    stage: verify
+    order: 6
+    text: "性能方面要验证到什么程度？"
+    why: "性能验证标准影响实现方案的优化深度"
+    type: "single-choice"
+    options:
+      - label: "不用验证性能"
+        value: "none"
+        tags: ["性能验证: 无"]
+      - label: "确保没有明显卡顿就行"
+        value: "basic"
+        tags: ["性能验证: 基本"]
+      - label: "需要跑 Lighthouse 性能评分"
+        value: "lighthouse"
+        tags: ["性能验证: Lighthouse"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["性能: 快速", "性能: 极致"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "v-007"
+    stage: verify
+    order: 7
+    text: "无障碍方面要验证到什么程度？"
+    why: "无障碍验证标准影响实现方案的合规深度"
+    type: "single-choice"
+    options:
+      - label: "不用验证无障碍"
+        value: "none"
+        tags: ["无障碍验证: 无"]
+      - label: "确保键盘能正常操作"
+        value: "keyboard"
+        tags: ["无障碍验证: 键盘"]
+      - label: "需要完整的 WCAG 合规检查"
+        value: "wcag"
+        tags: ["无障碍验证: WCAG"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["无障碍: 键盘导航", "无障碍: WCAG"]
+    jumps: []
+    intent_extraction: {}
+    required: false

@@ -33,12 +33,16 @@ export function QuestionPanel() {
         style={{ zIndex: 9999 }}
       >
         <div
-          className="window-panel p-6 text-center text-text-secondary text-sm flex items-center justify-center"
+          className="window-panel p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center gap-3"
           style={{ width: `${width}px`, minHeight: '200px' }}
         >
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-            <span>已完成所有阶段，正在生成提示词…</span>
+          <div className="relative">
+            <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+            <div className="absolute inset-0 w-8 h-8 border border-brand/30 rounded-full animate-pulse-soft" />
+          </div>
+          <div>
+            <p className="text-text-primary text-sm font-medium">正在生成提示词</p>
+            <p className="text-xs text-text-tertiary mt-1">灵感大王正在整理你的意图标签...</p>
           </div>
         </div>
       </div>

@@ -2,6 +2,79 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.3.0] - 2026-07-15 - M11 需求同步器
+
+### 新功能（需求同步器）
+- **RequirementSyncer 核心引擎**（`src/engine/RequirementSyncer.ts`）：LLM + 规则双模式需求拆解，支持降级
+- **LLM 需求拆解 prompt**（`src/engine/prompts/requirement-decompose.ts`）：结构化 JSON 输出，含子任务类型/优先级/依赖/提示词建议
+- **需求持久化**（`src/stores/requirementStore.ts`）：Zustand store + Tauri JSON / localStorage 双存储
+- **Rust 后端命令**（`src-tauri/src/lib.rs`）：`load_requirements` / `save_requirements` 持久化到 `~/.linggandawang/requirements.json`
+- **需求同步面板 UI**（`src/components/RequirementSyncPanel.tsx`）：输入需求→LLM拆解→子任务列表→状态管理→进度追踪→聚焦提示词生成
+- **ProjectPanel 集成**：项目面板新增「📋 需求」按钮入口
+
+### 子任务管理
+- 状态流转：pending → in_progress → done / blocked / skipped
+- 自动解锁：依赖任务完成后自动将 blocked 改为 pending
+- 优先级排序：P0 > P1 > P2，同优先级按预估工时排序
+- 聚焦提示词：基于当前子任务生成针对性的动作段/规格段/约束段/验证段
+
+### 类型定义
+- `src/types/requirement.ts`：Requirement / Subtask / SubtaskStatus / SubtaskPriority / SubtaskType / RequirementFilter
+
+### 验证
+- tsc --noEmit：0 错误
+- vitest run：167/167 通过
+- vite build：成功（385KB JS / 34KB CSS）
+- cargo check：通过（0 errors，2 pre-existing warnings）
+
+## [0.4.0] - 2026-07-15 - M12 阶段二集成 + QA
+
+### 问题库扩充（T12.2）
+- **从 31 条扩充到 45 条**，新增 14 条覆盖缺失场景
+- **新增 perceive 3 条**：无障碍需求（p-007）、加载速度期望（p-008）、时间压力（p-009）
+- **新增 name 3 条**：加载慢类型（n-008）、图标问题（n-009）、空状态/加载态（n-010）
+- **新增 spec 4 条**：动画速度（s-009）、图标风格（s-010）、正文字号（s-011）、行高（s-012）
+- **新增 execute 2 条**：测试需求（e-006）、部署需求（e-007）
+- **新增 verify 2 条**：性能验证（v-006）、无障碍验证（v-007）
+
+### 视觉打磨（T12.3）
+- **CSS 动画工具类**：animate-fade-in / animate-slide-up / animate-pulse-soft（`index.css`）
+- **空状态升级**：QuestionPanel / ResultPanel 加载态增加脉冲光圈 + 描述文案
+- **StartTemplates 动画**：模板按钮入场动画 + 图标 + 悬停阴影增强
+- **ProjectOnboarding 动画**：入场滑入动画 + 图标脉冲效果
+
+### 测试更新
+- QuestionLoader.test.ts：更新分布断言为新题库数量（9/10/12/7/7）
+
+### 验证
+- tsc --noEmit：0 错误
+- vitest run：167/167 通过
+- vite build：成功（394KB JS / 34KB CSS）
+
+## [0.5.0] - 2026-07-15 - M13 最终冻结
+
+### 性能测试（T13.1）
+- **cargo check**：2.2s（< 10s ✓）
+- **tsc --noEmit**：3.3s（< 10s ✓）
+- **vitest run**：4.0s，167/167 通过（< 10s ✓）
+- **vite build**：1.5s，394KB JS / 34KB CSS（< 10s ✓）
+
+### 安全审计（T13.2）
+- **硬编码密钥扫描**：无生产代码泄露（仅测试 fixture 中的 mock key）
+- **XSS 防护**：无 eval / innerHTML / dangerouslySetInnerHTML
+- **路径遍历防护**：canonicalize() 解析符号链接 + starts_with() 白名单校验
+- **敏感文件跳过**：.env / .pem / .key / id_rsa 等 30+ 种敏感文件名/扩展名黑名单
+- **SSRF 防护**：IPv4/IPv6 内网地址归一化拒绝 + HTTP 仅允许 localhost
+- **API Key 脱敏**：sanitizeErrorText 正则脱敏 sk-* 和 Bearer Token
+- **CSP 收紧**：Content-Security-Policy 限制 script-src / connect-src
+
+### 最终冻结（T13.3）
+- TypeScript 编译：0 错误
+- 单元测试：167/167 通过
+- 生产构建：成功（394KB JS / 34KB CSS，gzip 后 127KB / 7KB）
+- 问题库：45 条（perceive 9 / name 10 / spec 12 / execute 7 / verify 7）
+- 复赛交付就绪
+
 ## [0.2.0] - 2026-07-04 - LLM 稳定性 + 快速提问增强 + 全面 bug 修复
 
 ### 新功能（LLM 稳定性层）
