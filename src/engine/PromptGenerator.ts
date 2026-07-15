@@ -25,8 +25,10 @@ interface GenerateInput {
   recentQA?: ContextRecentQA[];
   /** v2.0 新增：用户已确认偏好，注入约束段 */
   preferences?: ContextPreference[];
-  /** P3 新增：提问模式，quick 模式下 verify 段无答案时自动推断验证标准 */
+  /** P3 新增：提问模式，quick 模式下 verify 段无答案时自动推断 */
   mode?: 'quick' | 'full';
+  /** RAG 新增：向量检索到的相似历史 QA，注入动作段提供跨会话连续性 */
+  retrievedContext?: Array<{ question: string; answer: string; score: number }>;
 }
 
 /** v1.2 新增：可编辑的段落键名 */
@@ -43,10 +45,10 @@ const STAGE_TO_LABEL: Record<string, string> = {
 export class PromptGenerator {
   /** 从 EngineState 生成 PromptResult */
   generate(input: GenerateInput): PromptResult {
-    const { intentTags, answers, seedInput, project, recentQA, preferences, mode } = input;
+    const { intentTags, answers, seedInput, project, recentQA, preferences, mode, retrievedContext } = input;
     const rawQuotes = this.collectRawQuotes(answers, seedInput, recentQA);
     const projectCtx = project ? this.buildProjectContext(project) : null;
-    const action = this.buildAction(intentTags, answers, seedInput, recentQA);
+    const action = this.buildAction(intentTags, answers, seedInput, recentQA, retrievedContext);
     const spec = this.buildSpec(intentTags, answers, seedInput, project);
     const constraint = this.buildConstraint(intentTags, answers, project, preferences);
     const verify = this.buildVerify(intentTags, answers, seedInput, mode);
@@ -65,13 +67,14 @@ export class PromptGenerator {
 
   /** 删除 tag 后重生成（基于剩余 tags + 既有 answers）
    *  v2.0：新增可选 context 参数，保留接口向后兼容
+   *  RAG：新增可选 retrievedContext 参数
    */
   regenerate(
     remainingTags: IntentTag[],
     answers: Record<string, Answer>,
     seed: string,
     project?: ProjectFingerprint | null,
-    context?: { recentQA?: ContextRecentQA[]; preferences?: ContextPreference[] },
+    context?: { recentQA?: ContextRecentQA[]; preferences?: ContextPreference[]; retrievedContext?: Array<{ question: string; answer: string; score: number }> },
   ): PromptResult {
     return this.generate({
       intentTags: remainingTags,
@@ -80,6 +83,7 @@ export class PromptGenerator {
       project,
       recentQA: context?.recentQA,
       preferences: context?.preferences,
+      retrievedContext: context?.retrievedContext,
     });
   }
 
@@ -278,6 +282,7 @@ export class PromptGenerator {
     answers: Record<string, Answer>,
     seed: string,
     recentQA?: ContextRecentQA[],
+    retrievedContext?: Array<{ question: string; answer: string; score: number }>,
   ): PromptSegment {
     // 动作段：从 seed + perceive 回答提取动词 + 对象
     const perceiveAnswers = this.answersByStage(answers, 'perceive');
@@ -304,6 +309,17 @@ export class PromptGenerator {
     if (lastQA && lastQA.answer && lastQA.answer !== '__skipped__') {
       const tail = `\n（衔接上文：${lastQA.question_text} → ${lastQA.answer}）`;
       action = action + tail;
+    }
+
+    // RAG 新增：注入向量检索到的相似历史 QA（提供跨会话连续性）
+    if (retrievedContext && retrievedContext.length > 0) {
+      const historyLines = retrievedContext
+        .filter((h) => h.score > 0.4) // 仅保留高相似度的
+        .slice(0, 3) // 最多 3 条
+        .map((h) => `  - ${h.question} → ${h.answer}（相似度 ${(h.score * 100).toFixed(0)}%）`);
+      if (historyLines.length > 0) {
+        action += `\n\n历史上相似的需求处理方式：\n${historyLines.join('\n')}`;
+      }
     }
 
     const raw = perceiveAnswers.map((a) => a.raw).filter(Boolean).join(' / ');

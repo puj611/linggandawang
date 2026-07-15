@@ -99,6 +99,32 @@
 - vitest run：212/212 通过
 - npm run lint：通过（30 warnings，0 errors）
 
+## [0.7.0] - 2026-07-15 - 智能化升级：RAG+向量检索
+
+### RAG-Lite 向量存储（方案 F）
+- **@xenova/transformers 集成**：本地嵌入模型 all-MiniLM-L6-v2（~90MB，CPU 可跑）
+- **vectorStore.ts**（`src/lib/vectorStore.ts`）：嵌入/余弦相似度/索引/检索/持久化
+- **useVectorStore hook**（`src/hooks/useVectorStore.ts`：管理向量存储生命周期 + 检索接口
+- **PromptGenerator 增强**：动作段注入向量检索到的相似历史 QA（跨会话连续性）
+- **useFlow 集成**：finishAndGenerate 时异步检索相似历史，失败时优雅降级
+
+### 新增能力
+- 跨会话上下文复用：用户上次处理"圆角"时选了 8px，这次检索到后自动注入动作段
+- 避免重复提问：相似历史 QA 以"历史上相似的需求处理方式"格式呈现
+- 本地隐私安全：嵌入模型运行在浏览器端，数据不出机器
+
+### 技术细节
+- 嵌入维度：384（all-MiniLM-L6-v2）
+- 相似度阈值：0.3（低于不返回）
+- 检索条数：默认 Top-3（仅 score > 0.4 的注入提示词）
+- 最大存储：200 条（超限裁剪最旧）
+- 持久化：localStorage（仅元数据，向量重建）
+
+### 验证
+- tsc --noEmit：0 错误
+- vitest run：217/217 通过
+- 新增 vectorStore 测试 5 用例（cosineSimilarity 边界）
+
 ## [0.2.0] - 2026-07-04 - LLM 稳定性 + 快速提问增强 + 全面 bug 修复
 
 ### 新功能（LLM 稳定性层）

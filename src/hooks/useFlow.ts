@@ -2,6 +2,7 @@
 // 主流程编排：四态串联 + 引擎 + 生成器 + 上下文
 // v2.0：start 前异步调用 LLM 意图分析，降级时回退关键词匹配
 // v2.1：上下文存储回读闭环 — start 时读 recent_qa 喂给 LLM，generate 时注入 preferences + recentQA
+// RAG：finishAndGenerate 时通过向量检索注入相似历史 QA 增强上下文
 import { useCallback, useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/stores/appStore';
@@ -21,6 +22,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { v4 as uuidv4 } from 'uuid';
 import { analyzeIntent } from '@/engine/LLMIntentAnalyzer';
 import { evaluateFollowup, generateFollowupQuestion } from '@/engine/SmartFollowup';
+import { retrieveSimilar } from '@/lib/vectorStore';
 
 // 模块级单例：所有组件共享同一 engine 实例，避免组件切换时状态丢失
 let engineInstance: QuestionEngine | null = null;
@@ -349,6 +351,7 @@ export function useFlow() {
   /** 生成提示词并进入结果态
    *  v2.1：注入 recentQA + preferences 上下文，并在生成后累积用户新偏好
    *  P3：传递 mode 给 PromptGenerator，quick 模式下 verify 段无答案时自动推断
+   *  RAG：通过向量检索注入相似历史 QA 增强上下文
    *  注意：必须定义在 finishEarlyAndGenerate 之前，因为后者引用它
    */
   const finishAndGenerate = useCallback(async () => {
@@ -360,6 +363,23 @@ export function useFlow() {
     // P3：传递 mode（direct/quick/full → quick/full，direct 无需推断）
     const engineMode = engine.getMode();
     const genMode = engineMode === 'quick' ? 'quick' : 'full';
+
+    // RAG：通过向量检索获取相似历史 QA（异步，失败时降级为空）
+    let retrievedContext: Array<{ question: string; answer: string; score: number }> = [];
+    try {
+      const seedInput = snap.seedInput;
+      if (seedInput && seedInput.trim().length > 2) {
+        const results = await retrieveSimilar(seedInput, 3);
+        retrievedContext = results.map((r) => ({
+          question: r.entry.metadata.questionText,
+          answer: r.entry.metadata.answer,
+          score: r.score,
+        }));
+      }
+    } catch (e) {
+      console.warn('[useFlow] 向量检索失败，降级到无 RAG 模式', e);
+    }
+
     const prompt = promptGenerator.generate({
       intentTags: snap.intentTags,
       answers: snap.answers,
@@ -368,6 +388,7 @@ export function useFlow() {
       recentQA,
       preferences,
       mode: genMode,
+      retrievedContext,
     });
     setResult(prompt);
     await ctxStore.setIntentTags(snap.intentTags);
