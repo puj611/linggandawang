@@ -8,9 +8,7 @@ Write-Host " 灵感大王 - Release 打包脚本" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-$env:Path = "d:\puj\下载;" + $env:Path
-
-Set-Location "d:\AI工作平台\灵感大王"
+Set-Location $PSScriptRoot
 
 Write-Host "[1/4] 检查环境..." -ForegroundColor Yellow
 Write-Host "  Node: $(node --version)"

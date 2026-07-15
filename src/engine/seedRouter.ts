@@ -245,11 +245,6 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** 取最高的 N 个 TagScore */
-export function topTagScores(scores: TagScore[], n: number): TagScore[] {
-  return scores.slice(0, Math.max(0, n));
-}
-
 /**
  * 根据最高得分的簇生成动态澄清题。
  * 当 score > 0 的 tag 数量 > 1，且该 tag 来自同一个簇的 clarification_options 时返回。

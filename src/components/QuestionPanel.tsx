@@ -22,6 +22,7 @@ export function QuestionPanel() {
   const { answer, skip, goBack } = useFlow();
   const [customInput, setCustomInput] = useState('');
   const [answering, setAnswering] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const { dragProps, offset, dragging } = useDrag();
   const { resizeProps, width } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
@@ -51,8 +52,6 @@ export function QuestionPanel() {
 
   const stageIdx = STAGES.indexOf(currentQuestion.stage);
 
-  // P1-6 修复：增加 catch 块，错误日志 + 用户提示，避免 unhandled rejection 导致 UI 卡住
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const handleOption = async (value: string, label: string, tags: string[]) => {
     if (answering) return;
     setAnswering(true);

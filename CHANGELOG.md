@@ -75,6 +75,30 @@
 - 问题库：45 条（perceive 9 / name 10 / spec 12 / execute 7 / verify 7）
 - 复赛交付就绪
 
+## [0.6.0] - 2026-07-15 - P0 代码体检整改
+
+### P0-1: ESLint 工具链补齐
+- **安装 ESLint**：eslint + @typescript-eslint/parser + @typescript-eslint/eslint-plugin + eslint-plugin-react-hooks + eslint-plugin-react-refresh
+- **eslint.config.js**：flat config 格式，配置 TypeScript + React Hooks + 命名导入规则
+- **lint 脚本更新**：`eslint src/` 替代旧的 `eslint . --ext ts,tsx`
+- **修复 QuestionPanel hooks 错误**：useState 在条件返回后调用（React Hooks 规则违反），移至组件顶部
+
+### P0-2: 单元测试补齐
+- **seedRouter 测试**（29 用例）：detectNegation / detectScene / matchAdjectiveClusters / aggregateTagScores / routeSeedWithClusters
+- **RequirementSyncer 测试**（16 用例）：decomposeLocal / updateSubtaskStatus / getNextSubtask / getProgress
+- **测试总数**：167 → 212（+45）
+
+### P1 清理
+- **删除 17 个 .bak 备份文件**（src/components/ / src/engine/ / src-tauri/ / docs/）
+- **删除 seedRouter 死代码**：`topTagScores` 函数（exported but never called）
+- **修复 build-release.ps1**：硬编码绝对路径 → `$PSScriptRoot` 相对路径
+- **新增 LICENSE**：MIT 全文 + copyright 2026
+
+### 验证
+- tsc --noEmit：0 错误
+- vitest run：212/212 通过
+- npm run lint：通过（30 warnings，0 errors）
+
 ## [0.2.0] - 2026-07-04 - LLM 稳定性 + 快速提问增强 + 全面 bug 修复
 
 ### 新功能（LLM 稳定性层）
