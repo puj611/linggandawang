@@ -7,6 +7,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use super::is_sensitive_file;
+
 /// 全局状态：记录用户最近一次通过 pick_project_folder 选择的目录
 pub struct ProjectScanState(pub Mutex<Option<String>>);
 
@@ -100,39 +102,6 @@ fn read_package_json(path: &PathBuf) -> Option<PkgJsonPayload> {
         dev_dependencies: dev_deps,
         scripts,
     })
-}
-
-/// 敏感文件校验
-fn is_sensitive_file(name: &str) -> bool {
-    const SENSITIVE_EXT_PATTERNS: &[&str] = &[
-        ".env.local", ".env.production", ".env.development",
-        ".env.staging", ".env.test",
-        ".pem", ".key", ".pfx", ".p12", ".crt", ".cer",
-        ".keystore", ".jks",
-        ".kdbx", ".gpg", ".asc", ".ovpn",
-        ".sqlite", ".db",
-    ];
-
-    const SENSITIVE_NAME_PATTERNS: &[&str] = &[
-        ".env",
-        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
-        ".npmrc", ".pypirc", ".netrc",
-        "credentials", "credentials.json",
-        ".aws", ".ssh", ".gitconfig",
-        ".htpasswd", "kubeconfig",
-        ".docker",
-        "secrets.json", "secrets.yaml", "secrets.yml",
-        ".bash_history", ".zsh_history", ".psql_history",
-        "docker-compose.yml", "docker-compose.yaml",
-        ".yarnrc", ".yarnrc.yml",
-    ];
-
-    let lower = name.to_ascii_lowercase();
-    if SENSITIVE_EXT_PATTERNS.iter().any(|p| lower.ends_with(p)) {
-        return true;
-    }
-    let segments: std::collections::HashSet<&str> = lower.split(|c| c == '/' || c == '\\').collect();
-    SENSITIVE_NAME_PATTERNS.iter().any(|p| segments.contains(*p))
 }
 
 #[tauri::command]

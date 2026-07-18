@@ -3,7 +3,7 @@
 // 负责启动、停止、健康检查本地 llama-server
 
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 use serde::{Deserialize, Serialize};
 
 /// 本地 LLM 服务状态
@@ -161,7 +161,8 @@ pub async fn stop_local_llm(
     let mut child_lock = state.child.lock().map_err(|e| e.to_string())?;
 
     if let Some(ref mut child) = *child_lock {
-        // 先尝试 graceful shutdown
+        // Windows 上 child.kill() 等价于 TerminateProcess（非 graceful）
+        // llama-server 当前无内置优雅退出信号，保持强制终止语义并修正注释
         let _ = child.kill();
         let _ = child.wait();
     }
@@ -181,39 +182,60 @@ pub async fn stop_local_llm(
 pub async fn check_local_llm_health(
     state: State<'_, LocalLLMState>,
 ) -> Result<LocalLLMStatus, String> {
-    let mut status = state.status.lock().map_err(|e| e.to_string())?;
+    // P1 修复：先取出需要的 port，立即释放锁，避免 MutexGuard 跨 await 导致 Future 不是 Send
+    let port = {
+        let status = state.status.lock().map_err(|e| e.to_string())?;
+        if !status.running {
+            return Ok(status.clone());
+        }
+        status.port
+    };
 
-    if !status.running {
-        return Ok(status.clone());
-    }
-
-    let healthy = check_health(status.port).await;
+    let healthy = check_health(port).await;
     if !healthy {
         // 检查进程是否还活着
         let alive = {
             let child_lock = state.child.lock().map_err(|e| e.to_string())?;
             child_lock.as_ref().map_or(false, |c| {
-                // 在 Windows 上检查进程是否存在
-                std::process::Command::new("tasklist")
-                    .args(&["/FI", &format!("PID eq {}", c.id()), "/NH"])
-                    .output()
-                    .map(|o| {
-                        let out = String::from_utf8_lossy(&o.stdout);
-                        out.contains(&c.id().to_string())
-                    })
-                    .unwrap_or(false)
+                // 跨平台进程存活检测
+                // Windows: tasklist /FI "PID eq N"
+                // Unix: kill -0（0 表示信号 0，仅检测进程是否存在，不实际发送信号）
+                #[cfg(target_os = "windows")]
+                {
+                    std::process::Command::new("tasklist")
+                        .args(["/FI", &format!("PID eq {}", c.id()), "/NH"])
+                        .output()
+                        .map(|o| {
+                            let out = String::from_utf8_lossy(&o.stdout);
+                            out.contains(&c.id().to_string())
+                        })
+                        .unwrap_or(false)
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    // Unix: kill -0 仅检测进程存在性，不实际发送信号
+                    // exit code 0 = 存在，非 0 = 不存在或无权限
+                    std::process::Command::new("kill")
+                        .args(["-0", &c.id().to_string()])
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false)
+                }
             })
         };
 
         if !alive {
+            let mut status = state.status.lock().map_err(|e| e.to_string())?;
             status.running = false;
             status.pid = None;
             status.error = Some("进程已退出".to_string());
         }
     } else {
+        let mut status = state.status.lock().map_err(|e| e.to_string())?;
         status.error = None;
     }
 
+    let status = state.status.lock().map_err(|e| e.to_string())?;
     Ok(status.clone())
 }
 

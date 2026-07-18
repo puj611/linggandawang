@@ -1,10 +1,13 @@
 // src-tauri/src/commands/image.rs
 // 图片文件读取命令（含安全检查）
 
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
+
+use super::is_sensitive_file;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ImageDataResult {
@@ -40,39 +43,6 @@ fn is_in_user_scope(canonical: &PathBuf) -> bool {
         }
     }
     false
-}
-
-/// 敏感文件校验
-fn is_sensitive_file(name: &str) -> bool {
-    const SENSITIVE_EXT_PATTERNS: &[&str] = &[
-        ".env.local", ".env.production", ".env.development",
-        ".env.staging", ".env.test",
-        ".pem", ".key", ".pfx", ".p12", ".crt", ".cer",
-        ".keystore", ".jks",
-        ".kdbx", ".gpg", ".asc", ".ovpn",
-        ".sqlite", ".db",
-    ];
-
-    const SENSITIVE_NAME_PATTERNS: &[&str] = &[
-        ".env",
-        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
-        ".npmrc", ".pypirc", ".netrc",
-        "credentials", "credentials.json",
-        ".aws", ".ssh", ".gitconfig",
-        ".htpasswd", "kubeconfig",
-        ".docker",
-        "secrets.json", "secrets.yaml", "secrets.yml",
-        ".bash_history", ".zsh_history", ".psql_history",
-        "docker-compose.yml", "docker-compose.yaml",
-        ".yarnrc", ".yarnrc.yml",
-    ];
-
-    let lower = name.to_ascii_lowercase();
-    if SENSITIVE_EXT_PATTERNS.iter().any(|p| lower.ends_with(p)) {
-        return true;
-    }
-    let segments: std::collections::HashSet<&str> = lower.split(|c| c == '/' || c == '\\').collect();
-    SENSITIVE_NAME_PATTERNS.iter().any(|p| segments.contains(*p))
 }
 
 /// 读取本地图片文件为 data URL
@@ -141,7 +111,8 @@ pub fn read_image_file(path: String) -> Result<ImageDataResult, String> {
 
     let (width, height) = read_image_dimensions(&ext, &buf);
 
-    let b64 = base64_encode(&buf);
+    // P0 修复：使用标准 base64 crate 替代手写实现，避免正确性风险
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
     let data_url = format!("data:{};base64,{}", mime, b64);
 
     Ok(ImageDataResult {
@@ -150,39 +121,6 @@ pub fn read_image_file(path: String) -> Result<ImageDataResult, String> {
         height,
         bytes,
     })
-}
-
-fn base64_encode(data: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
-    let mut i = 0;
-    while i + 3 <= data.len() {
-        let b0 = data[i];
-        let b1 = data[i + 1];
-        let b2 = data[i + 2];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        out.push(ALPHABET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
-        out.push(ALPHABET[(b2 & 0x3f) as usize] as char);
-        i += 3;
-    }
-    let rem = data.len() - i;
-    if rem == 1 {
-        let b0 = data[i];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[((b0 & 0x03) << 4) as usize] as char);
-        out.push('=');
-        out.push('=');
-    } else if rem == 2 {
-        let b0 = data[i];
-        let b1 = data[i + 1];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        out.push(ALPHABET[((b1 & 0x0f) << 2) as usize] as char);
-        out.push('=');
-    }
-    out
 }
 
 fn read_image_dimensions(ext: &str, buf: &[u8]) -> (u32, u32) {

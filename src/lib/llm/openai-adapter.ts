@@ -245,45 +245,65 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
     };
 
     const timeoutMs = isLocal ? 180000 : 120000;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const onExternalAbort = () => controller.abort();
-    if (signal) {
-      if (signal.aborted) {
-        controller.abort();
-      } else {
-        signal.addEventListener('abort', onExternalAbort, { once: true });
+    // P1 修复：仅对建立连接阶段（fetch + resp.ok）重试
+    // 一旦开始读取流（reader.read()），不再重试，避免 chunks 重复发送
+    const { reader, model: responseModel } = await withRetry(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+      const onExternalAbort = () => controller.abort();
+      if (signal) {
+        if (signal.aborted) {
+          controller.abort();
+        } else {
+          signal.addEventListener('abort', onExternalAbort, { once: true });
+        }
       }
-    }
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (!isLocal && apiKey) {
-      headers.Authorization = `Bearer ${apiKey}`;
-    }
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (!isLocal && apiKey) {
+          headers.Authorization = `Bearer ${apiKey}`;
+        }
 
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          // P2-3 安全：脱敏可能回显的 API Key / Bearer Token
+          throw new Error(`LLM 流式请求失败 (${resp.status}): ${sanitizeErrorText(errText.slice(0, 200))}`);
+        }
+
+        const reader = resp.body?.getReader();
+        if (!reader) throw new Error('无法读取响应流');
+
+        return { reader, model: body.model };
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') {
+          if (signal?.aborted) {
+            throw new Error('LLM 流式请求被外部取消');
+          }
+          throw new Error('LLM 流式请求超时（120秒）');
+        }
+        throw e;
+      } finally {
+        clearTimeout(timeout);
+        if (signal) signal.removeEventListener('abort', onExternalAbort);
+      }
     });
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      // P2-3 安全：脱敏可能回显的 API Key / Bearer Token
-      throw new Error(`LLM 流式请求失败 (${resp.status}): ${sanitizeErrorText(errText.slice(0, 200))}`);
-    }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error('无法读取响应流');
 
     const decoder = new TextDecoder();
     let buffer = '';
     let fullContent = '';
-    let model = body.model;
+    let model = responseModel;
 
     try {
       while (true) {
@@ -315,17 +335,7 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
           }
         }
       }
-    } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') {
-        if (signal?.aborted) {
-          throw new Error('LLM 流式请求被外部取消');
-        }
-        throw new Error('LLM 流式请求超时（120秒）');
-      }
-      throw e;
     } finally {
-      clearTimeout(timeout);
-      if (signal) signal.removeEventListener('abort', onExternalAbort);
       reader.cancel().catch(() => {});
     }
 

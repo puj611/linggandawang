@@ -32,3 +32,5 @@ tokio = { version = "1", features = ["sync"] }
 # Phase B: 本地 SLM sidecar 管理
 reqwest = { version = "0.12", features = ["json"] }
 which = "7"
+# P0 修复：image.rs 使用标准 base64 crate 替代手写实现
+base64 = "0.22"
