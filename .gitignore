@@ -42,6 +42,7 @@ Desktop.ini
 # IDE配置
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~
