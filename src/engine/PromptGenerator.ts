@@ -421,8 +421,8 @@ export class PromptGenerator {
     const specAnswers = this.answersByStage(answers, 'spec', questionStageMap);
     const lines: string[] = [];
 
-    // 三模式系统：ppt 场景下跳过前端项目规格注入（CSS 框架/React/TS/组件库等）
-    if (project && scene !== 'ppt') {
+    // 三模式系统：仅 frontend-ui/backend-api 场景注入前端项目规格（PPT 不适用）
+    if (project && this.isFrontendScene(scene)) {
       const projectInjected: string[] = [];
       if (project.css_solution === 'tailwind') {
         projectInjected.push('样式方案：使用 Tailwind CSS 原子类，不得写内联 style 或新增 CSS 文件');
@@ -460,8 +460,8 @@ export class PromptGenerator {
     }
 
     // 3. 评价词典展开（seed + perceive/name raw 中的"太挤/太丑"等）
-    // 三模式系统：ppt 场景下跳过 UI 评价词典（如"太挤→间距 8/12/16px"这类映射不适用 PPT 场景）
-    if (scene !== 'ppt') {
+    // 三模式系统：仅 frontend-ui/backend-api 场景展开 UI 评价词典（PPT 不适用）
+    if (this.isFrontendScene(scene)) {
       const allText = [seed, ...Object.values(answers).map((a) => a.raw)].join(' ');
       const expandedSpecs = expandToSpecs(allText);
       for (const s of expandedSpecs) {
@@ -498,8 +498,8 @@ export class PromptGenerator {
     const executeAnswers = this.answersByStage(answers, 'execute', questionStageMap);
     const lines: string[] = [];
 
-    // 三模式系统：ppt 场景下跳过前端硬编码约束（npm/Tailwind/React/TS/Next.js 等）
-    if (project && scene !== 'ppt') {
+    // 三模式系统：仅 frontend-ui/backend-api 场景注入前端硬编码约束（npm/Tailwind/React/TS/Next.js 等）
+    if (project && this.isFrontendScene(scene)) {
       lines.push(`不得引入 package.json 中不存在的 npm 依赖`);
       if (project.package_manager) {
         const pm = project.package_manager;
@@ -520,8 +520,8 @@ export class PromptGenerator {
       }
     }
 
-    // 从 execute 回答推导（仅 frontend-ui 场景有这些标签）
-    if (scene !== 'ppt') {
+    // 从 execute 回答推导（仅 frontend-ui/backend-api 场景有这些标签）
+    if (this.isFrontendScene(scene)) {
       const respTag = tags.find((t) => t.label === '响应式');
       if (respTag) {
         if (respTag.value === '桌面优先，移动端自适应') lines.push('不得破坏移动端自适应');
@@ -585,8 +585,8 @@ export class PromptGenerator {
     const verifyAnswers = this.answersByStage(answers, 'verify', questionStageMap);
     const lines: string[] = [];
 
-    // 三模式系统：ppt 场景下跳过前端专属验证标签（对比度/间距/布局等不适用 PPT）
-    if (scene !== 'ppt') {
+    // 三模式系统：仅 frontend-ui/backend-api 场景注入前端专属验证标签（对比度/间距/布局等不适用 PPT）
+    if (this.isFrontendScene(scene)) {
       const methodTag = tags.find((t) => t.label === '验证');
       if (methodTag) {
         if (methodTag.value === '截图对比前后') lines.push('截图对比改动前后视觉效果');
@@ -614,8 +614,8 @@ export class PromptGenerator {
     }
 
     // P3 增强：quick 模式下若 verify 段无答案，基于种子推断验证标准
-    // 三模式系统：ppt 场景下不调用前端关键词推断
-    if (lines.length === 0 && mode === 'quick' && seedInput && scene !== 'ppt') {
+    // 三模式系统：仅 frontend-ui/backend-api 场景调用前端关键词推断
+    if (lines.length === 0 && mode === 'quick' && seedInput && this.isFrontendScene(scene)) {
       lines.push(...this.inferVerifyFromSeed(seedInput));
     }
 
@@ -674,6 +674,11 @@ export class PromptGenerator {
 
   // ──────── 工具方法 ────────
 
+  /** 三模式系统：判断是否为前端 UI/后端 API 场景（即非 PPT 场景） */
+  private isFrontendScene(scene?: GenerateScene): boolean {
+    return scene === 'frontend-ui' || scene === 'backend-api' || scene === undefined;
+  }
+
   private answersByStage(answers: Record<string, Answer>, stage: PromptStage, questionStageMap?: Record<string, PromptStage>): Answer[] {
     return Object.values(answers).filter((a) => {
       // 三模式系统：优先使用 questionStageMap 查找阶段（PPT 问题 ID 以 'o' 开头，无法通过前缀判断阶段）
@@ -689,6 +694,10 @@ export class PromptGenerator {
         execute: 'e',
         verify: 'v',
       };
+      // 三模式系统：PPT 问题 ID 以 'o' 开头，未提供 questionStageMap 时无法准确归类，给出警告
+      if (prefix === 'o' && !questionStageMap) {
+        console.warn(`[PromptGenerator] PPT 问题 ${a.questionId} 无法通过前缀判断阶段，请提供 questionStageMap`);
+      }
       return prefix === stagePrefix[stage];
     });
   }

@@ -19,9 +19,24 @@ export class IntentTagCollector {
     return this.list().map((t) => ({
       id: t.id,
       display_text: `${t.label}: ${t.value}`,
-      color: t.source_type === 'screenshot-diagnosis' ? 'yellow' : 'purple',
+      color: this.sourceTypeToColor(t.source_type),
       deletable: t.deletable,
     }));
+  }
+
+  /** 根据 source_type 映射 chip 颜色，便于 UI 区分标签来源 */
+  private sourceTypeToColor(sourceType: IntentTag['source_type']): IntentTagChip['color'] {
+    switch (sourceType) {
+      case 'screenshot-diagnosis':
+        return 'yellow';
+      case 'custom-input':
+        return 'blue';
+      case 'extracted-keyword':
+        return 'green';
+      case 'option':
+      default:
+        return 'purple';
+    }
   }
 
   remove(id: string): PromptResult | null {

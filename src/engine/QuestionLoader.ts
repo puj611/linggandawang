@@ -177,6 +177,13 @@ export class QuestionLoader {
       if (ids.has(q.id)) throw new Error(`[QuestionLoader] ${source} 问题 ID 重复: ${q.id}`);
       ids.add(q.id);
     }
+    // total_questions 与 questions.length 一致性校验（避免 PM 维护字段与实际数量不一致）
+    if (typeof bank.total_questions === 'number' && bank.total_questions !== bank.questions.length) {
+      console.warn(
+        `[QuestionLoader] ${source} total_questions (${bank.total_questions}) 与实际问题数 (${bank.questions.length}) 不一致，已按实际数量修正`,
+      );
+      bank.total_questions = bank.questions.length;
+    }
     return bank as QuestionBank;
   }
 

@@ -9,6 +9,8 @@ export type IntentTagSource =
   | 'extracted-keyword'
   | 'screenshot-diagnosis';
 
+export type IntentTagChipColor = 'purple' | 'yellow' | 'blue' | 'green';
+
 export interface IntentTag {
   id: string;
   label: string;
@@ -24,6 +26,6 @@ export interface IntentTag {
 export interface IntentTagChip {
   id: string;
   display_text: string;
-  color: 'purple' | 'yellow';
+  color: IntentTagChipColor;
   deletable: boolean;
 }

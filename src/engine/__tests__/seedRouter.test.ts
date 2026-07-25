@@ -135,14 +135,13 @@ describe('seedRouter', () => {
       expect(detectScene('写视频脚本')).toBe('frontend-ui');
     });
 
-    it('ppt 场景下 routeSeedWithClusters 返回 ppt 场景', () => {
+    it('ppt 场景下 routeSeedWithClusters 返回 ppt 场景并命中 PPT 路由', () => {
       const loader = new QuestionLoader();
       const result = routeSeedWithClusters(loader, '改 PPT');
       expect(result.scene).toBe('ppt');
-      // PPT 场景无专属路由（ROUTES 中无 scene: 'ppt'），matchedKeywords 为空
-      expect(result.matchedKeywords).toEqual([]);
-      // PPT 场景下无前端形容词簇匹配
-      expect(result.matchedClusters).toEqual([]);
+      // 三模式系统：PPT 现在有专属路由，应命中通用 PPT 入口
+      expect(result.matchedKeywords).toContain('ppt');
+      expect(result.question?.id).toBe('o-001');
     });
 
     it('前端关键词与 PPT 关键词混合时优先前端（保持向后兼容）', () => {

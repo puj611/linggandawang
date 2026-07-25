@@ -7,7 +7,7 @@
 //   4. 否则基于形容词簇做权重聚合：否定簇权重转负，返回 tagScores 让 Selector 选下一题
 //   5. 若命中簇且该簇有 clarification_question，返回动态澄清题
 //   6. 旧接口字段（question / matchedKeywords）保持不变，新增 scene 字段
-import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight, SceneType, SceneChoice } from './types';
+import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight, SceneType, SceneChoice, PromptStage } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { getAllAdjectiveClusters } from './AdjectiveClusterLoader';
 import type { LLMIntentAnalysis } from './LLMIntentAnalyzer';
@@ -18,6 +18,9 @@ const NEGATION_WORDS = [
   '避免', '取消', '消除', '禁止', '防止', '拒绝', '放弃',
   'no ', 'not ', "don't", 'without', 'avoid',
 ];
+
+// r1增强：否定目标最大截取长度的中文字数上限（否定词后通常 2-3 字，取 4 个字符保证不被截断）
+const NEGATION_TARGET_MAX_CHARS = 6;
 
 /**
  * r1增强：否定词检测
@@ -35,8 +38,8 @@ export function detectNegation(text: string): string[] {
     const negLower = neg.toLowerCase();
     let idx = lowered.indexOf(negLower);
     while (idx >= 0) {
-      // 取否定词后的 1-6 个字符作为否定目标（覆盖"圆角/配色/动画"等 2-3 字词）
-      const after = lowered.slice(idx + negLower.length, idx + negLower.length + 6).trim();
+      // 取否定词后的若干字符作为否定目标（覆盖"圆角/配色/动画效果"等 2-4 字词）
+      const after = lowered.slice(idx + negLower.length, idx + negLower.length + NEGATION_TARGET_MAX_CHARS).trim();
       if (after) {
         // 取首个有意义的词（中文取 2-3 字，英文取到空格）
         const cnMatch = after.match(/^[\u4e00-\u9fa5]{2,3}/);
@@ -80,7 +83,7 @@ function isKeywordNegated(keyword: string, negatedWords: string[]): boolean {
 
 interface SeedRoute {
   keywords: string[];
-  targetStage: 'perceive' | 'name' | 'spec';
+  targetStage: PromptStage;
   preferredQuestionId?: string;
   /** 该路由适用的场景（默认 frontend-ui） */
   scene?: SceneType;
@@ -108,8 +111,8 @@ const FRONTEND_KEYWORDS = [
 // 三模式系统：PPT 场景关键词（命中任一且未命中前后端关键词 → ppt 场景）
 // 仅保留 PPT/演示相关关键词，其他通用场景（文档/邮件/视频等）走默认 frontend-ui，用户可手动选 PPT 模式
 const PPT_KEYWORDS = [
-  'ppt', 'pptx', 'slides', 'powerpoint', 'keynote', '幻灯片', '演示文稿',
-  '演示', '演讲稿', '讲演',
+  'ppt', 'pptx', 'slides', 'powerpoint', 'keynote', 'google slides', 'google slide',
+  '幻灯片', '演示文稿', '演示', '演讲稿', '讲演', '讲稿', '发言稿', '汇报', '路演', 'pitch',
 ];
 
 // 按场景/痛点关键词路由（具体关键词优先，"改/修"等通用词放最后）
@@ -145,6 +148,24 @@ const ROUTES: SeedRoute[] = [
   { keywords: ['挤', '间距', '密'], targetStage: 'perceive', preferredQuestionId: 'p-001' },
   // 修 UI → perceive p-001（"修一个看不顺眼的 UI"），通用关键词放最后
   { keywords: ['修', '改', '调', 'fix'], targetStage: 'perceive', preferredQuestionId: 'p-001' },
+
+  // ───────── PPT 场景路由（scene: ppt）─────────
+  // 篇幅 → spec o-006
+  { keywords: ['页数', '页', '篇幅', '多少页'], targetStage: 'spec', preferredQuestionId: 'o-006', scene: 'ppt' },
+  // 风格 → spec o-007
+  { keywords: ['风格', '视觉', '商务', '极简', '创意'], targetStage: 'spec', preferredQuestionId: 'o-007', scene: 'ppt' },
+  // 输出格式 → spec o-005
+  { keywords: ['大纲', '演讲稿', '口播', '内容'], targetStage: 'spec', preferredQuestionId: 'o-005', scene: 'ppt' },
+  // 工具 → execute o-008
+  { keywords: ['powerpoint', 'keynote', 'marp', 'slidev', 'google slides'], targetStage: 'execute', preferredQuestionId: 'o-008', scene: 'ppt' },
+  // 受众 → spec o-004
+  { keywords: ['受众', '观众', '听众', '客户', '老板'], targetStage: 'spec', preferredQuestionId: 'o-004', scene: 'ppt' },
+  // 主题 → name o-003
+  { keywords: ['主题', '内容', '讲什么', '关于'], targetStage: 'name', preferredQuestionId: 'o-003', scene: 'ppt' },
+  // 场合 → perceive o-002
+  { keywords: ['场合', '汇报', '路演', '演讲', '分享', '培训'], targetStage: 'perceive', preferredQuestionId: 'o-002', scene: 'ppt' },
+  // 新建/修改 → perceive o-001（PPT 通用入口）
+  { keywords: ['ppt', '幻灯片', '演示文稿', '演示'], targetStage: 'perceive', preferredQuestionId: 'o-001', scene: 'ppt' },
 
   // ───────── 后端场景路由（scene: backend-api）─────────
   // 接口路径风格 → name b-005
@@ -190,8 +211,8 @@ export function detectScene(seed: string): SceneType {
   for (const kw of PPT_KEYWORDS) {
     if (lowered.includes(kw.toLowerCase())) pptHits++;
   }
-  // 后端命中严格大于前端才判定为后端
-  if (backendHits > frontendHits) return 'backend-api';
+  // 后端命中大于等于前端且至少命中 1 次 → backend-api（避免"tailwind + restful"各命中 1 个被误判前端）
+  if (backendHits > 0 && backendHits >= frontendHits) return 'backend-api';
   // 前端有命中，优先前端（保持向后兼容）
   if (frontendHits > 0) return 'frontend-ui';
   // 三模式系统：前端后端都没命中，但命中了 PPT 关键词 → ppt

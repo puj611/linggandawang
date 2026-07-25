@@ -102,6 +102,8 @@ interface ContextStoreState {
   archiveIfStale: () => Promise<boolean>;
   clear: () => Promise<void>;
   appendRecentQA: (qa: ContextRecentQA) => Promise<void>;
+  /** v2.3 新增：批量追加最近 QA，减少持久化写入次数 */
+  appendRecentQAs: (qas: ContextRecentQA[]) => Promise<void>;
   setIntentTags: (tags: IntentTag[]) => Promise<void>;
   setLastPrompt: (md: string) => Promise<void>;
   setDevProgress: (patch: NonNullable<LinggandawangContext['dev_progress']>) => Promise<void>;
@@ -149,6 +151,13 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
     enqueue(async () => {
       const cur = get().ctx;
       const list = [...(cur.recent_qa ?? []), qa].slice(-MAX_RECENT_QA);
+      await _applyPatch(set, get, { recent_qa: list });
+    }),
+  appendRecentQAs: (qas) =>
+    enqueue(async () => {
+      if (qas.length === 0) return;
+      const cur = get().ctx;
+      const list = [...(cur.recent_qa ?? []), ...qas].slice(-MAX_RECENT_QA);
       await _applyPatch(set, get, { recent_qa: list });
     }),
   setIntentTags: (tags) =>

@@ -4,7 +4,7 @@ import type { Question, StageName, PromptStage, QuestionBank, FlowMode, SceneTyp
 import { STAGE_ORDER, STAGE_TO_STATE } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { Selector } from './Selector';
-import { routeSeedWithClusters, pickFirstQuestionByTagScores, routeWithLLMAnalysis, matchAdjectiveClusters, aggregateTagScores } from './seedRouter';
+import { routeSeedWithClusters, pickFirstQuestionByTagScores, routeWithLLMAnalysis, matchAdjectiveClusters, aggregateTagScores, detectSceneWithChoice } from './seedRouter';
 import type { TagScore, ClusterMatch } from './types';
 import type { IntentTag } from '@/types/intent-tag';
 import type { Answer } from '@/types/state';
@@ -130,10 +130,10 @@ export class QuestionEngine {
       this.routeSource = 'llm';
     } else {
       // 降级：使用原有 seed 关键词提取 + 形容词簇路由
-      // 三模式系统：先设置场景，让 extractFromSeed 使用正确场景的问题库关键词
-      if (forcedScene) {
-        this.loader.setScene(forcedScene);
-      }
+      // 三模式系统：统一用 detectSceneWithChoice 先确定场景，再设置 loader，确保 extractFromSeed 使用正确场景
+      const detectedScene = detectSceneWithChoice(seed, sceneChoice ?? 'auto');
+      this.loader.setScene(detectedScene);
+      this.scene = detectedScene;
       this.extractFromSeed(seed);
       routed = routeSeedWithClusters(this.loader, seed, forcedScene);
       const isKeywordHit =

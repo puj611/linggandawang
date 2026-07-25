@@ -139,6 +139,7 @@ export function useFlow() {
   const ctxStore = useContextStore(
     useShallow((s) => ({
       appendRecentQA: s.appendRecentQA,
+      appendRecentQAs: s.appendRecentQAs,
       getRecentQA: s.getRecentQA,
       getPreferences: s.getPreferences,
       setIntentTags: s.setIntentTags,
@@ -147,6 +148,15 @@ export function useFlow() {
       clear: s.clear,
     })),
   );
+
+  // v2.3 新增：批量缓冲本次会话中产生的 recentQA，finishAndGenerate 时一次性持久化，减少 IO 次数
+  const pendingRecentQARef = useRef<Array<{ question_id: string; question_text: string; answer: string; answered_at: string }>>([]);
+  // v2.3 新增：辅助函数，获取最近 QA（含未持久化的 pending 条目）
+  const getRecentQAWithPending = useCallback((limit?: number) => {
+    const persisted = ctxStore.getRecentQA(limit ? limit + pendingRecentQARef.current.length : undefined);
+    const combined = [...persisted, ...pendingRecentQARef.current];
+    return typeof limit === 'number' ? combined.slice(-limit) : combined;
+  }, [ctxStore]);
   const projectFingerprint = useProjectStore((s) => s.fingerprint);
   const fullScanResult = useProjectStore((s) => s.fullScanResult);
   // M11：从需求同步器提取已完成子任务主题，供 Selector 进度去重
@@ -163,6 +173,8 @@ export function useFlow() {
       resetEngineStore();
       // v2.2：每次 start 重置追问标记
       followupTriggeredThisSession = false;
+      // v2.3：新会话开始时清空 pending recentQA（上一会话未 flush 的数据不应混入新会话）
+      pendingRecentQARef.current = [];
       // P1-5：进入时递增序列号，await 后若 seq 不再匹配则放弃本次 setState
       const mySeq = ++startSeq;
 
@@ -171,13 +183,13 @@ export function useFlow() {
       transition('question');
 
       // v2.1：从 contextStore 读取最近问答历史，喂给 LLM 提供连续性
-      // 注意：不等待 load()，因为 ctxStore 通常在 App 启动时已 load
-      const recentQA = ctxStore.getRecentQA(8).map((qa) => ({
+      // v2.3：包含本次会话尚未持久化的 pending QA，保证连续性不丢失
+      const recentQA = getRecentQAWithPending(8).map((qa) => ({
         question: qa.question_text,
         answer: qa.answer,
       }));
       // r4增强：同时传给 engine.start 用于上下文加权（即使无 LLM 也能跨会话记忆）
-      const recentQAForEngine = ctxStore.getRecentQA(8).map((qa) => ({
+      const recentQAForEngine = getRecentQAWithPending(8).map((qa) => ({
         question_text: qa.question_text,
         answer: qa.answer,
       }));
@@ -277,14 +289,13 @@ export function useFlow() {
       if (lastKey) {
         const answeredQuestion = questionLoader.getQuestionById(lastKey);
         const userAnswerText = raw || value;
-        await ctxStore.appendRecentQA({
+        // v2.3：改为写入 pending 缓冲，finishAndGenerate 时批量持久化，减少 IO
+        pendingRecentQARef.current.push({
           question_id: lastKey,
           question_text: answeredQuestion?.text ?? '',
           answer: userAnswerText,
           answered_at: new Date().toISOString(),
         });
-        // v2.3：await 期间组件可能卸载，卸载后不再 setState
-        if (!mountedRef.current) return;
 
         // v2.2：如果未完成且未触发过追问，评估是否插入动态追问题
         if (
@@ -300,7 +311,7 @@ export function useFlow() {
             nextQuestion: result.nextQuestion,
             allAnswers,
             alreadyTriggered: followupTriggeredThisSession,
-            recentQA: ctxStore.getRecentQA(5),
+            recentQA: getRecentQAWithPending(5),
             seed: engine.getSeedInput(),
             mode: engine.getMode(),
           });
@@ -380,6 +391,11 @@ export function useFlow() {
     const engine = getEngine();
     const snap = engine.snapshot();
     // v2.1：读取上下文喂给 PromptGenerator
+    // v2.3：先 flush pending recentQA 到持久化，确保本次会话 QA 不丢失且只写一次
+    if (pendingRecentQARef.current.length > 0) {
+      await ctxStore.appendRecentQAs(pendingRecentQARef.current);
+      pendingRecentQARef.current = [];
+    }
     const recentQA = ctxStore.getRecentQA(20);
     const preferences = ctxStore.getPreferences();
     // P3：传递 mode（direct/quick/full → quick/full，direct 无需推断）
