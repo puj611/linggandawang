@@ -55,6 +55,9 @@ export function ResultPanel() {
     );
   }
 
+  // 三模式系统：检测 PPT 场景（约束段含"场景说明：当前为 PPT/演示文稿场景"），展示 PPT 场景提示
+  const isPptScene = result.constraint.content.includes('场景说明：当前为 PPT/演示文稿场景');
+
   const onCopy = async () => {
     const ok = await copyPrompt(result);
     if (ok) {
@@ -115,6 +118,17 @@ export function ResultPanel() {
             </button>
           </div>
         </div>
+
+        {/* 三模式系统：PPT 场景提示 banner */}
+        {isPptScene && (
+          <div className="px-4 py-2 bg-brand-soft border-b border-brand/20 shrink-0">
+            <p className="text-xs text-brand leading-relaxed">
+              <span className="font-semibold">📊 PPT 模式：</span>
+              当前使用 PPT 专属问题库（受众/篇幅/风格/输出格式），提示词已按演示文稿的排版与叙事逻辑生成。
+              请确认产出工具（PowerPoint/Keynote 等）与验收标准后使用。
+            </p>
+          </div>
+        )}
 
         {/* 中部：四段提示词（可滚动） */}
         <div className="flex-1 overflow-y-auto px-4 py-4 font-mono text-xs select-text">

@@ -157,7 +157,14 @@ export async function retrieveSimilar(
 ): Promise<RetrievalResult[]> {
   if (vectorStore.length === 0 || !query.trim()) return [];
 
-  const queryEmbedding = await embed(query);
+  // 超时保护：embed 首次调用需下载 90MB 模型，网络慢时可能永远 pending
+  // 给 5 秒超时，超时后降级返回空结果（不阻塞提示词生成）
+  const queryEmbedding = await Promise.race([
+    embed(query),
+    new Promise<Float32Array>((resolve) => setTimeout(() => resolve(new Float32Array(EMBEDDING_DIM)), 5000)),
+  ]);
+  // 全零向量（超时降级）时直接返回空，避免无效相似度计算
+  if (queryEmbedding.every((v) => v === 0)) return [];
 
   const scored = vectorStore.map((entry) => ({
     entry,

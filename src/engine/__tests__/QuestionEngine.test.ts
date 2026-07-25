@@ -138,3 +138,54 @@ describe('QuestionEngine 状态机', () => {
     expect(undoCount).toBeLessThanOrEqual(20);
   });
 });
+
+// 三模式系统：PPT 场景测试
+describe('QuestionEngine PPT 场景', () => {
+  it('sceneChoice=ppt 时 start 返回 PPT 问题库首题 o-001', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    const q = engine.start('大赛展示', 'full', null, [], 'ppt');
+    expect(q).not.toBeNull();
+    expect(q?.id).toBe('o-001');
+    expect(q?.stage).toBe('perceive');
+    expect(engine.getScene()).toBe('ppt');
+  });
+
+  it('PPT 场景完整流程能跑完 5 阶段', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    engine.start('大赛展示', 'full', null, [], 'ppt');
+    let safety = 30;
+    while (!engine.isComplete() && safety > 0) {
+      const q = engine.currentQuestion();
+      if (!q) break;
+      if (q.options.length > 0) {
+        engine.answer(q.options[0].value, q.options[0].label, q.options[0].tags);
+      } else {
+        engine.answer('custom', '自定义回答', []);
+      }
+      safety--;
+    }
+    expect(engine.isComplete()).toBe(true);
+    expect(engine.getStage()).toBe('COMPLETE');
+  });
+
+  it('PPT 场景 o-003 答题后能推进到 spec 阶段', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    engine.start('大赛展示', 'full', null, [], 'ppt');
+    // 跳到 o-003（name 阶段）：答 o-001 选 new → jump o-003
+    engine.answer('new', '从零开始做一份新 PPT', ['PPT: 新建']);
+    expect(engine.currentQuestion()?.id).toBe('o-003');
+    // 答 o-003（open 类型，输入主题）
+    engine.answer('大赛展示', '大赛展示', []);
+    // 应推进到 spec 阶段 o-004
+    const next = engine.currentQuestion();
+    expect(next).not.toBeNull();
+    expect(next?.stage).toBe('spec');
+    expect(next?.id).toBe('o-004');
+  });
+});

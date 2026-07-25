@@ -170,7 +170,15 @@ function parseLLMResponse(content: string): LLMIntentAnalysis | null {
 /** 规范化 LLM 输出，确保字段完整且类型正确（导出用于单元测试） */
 export function normalizeAnalysis(raw: unknown): LLMIntentAnalysis {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const scene = r.scene === 'backend-api' ? 'backend-api' : r.scene === 'fullstack' ? 'fullstack' : 'frontend-ui';
+  // 三模式系统：增加 'ppt' 场景归一化
+  // LLM 返回 'ppt' 时保留为 'ppt'，走 PPT 专属问题库
+  const scene = r.scene === 'backend-api'
+    ? 'backend-api'
+    : r.scene === 'ppt'
+      ? 'ppt'
+      : r.scene === 'fullstack'
+        ? 'fullstack'
+        : 'frontend-ui';
 
   const pain_points = Array.isArray(r.pain_points)
     ? (r.pain_points as unknown[])

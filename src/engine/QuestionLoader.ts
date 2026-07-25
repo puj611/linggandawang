@@ -7,11 +7,13 @@ import type { QuestionBank, Question, PromptStage } from './types';
 import { STAGE_ORDER } from './types';
 import bankYamlText from '@/question-bank/bank.yaml?raw';
 import bankBackendYamlText from '@/question-bank/bank-backend.yaml?raw';
+import bankPptYamlText from '@/question-bank/bank-ppt.yaml?raw';
 
 /** 内置支持的场景列表（scene → bank 文本） */
 const BUILTIN_BANKS: { scene: string; text: string; source: string }[] = [
   { scene: 'frontend-ui', text: bankYamlText, source: 'builtin-frontend' },
   { scene: 'backend-api', text: bankBackendYamlText, source: 'builtin-backend' },
+  { scene: 'ppt', text: bankPptYamlText, source: 'builtin-ppt' },
 ];
 
 async function getInvoke() {

@@ -2,19 +2,22 @@
 // 项目指纹 store：当前绑定项目 + 持久化
 import { create } from 'zustand';
 import { getPreference, setPreference } from '@/lib/sqlite';
-import type { ProjectFingerprint } from '@/types/project';
+import type { ProjectFingerprint, FullScanResult } from '@/types/project';
 import { EMPTY_FINGERPRINT } from '@/types/project';
 
 const PREF_KEY = 'current_project';
 
 interface ProjectStoreState {
   fingerprint: ProjectFingerprint | null;
+  /** 深度扫描结果（内存态，不持久化，可重新扫描获取） */
+  fullScanResult: FullScanResult | null;
   loaded: boolean;
   scanning: boolean;
   error: string | null;
 
   load: () => Promise<void>;
   setFingerprint: (fp: ProjectFingerprint) => Promise<void>;
+  setFullScanResult: (r: FullScanResult | null) => void;
   clear: () => Promise<void>;
   setScanning: (v: boolean) => void;
   setError: (msg: string | null) => void;
@@ -22,6 +25,7 @@ interface ProjectStoreState {
 
 export const useProjectStore = create<ProjectStoreState>((set) => ({
   fingerprint: null,
+  fullScanResult: null,
   loaded: false,
   scanning: false,
   error: null,
@@ -61,10 +65,12 @@ export const useProjectStore = create<ProjectStoreState>((set) => ({
     }
   },
 
+  setFullScanResult: (r) => set({ fullScanResult: r }),
+
   clear: async () => {
     try {
       await setPreference(PREF_KEY, null);
-      set({ fingerprint: null });
+      set({ fingerprint: null, fullScanResult: null });
     } catch (e) {
       console.warn('[projectStore] 清除项目指纹失败', e);
     }

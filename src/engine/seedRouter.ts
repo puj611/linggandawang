@@ -7,7 +7,7 @@
 //   4. 否则基于形容词簇做权重聚合：否定簇权重转负，返回 tagScores 让 Selector 选下一题
 //   5. 若命中簇且该簇有 clarification_question，返回动态澄清题
 //   6. 旧接口字段（question / matchedKeywords）保持不变，新增 scene 字段
-import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight, SceneType } from './types';
+import type { Question, QuestionOption, ClusterMatch, TagScore, ClusterTagWeight, SceneType, SceneChoice } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { getAllAdjectiveClusters } from './AdjectiveClusterLoader';
 import type { LLMIntentAnalysis } from './LLMIntentAnalyzer';
@@ -105,6 +105,13 @@ const FRONTEND_KEYWORDS = [
   '卡片', '导航', '表单', '弹窗', '组件', 'hover',
 ];
 
+// 三模式系统：PPT 场景关键词（命中任一且未命中前后端关键词 → ppt 场景）
+// 仅保留 PPT/演示相关关键词，其他通用场景（文档/邮件/视频等）走默认 frontend-ui，用户可手动选 PPT 模式
+const PPT_KEYWORDS = [
+  'ppt', 'pptx', 'slides', 'powerpoint', 'keynote', '幻灯片', '演示文稿',
+  '演示', '演讲稿', '讲演',
+];
+
 // 按场景/痛点关键词路由（具体关键词优先，"改/修"等通用词放最后）
 const ROUTES: SeedRoute[] = [
   // 圆角 → spec s-002（具体关键词优先）
@@ -161,23 +168,46 @@ const ROUTES: SeedRoute[] = [
 ];
 
 /**
- * 根据 seed 关键词检测场景（P1.1 新增）。
- * 后端关键词命中数 > 前端关键词命中数 → backend-api
- * 否则 → frontend-ui（默认）
+ * 根据 seed 关键词检测场景（P1.1 新增，三模式系统扩展 ppt 场景）。
+ * 判定优先级：
+ *   1. 后端关键词命中数 > 前端关键词命中数 → backend-api
+ *   2. 前端关键词命中数 > 0 → frontend-ui
+ *   3. PPT 关键词命中数 > 0 → ppt（三模式系统新增，走 PPT 专属问题库）
+ *   4. 都没命中 → frontend-ui（默认，保持向后兼容）
  */
 export function detectScene(seed: string): SceneType {
   if (!seed) return 'frontend-ui';
   const lowered = seed.toLowerCase();
   let backendHits = 0;
   let frontendHits = 0;
+  let pptHits = 0;
   for (const kw of BACKEND_KEYWORDS) {
     if (lowered.includes(kw.toLowerCase())) backendHits++;
   }
   for (const kw of FRONTEND_KEYWORDS) {
     if (lowered.includes(kw.toLowerCase())) frontendHits++;
   }
-  // 后端命中严格大于前端才判定为后端，否则默认前端
-  return backendHits > frontendHits ? 'backend-api' : 'frontend-ui';
+  for (const kw of PPT_KEYWORDS) {
+    if (lowered.includes(kw.toLowerCase())) pptHits++;
+  }
+  // 后端命中严格大于前端才判定为后端
+  if (backendHits > frontendHits) return 'backend-api';
+  // 前端有命中，优先前端（保持向后兼容）
+  if (frontendHits > 0) return 'frontend-ui';
+  // 三模式系统：前端后端都没命中，但命中了 PPT 关键词 → ppt
+  if (pptHits > 0) return 'ppt';
+  // 默认前端
+  return 'frontend-ui';
+}
+
+/**
+ * 三模式系统：根据用户选择检测场景。
+ * - sceneChoice !== 'auto' 时，强制走用户选择的场景
+ * - sceneChoice === 'auto' 时，走 detectScene 关键词检测
+ */
+export function detectSceneWithChoice(seed: string, sceneChoice: SceneChoice): SceneType {
+  if (sceneChoice !== 'auto') return sceneChoice;
+  return detectScene(seed);
 }
 
 /**
@@ -300,25 +330,28 @@ export function routeSeed(loader: QuestionLoader, seed: string): {
  * 完整版路由：场景检测 → 否定词预处理 → 关键词优先 → 形容词簇匹配 → 聚合 → 必要时生成澄清题。
  * P1.1：新增 scene 字段，根据 seed 关键词自动判定 frontend-ui / backend-api 场景。
  * r1增强：新增否定词识别，被否定的关键词路由跳过，被否定的簇权重转负。
+ * 三模式系统：新增 forcedScene 参数，用户显式选择场景时强制走该场景。
  */
-export function routeSeedWithClusters(loader: QuestionLoader, seed: string) {
+export function routeSeedWithClusters(loader: QuestionLoader, seed: string, forcedScene?: SceneType | null) {
   const text = seed.trim();
   if (!text) {
     return { question: null, matchedKeywords: [], matchedClusters: [], tagScores: [], scene: 'frontend-ui' as SceneType };
   }
   const lowered = text.toLowerCase();
 
-  // 0. 场景检测（P1.1 新增）
-  const scene = detectScene(text);
+  // 0. 场景检测（三模式系统：forcedScene 优先，否则走 detectScene 关键词检测）
+  const scene = forcedScene ?? detectScene(text);
+
   // 切换 loader 到对应场景，使后续 getQuestionById / getBank 取到正确场景的问题库
   loader.setScene(scene);
 
   // r1增强：否定词预处理
   const negatedWords = detectNegation(text);
 
-  // 1. 关键词路由（按场景过滤：前端 seed 只走前端路由，后端 seed 只走后端路由）
+  // 1. 关键词路由（按场景过滤：前端 seed 只走前端路由，后端 seed 只走后端路由，PPT 走 PPT 路由）
   const sceneRoutes = ROUTES.filter((r) => {
     if (scene === 'backend-api') return r.scene === 'backend-api';
+    if (scene === 'ppt') return r.scene === 'ppt'; // PPT 场景走 PPT 路由（当前无专属路由，返回空）
     // frontend-ui：走未标记 scene 的路由（即前端路由）
     return !r.scene || r.scene === 'frontend-ui';
   });
@@ -437,9 +470,17 @@ export function routeWithLLMAnalysis(
   loader: QuestionLoader,
   _seed: string,
   analysis: LLMIntentAnalysis,
+  forcedScene?: SceneType | null,
 ): ReturnType<typeof routeSeedWithClusters> {
-  // 场景切换（fullstack 时默认 frontend-ui）
-  const scene: SceneType = analysis.scene === 'backend-api' ? 'backend-api' : 'frontend-ui';
+  // 场景切换（三模式系统：forcedScene 优先；fullstack 时默认 frontend-ui；ppt 走 PPT 问题库）
+  const scene: SceneType = forcedScene
+    ? forcedScene
+    : analysis.scene === 'backend-api'
+      ? 'backend-api'
+      : analysis.scene === 'ppt'
+        ? 'ppt'
+        : 'frontend-ui';
+
   loader.setScene(scene);
 
   // 将 LLM detected_dimensions 转为 tagScores

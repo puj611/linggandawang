@@ -10,7 +10,7 @@ import { useEngineStore } from '@/stores/engineStore';
 import { useContextStore } from '@/stores/contextStore';
 import { questionLoader } from '@/engine/QuestionLoader';
 import { QuestionEngine } from '@/engine/QuestionEngine';
-import type { FlowMode } from '@/engine/types';
+import type { FlowMode, SceneChoice } from '@/engine/types';
 import { promptGenerator } from '@/engine/PromptGenerator';
 import { pushRecentPrompt } from '@/components/RecentPromptList';
 import type { PromptResult } from '@/types/prompt';
@@ -19,6 +19,8 @@ import type { IntentTag } from '@/types/intent-tag';
 import type { ContextPreference } from '@/types/context';
 import { useAnalyticsStore } from '@/stores/analyticsStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useRequirementStore } from '@/stores/requirementStore';
+import { extractCompletedTopics } from '@/engine/RequirementSyncer';
 import { v4 as uuidv4 } from 'uuid';
 import { analyzeIntent } from '@/engine/LLMIntentAnalyzer';
 import { evaluateFollowup, generateFollowupQuestion } from '@/engine/SmartFollowup';
@@ -146,6 +148,9 @@ export function useFlow() {
     })),
   );
   const projectFingerprint = useProjectStore((s) => s.fingerprint);
+  const fullScanResult = useProjectStore((s) => s.fullScanResult);
+  // M11：从需求同步器提取已完成子任务主题，供 Selector 进度去重
+  const completedTopics = useRequirementStore((s) => extractCompletedTopics(s.requirements));
 
   /** 启动提问（v2.0：异步调用 LLM 意图分析后启动引擎）
    *  v2.1：从 contextStore 读取 recent_qa 喂给 LLM，提升分析连续性
@@ -153,13 +158,17 @@ export function useFlow() {
    *  P1-5 修复：用 startSeq 序列号取消过期 LLM 分析后的 setState，避免快速重复 start 导致状态错乱
    */
   const start = useCallback(
-    async (seed: string, mode: FlowMode = 'full') => {
+    async (seed: string, mode: FlowMode = 'full', sceneChoice: SceneChoice = 'auto') => {
       const engine = getEngine();
       resetEngineStore();
       // v2.2：每次 start 重置追问标记
       followupTriggeredThisSession = false;
       // P1-5：进入时递增序列号，await 后若 seq 不再匹配则放弃本次 setState
       const mySeq = ++startSeq;
+
+      // 三模式系统：立即切换到 question 态显示 loading（避免 await LLM 期间用户感知"无响应"）
+      // QuestionPanel 在 currentQuestion 为 null 时显示 loading spinner
+      transition('question');
 
       // v2.1：从 contextStore 读取最近问答历史，喂给 LLM 提供连续性
       // 注意：不等待 load()，因为 ctxStore 通常在 App 启动时已 load
@@ -173,23 +182,25 @@ export function useFlow() {
         answer: qa.answer,
       }));
 
-      // v2.0：异步调用 LLM 意图分析（8 秒超时，降级返回 null）
-      // P3 快速通道：quick 模式下超时降至 4s
+      // 三模式系统：用户显式选择场景时跳过 LLM 分析（场景已确定，无需检测，立即响应）
+      // auto 模式保留 LLM 分析用于场景检测和意图提取
       let llmAnalysis = null;
-      try {
-        const projectStack = projectFingerprint
-          ? [projectFingerprint.framework, projectFingerprint.language, projectFingerprint.css_solution]
-              .filter(Boolean)
-              .join(' / ')
-          : undefined;
-        llmAnalysis = await analyzeIntent(
-          seed,
-          projectStack,
-          recentQA,
-          mode === 'quick' ? 'quick' : 'full',
-        );
-      } catch (e) {
-        console.warn('[useFlow] LLM 意图分析失败，降级到关键词匹配', e);
+      if (sceneChoice === 'auto') {
+        try {
+          const projectStack = projectFingerprint
+            ? [projectFingerprint.framework, projectFingerprint.language, projectFingerprint.css_solution]
+                .filter(Boolean)
+                .join(' / ')
+            : undefined;
+          llmAnalysis = await analyzeIntent(
+            seed,
+            projectStack,
+            recentQA,
+            mode === 'quick' ? 'quick' : 'full',
+          );
+        } catch (e) {
+          console.warn('[useFlow] LLM 意图分析失败，降级到关键词匹配', e);
+        }
       }
 
       // P1-5：await 期间若用户已再次 start，放弃本次后续操作
@@ -197,37 +208,48 @@ export function useFlow() {
       // v2.3：组件卸载后也不再继续
       if (!mountedRef.current) return;
 
-      const q = engine.start(seed, mode, llmAnalysis, recentQAForEngine);
-      setSeedInput(seed);
-      setStage(engine.getStage());
-      if (q) {
-        setCurrentQuestion(q);
-        addAsked(q.id);
+      // 异常防护：engine.start 或后续 setState 抛异常时，回退到 expanded 态避免永久 loading
+      try {
+        const q = engine.start(seed, mode, llmAnalysis, recentQAForEngine, sceneChoice, completedTopics);
+        setSeedInput(seed);
+        setStage(engine.getStage());
+        if (q) {
+          setCurrentQuestion(q);
+          addAsked(q.id);
+        } else {
+          // engine.start 返回 null（首题缺失），回退到 expanded 避免卡在 loading
+          console.error('[useFlow] engine.start 返回 null，首题缺失，回退到 expanded');
+          transition('expanded');
+          return;
+        }
+        // 同步种子阶段产出的意图标签到 store
+        for (const tag of engine.getIntentTags()) {
+          addIntentTag(tag);
+        }
+        setCanUndo(false);
+        // 记录路由命中分析数据
+        const recordHit = useAnalyticsStore.getState().recordHit;
+        recordHit({
+          id: uuidv4(),
+          timestamp: new Date().toISOString(),
+          seed,
+          routeSource: engine.getRouteSource(),
+          matchedKeywords: engine.getMatchedKeywords(),
+          matchedClusterIds: engine.getMatchedClusterIds(),
+          matchedClusterForms: engine.getMatchedClusters().map((m) => m.matched_form),
+          firstQuestionId: q?.id ?? null,
+          firstQuestionStage: q?.stage ?? null,
+          hasDynamicClarification: engine.getHasDynamicClarification(),
+          topTagScores: engine
+            .getTagScores()
+            .slice(0, 5)
+            .map((s) => ({ tag: s.tag, weight: s.weight })),
+        });
+        transition('question');
+      } catch (e) {
+        console.error('[useFlow] start 内部异常，回退到 expanded', e);
+        transition('expanded');
       }
-      // 同步种子阶段产出的意图标签到 store
-      for (const tag of engine.getIntentTags()) {
-        addIntentTag(tag);
-      }
-      setCanUndo(false);
-      // 记录路由命中分析数据
-      const recordHit = useAnalyticsStore.getState().recordHit;
-      recordHit({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        seed,
-        routeSource: engine.getRouteSource(),
-        matchedKeywords: engine.getMatchedKeywords(),
-        matchedClusterIds: engine.getMatchedClusterIds(),
-        matchedClusterForms: engine.getMatchedClusters().map((m) => m.matched_form),
-        firstQuestionId: q?.id ?? null,
-        firstQuestionStage: q?.stage ?? null,
-        hasDynamicClarification: engine.getHasDynamicClarification(),
-        topTagScores: engine
-          .getTagScores()
-          .slice(0, 5)
-          .map((s) => ({ tag: s.tag, weight: s.weight })),
-      });
-      transition('question');
     },
     [resetEngineStore, setSeedInput, setStage, setCurrentQuestion, addAsked, addIntentTag, transition, projectFingerprint, ctxStore],
   );
@@ -380,27 +402,43 @@ export function useFlow() {
       console.warn('[useFlow] 向量检索失败，降级到无 RAG 模式', e);
     }
 
-    const prompt = promptGenerator.generate({
-      intentTags: snap.intentTags,
-      answers: snap.answers,
-      seedInput: snap.seedInput,
-      project: projectFingerprint,
-      recentQA,
-      preferences,
-      mode: genMode,
-      retrievedContext,
-    });
-    setResult(prompt);
-    await ctxStore.setIntentTags(snap.intentTags);
-    await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
-    // v2.1：累积本次提问沉淀的稳定偏好（场景/主题/响应式等）
-    const newPrefs = extractPreferencesFromEngine(engine);
-    if (newPrefs.length > 0) {
-      await ctxStore.appendPreferences(newPrefs);
+    // 异常防护：prompt 生成或持久化失败时，仍需 transition 到安全状态，避免永久 loading
+    try {
+      const prompt = promptGenerator.generate({
+        intentTags: snap.intentTags,
+        answers: snap.answers,
+        seedInput: snap.seedInput,
+        project: projectFingerprint,
+        scanResult: fullScanResult,
+        recentQA,
+        preferences,
+        mode: genMode,
+        retrievedContext,
+        // 三模式系统：传入场景类型 + 问题阶段映射（PPT 问题 ID 以 'o' 开头，需显式映射阶段）
+        scene: engine.getScene(),
+        questionStageMap: engine.getQuestionStageMap(),
+      });
+      setResult(prompt);
+      // 持久化失败不阻塞 UI（已修复死锁，但仍可能因磁盘问题失败）
+      try {
+        await ctxStore.setIntentTags(snap.intentTags);
+        await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
+        // v2.1：累积本次提问沉淀的稳定偏好（场景/主题/响应式等）
+        const newPrefs = extractPreferencesFromEngine(engine);
+        if (newPrefs.length > 0) {
+          await ctxStore.appendPreferences(newPrefs);
+        }
+      } catch (persistErr) {
+        console.warn('[useFlow] 持久化失败，不影响结果展示', persistErr);
+      }
+      pushRecentPrompt(promptGenerator.toMarkdown(prompt));
+    } catch (genErr) {
+      console.error('[useFlow] 提示词生成失败，回退到 expanded', genErr);
+      transition('expanded');
+      return;
     }
-    pushRecentPrompt(promptGenerator.toMarkdown(prompt));
     transition('result');
-  }, [setResult, ctxStore, transition, projectFingerprint]);
+  }, [setResult, ctxStore, transition, projectFingerprint, fullScanResult]);
 
   /** 用户在二次确认中选择"结束并生成"
    *  P1-2 修复：改为 async 并 await finishAndGenerate，避免 unhandled rejection
@@ -414,37 +452,45 @@ export function useFlow() {
 
   /** 直接生成：跳过所有问题，仅基于种子输入+意图提取生成提示词 */
   const directGenerate = useCallback(
-    async (seed: string) => {
+    async (seed: string, sceneChoice: SceneChoice = 'auto') => {
       const engine = getEngine();
       resetEngineStore();
-      // 清空上下文，避免上次会话的 QA 污染本次生成
-      await ctxStore.clear();
-      engine.start(seed, 'direct');
-      setSeedInput(seed);
-      setStage(engine.getStage());
-      for (const tag of engine.getIntentTags()) {
-        addIntentTag(tag);
+      // 三模式系统：立即切换到 question 态显示 loading（避免生成期间用户感知"无响应"）
+      transition('question');
+      // 异常防护：任何步骤失败都回退到 expanded，避免永久 loading
+      try {
+        // 清空上下文，避免上次会话的 QA 污染本次生成
+        await ctxStore.clear();
+        engine.start(seed, 'direct', null, [], sceneChoice, completedTopics);
+        setSeedInput(seed);
+        setStage(engine.getStage());
+        for (const tag of engine.getIntentTags()) {
+          addIntentTag(tag);
+        }
+        const recordHit = useAnalyticsStore.getState().recordHit;
+        recordHit({
+          id: uuidv4(),
+          timestamp: new Date().toISOString(),
+          seed,
+          routeSource: engine.getRouteSource(),
+          matchedKeywords: engine.getMatchedKeywords(),
+          matchedClusterIds: engine.getMatchedClusterIds(),
+          matchedClusterForms: engine.getMatchedClusters().map((m) => m.matched_form),
+          firstQuestionId: null,
+          firstQuestionStage: null,
+          hasDynamicClarification: engine.getHasDynamicClarification(),
+          topTagScores: engine
+            .getTagScores()
+            .slice(0, 5)
+            .map((s) => ({ tag: s.tag, weight: s.weight })),
+        });
+        await finishAndGenerate();
+      } catch (e) {
+        console.error('[useFlow] directGenerate 异常，回退到 expanded', e);
+        transition('expanded');
       }
-      const recordHit = useAnalyticsStore.getState().recordHit;
-      recordHit({
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        seed,
-        routeSource: engine.getRouteSource(),
-        matchedKeywords: engine.getMatchedKeywords(),
-        matchedClusterIds: engine.getMatchedClusterIds(),
-        matchedClusterForms: engine.getMatchedClusters().map((m) => m.matched_form),
-        firstQuestionId: null,
-        firstQuestionStage: null,
-        hasDynamicClarification: engine.getHasDynamicClarification(),
-        topTagScores: engine
-          .getTagScores()
-          .slice(0, 5)
-          .map((s) => ({ tag: s.tag, weight: s.weight })),
-      });
-      await finishAndGenerate();
     },
-    [resetEngineStore, ctxStore, setSeedInput, setStage, addIntentTag, finishAndGenerate],
+    [resetEngineStore, ctxStore, setSeedInput, setStage, addIntentTag, finishAndGenerate, transition],
   );
 
   /** 删除意图标签后重生成
@@ -463,14 +509,14 @@ export function useFlow() {
           engine.getAnswers(),
           engine.getSeedInput(),
           projectFingerprint,
-          { recentQA, preferences },
+          { scanResult: fullScanResult, recentQA, preferences, scene: engine.getScene(), questionStageMap: engine.getQuestionStageMap() },
         );
         setResult(prompt);
         await ctxStore.setIntentTags(remaining);
         await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
       }
     },
-    [removeTagStore, appState, promptGenerator, setResult, ctxStore, projectFingerprint],
+    [removeTagStore, appState, promptGenerator, setResult, ctxStore, projectFingerprint, fullScanResult],
   );
 
   /** 添加截图诊断产出的标签
@@ -483,23 +529,34 @@ export function useFlow() {
         engine.addIntentTag(t);
         addIntentTag(t);
       }
-      if (appState === 'result') {
-        const recentQA = ctxStore.getRecentQA(20);
-        const preferences = ctxStore.getPreferences();
-        const prompt = promptGenerator.generate({
-          intentTags: engine.getIntentTags(),
-          answers: engine.getAnswers(),
-          seedInput: engine.getSeedInput(),
-          project: projectFingerprint,
-          recentQA,
-          preferences,
-        });
-        setResult(prompt);
-        await ctxStore.setIntentTags(engine.getIntentTags());
-        await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
+      // 实时从 store 读取状态，避免闭包中 appState 过期（directGenerate 完成后 appState 已变为 'result'，但闭包可能仍是旧值）
+      const currentState = useAppStore.getState().state;
+      if (currentState === 'result') {
+        // 异常防护：持久化失败不应阻塞 UI，prompt 生成失败时保留旧结果
+        try {
+          const recentQA = ctxStore.getRecentQA(20);
+          const preferences = ctxStore.getPreferences();
+          const prompt = promptGenerator.generate({
+            intentTags: engine.getIntentTags(),
+            answers: engine.getAnswers(),
+            seedInput: engine.getSeedInput(),
+            project: projectFingerprint,
+            scanResult: fullScanResult,
+            recentQA,
+            preferences,
+            // 三模式系统：传入场景类型 + 问题阶段映射
+            scene: engine.getScene(),
+            questionStageMap: engine.getQuestionStageMap(),
+          });
+          setResult(prompt);
+          await ctxStore.setIntentTags(engine.getIntentTags());
+          await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
+        } catch (e) {
+          console.error('[useFlow] addScreenshotTags 重生成失败，保留旧结果', e);
+        }
       }
     },
-    [addIntentTag, appState, promptGenerator, setResult, ctxStore, projectFingerprint],
+    [addIntentTag, appState, promptGenerator, setResult, ctxStore, projectFingerprint, fullScanResult],
   );
 
   /** v1.2 新增：返回上一题（撤销最后一次回答） */

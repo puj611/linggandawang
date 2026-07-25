@@ -3,7 +3,7 @@
 import type { PromptResult, PromptSegment, MarkdownExportOptions } from '@/types/prompt';
 import type { IntentTag } from '@/types/intent-tag';
 import type { Answer } from '@/types/state';
-import type { ProjectFingerprint } from '@/types/project';
+import type { ProjectFingerprint, FullScanResult } from '@/types/project';
 import type { ContextRecentQA, ContextPreference } from '@/types/context';
 import type { PromptStage } from './types';
 import { STAGE_ORDER } from './types';
@@ -16,11 +16,16 @@ import {
   PROJECT_TYPE_LABELS,
 } from '@/lib/tech-rules';
 
+/** 三模式系统：场景类型，与 engine/types.ts SceneType 对齐 */
+type GenerateScene = 'frontend-ui' | 'backend-api' | 'ppt';
+
 interface GenerateInput {
   intentTags: IntentTag[];
   answers: Record<string, Answer>;
   seedInput: string;
   project?: ProjectFingerprint | null;
+  /** M10 新增：深度扫描结果，注入 Git 状态 / 文件统计 / TODO 标记到项目上下文段 */
+  scanResult?: FullScanResult | null;
   /** v2.0 新增：最近问答历史，用于在动作段中提供连续性 */
   recentQA?: ContextRecentQA[];
   /** v2.0 新增：用户已确认偏好，注入约束段 */
@@ -29,6 +34,10 @@ interface GenerateInput {
   mode?: 'quick' | 'full';
   /** RAG 新增：向量检索到的相似历史 QA，注入动作段提供跨会话连续性 */
   retrievedContext?: Array<{ question: string; answer: string; score: number }>;
+  /** 三模式系统：场景类型，ppt 场景下走 PPT 专属提示词模板 */
+  scene?: GenerateScene;
+  /** 三模式系统：问题 ID → 阶段映射（PPT 问题 ID 以 'o' 开头，需要显式映射阶段） */
+  questionStageMap?: Record<string, PromptStage>;
 }
 
 /** v1.2 新增：可编辑的段落键名 */
@@ -45,13 +54,14 @@ const STAGE_TO_LABEL: Record<string, string> = {
 export class PromptGenerator {
   /** 从 EngineState 生成 PromptResult */
   generate(input: GenerateInput): PromptResult {
-    const { intentTags, answers, seedInput, project, recentQA, preferences, mode, retrievedContext } = input;
-    const rawQuotes = this.collectRawQuotes(answers, seedInput, recentQA);
-    const projectCtx = project ? this.buildProjectContext(project) : null;
-    const action = this.buildAction(intentTags, answers, seedInput, recentQA, retrievedContext);
-    const spec = this.buildSpec(intentTags, answers, seedInput, project);
-    const constraint = this.buildConstraint(intentTags, answers, project, preferences);
-    const verify = this.buildVerify(intentTags, answers, seedInput, mode);
+    const { intentTags, answers, seedInput, project, scanResult, recentQA, preferences, mode, retrievedContext, scene, questionStageMap } = input;
+    const rawQuotes = this.collectRawQuotes(answers, seedInput, recentQA, questionStageMap);
+    const projectCtx = project ? this.buildProjectContext(project, scanResult) : null;
+    // 三模式系统：ppt 场景下走 PPT 专属模板，不注入前端硬编码约束
+    const action = this.buildAction(intentTags, answers, seedInput, recentQA, retrievedContext, scene, questionStageMap);
+    const spec = this.buildSpec(intentTags, answers, seedInput, project, scene, questionStageMap);
+    const constraint = this.buildConstraint(intentTags, answers, project, preferences, scene, questionStageMap);
+    const verify = this.buildVerify(intentTags, answers, seedInput, mode, scene, questionStageMap);
     return {
       project_context: projectCtx,
       action,
@@ -74,16 +84,26 @@ export class PromptGenerator {
     answers: Record<string, Answer>,
     seed: string,
     project?: ProjectFingerprint | null,
-    context?: { recentQA?: ContextRecentQA[]; preferences?: ContextPreference[]; retrievedContext?: Array<{ question: string; answer: string; score: number }> },
+    context?: {
+      scanResult?: FullScanResult | null;
+      recentQA?: ContextRecentQA[];
+      preferences?: ContextPreference[];
+      retrievedContext?: Array<{ question: string; answer: string; score: number }>;
+      scene?: GenerateScene;
+      questionStageMap?: Record<string, PromptStage>;
+    },
   ): PromptResult {
     return this.generate({
       intentTags: remainingTags,
       answers,
       seedInput: seed,
       project,
+      scanResult: context?.scanResult,
       recentQA: context?.recentQA,
       preferences: context?.preferences,
       retrievedContext: context?.retrievedContext,
+      scene: context?.scene,
+      questionStageMap: context?.questionStageMap,
     });
   }
 
@@ -215,7 +235,7 @@ export class PromptGenerator {
 
   // ──────── 段落构建 ────────
 
-  private buildProjectContext(project: ProjectFingerprint): PromptSegment {
+  private buildProjectContext(project: ProjectFingerprint, scanResult?: FullScanResult | null): PromptSegment {
     // 核心差异化：把项目指纹转成 AI 能直接遵循的项目上下文指令
     const lines: string[] = [];
     lines.push(`当前项目：${project.name}`);
@@ -268,6 +288,63 @@ export class PromptGenerator {
       }
     }
 
+    // M10 增强：深度扫描数据注入（Git 状态 / 文件统计 / TODO 标记）
+    if (scanResult) {
+      lines.push('');
+
+      // Git 状态
+      if (scanResult.git.is_repo) {
+        const gitParts: string[] = [];
+        if (scanResult.git.branch) gitParts.push(`当前分支：${scanResult.git.branch}`);
+        if (scanResult.git.changed_files.length > 0) {
+          const changed = scanResult.git.changed_files;
+          const summary = changed.slice(0, 5).map((f) => `${f.path}(${f.status})`).join('、');
+          const more = changed.length > 5 ? ` 等 ${changed.length} 个文件` : '';
+          gitParts.push(`未提交变更：${summary}${more}`);
+        }
+        if (scanResult.git.recent_commits.length > 0) {
+          const last = scanResult.git.recent_commits[0];
+          gitParts.push(`最近提交：${last.hash} ${last.message}`);
+        }
+        if (gitParts.length > 0) {
+          lines.push(`Git 状态：`);
+          for (const p of gitParts) {
+            lines.push(`  - ${p}`);
+          }
+        }
+      }
+
+      // 文件统计
+      const ft = scanResult.file_tree;
+      if (ft.total_files > 0) {
+        const topExts = Object.entries(ft.by_extension)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([ext, count]) => `.${ext}(${count})`)
+          .join('、');
+        lines.push(`项目规模：${ft.total_files} 个文件、${ft.total_dirs} 个目录${topExts ? '，主要类型：' + topExts : ''}`);
+      }
+
+      // TODO/FIXME 标记
+      if (scanResult.todos.length > 0) {
+        const tagCounts: Record<string, number> = {};
+        for (const t of scanResult.todos) {
+          tagCounts[t.tag] = (tagCounts[t.tag] || 0) + 1;
+        }
+        const tagSummary = Object.entries(tagCounts)
+          .map(([tag, count]) => `${tag}(${count})`)
+          .join('、');
+        lines.push(`代码标记：${scanResult.todos.length} 处待处理（${tagSummary}）——修改相关文件时注意处理对应标记`);
+      }
+
+      // 依赖概况
+      const depCount = Object.keys(scanResult.dependencies.dependencies).length;
+      const devDepCount = Object.keys(scanResult.dependencies.dev_dependencies).length;
+      if (depCount > 0 || devDepCount > 0) {
+        lines.push(`依赖：${depCount} 个生产依赖、${devDepCount} 个开发依赖${scanResult.dependencies.lock_file ? '，锁文件：' + scanResult.dependencies.lock_file : ''}`);
+      }
+    }
+
     lines.push('');
     lines.push('—— 以上上下文由灵感大王扫描项目自动注入，后续输出必须严格遵循。不得违反上述技术栈/目录/约定引入新方案，不得建议或使用项目未采用的库或模式。');
 
@@ -283,16 +360,25 @@ export class PromptGenerator {
     seed: string,
     recentQA?: ContextRecentQA[],
     retrievedContext?: Array<{ question: string; answer: string; score: number }>,
+    scene?: GenerateScene,
+    questionStageMap?: Record<string, PromptStage>,
   ): PromptSegment {
     // 动作段：从 seed + perceive 回答提取动词 + 对象
-    const perceiveAnswers = this.answersByStage(answers, 'perceive');
+    const perceiveAnswers = this.answersByStage(answers, 'perceive', questionStageMap);
     const sceneTag = tags.find((t) => t.label === '场景');
     const targetTag = tags.find(
       (t) => t.label === '目标' || t.label === '维度',
     );
 
+    // 三模式系统：ppt 场景下走 PPT 专属动作描述
     let action = '';
-    if (sceneTag?.value === '修UI') {
+    if (scene === 'ppt') {
+      if (seed) {
+        action = `完成以下 PPT 任务：${seed}`;
+      } else {
+        action = `按以下要求完成 PPT 任务`;
+      }
+    } else if (sceneTag?.value === '修UI') {
       action = `将${targetTag?.value ?? '目标 UI 元素'}按以下规格调整`;
     } else if (sceneTag?.value === '加细节') {
       action = `给${targetTag?.value ?? '现有功能'}加入以下细节`;
@@ -330,13 +416,13 @@ export class PromptGenerator {
     };
   }
 
-  private buildSpec(tags: IntentTag[], answers: Record<string, Answer>, seed: string, project?: ProjectFingerprint | null): PromptSegment {
+  private buildSpec(tags: IntentTag[], answers: Record<string, Answer>, seed: string, project?: ProjectFingerprint | null, scene?: GenerateScene, questionStageMap?: Record<string, PromptStage>): PromptSegment {
     // 规格段：从 spec 阶段回答 + 评价词典展开
-    const specAnswers = this.answersByStage(answers, 'spec');
+    const specAnswers = this.answersByStage(answers, 'spec', questionStageMap);
     const lines: string[] = [];
 
-    // 项目自动注入默认规格
-    if (project) {
+    // 三模式系统：ppt 场景下跳过前端项目规格注入（CSS 框架/React/TS/组件库等）
+    if (project && scene !== 'ppt') {
       const projectInjected: string[] = [];
       if (project.css_solution === 'tailwind') {
         projectInjected.push('样式方案：使用 Tailwind CSS 原子类，不得写内联 style 或新增 CSS 文件');
@@ -374,15 +460,23 @@ export class PromptGenerator {
     }
 
     // 3. 评价词典展开（seed + perceive/name raw 中的"太挤/太丑"等）
-    const allText = [seed, ...Object.values(answers).map((a) => a.raw)].join(' ');
-    const expandedSpecs = expandToSpecs(allText);
-    for (const s of expandedSpecs) {
-      if (!lines.some((l) => l.includes(s.slice(0, 10)))) {
-        lines.push(s);
+    // 三模式系统：ppt 场景下跳过 UI 评价词典（如"太挤→间距 8/12/16px"这类映射不适用 PPT 场景）
+    if (scene !== 'ppt') {
+      const allText = [seed, ...Object.values(answers).map((a) => a.raw)].join(' ');
+      const expandedSpecs = expandToSpecs(allText);
+      for (const s of expandedSpecs) {
+        if (!lines.some((l) => l.includes(s.slice(0, 10)))) {
+          lines.push(s);
+        }
       }
     }
 
-    const content = lines.length > 0 ? lines.join('\n') : '（请补充具体规格：间距/圆角/字号/配色等数值）';
+    // 三模式系统：ppt 场景下提供 PPT 专属规格提示
+    const content = lines.length > 0
+      ? lines.join('\n')
+      : (scene === 'ppt'
+        ? '（请补充具体规格：目标受众/输出格式/篇幅/风格/语气等）'
+        : '（请补充具体规格：间距/圆角/字号/配色等数值）');
     const raw = specAnswers.map((a) => a.raw).filter(Boolean).join(' / ');
     return {
       title: '怎么做',
@@ -396,14 +490,16 @@ export class PromptGenerator {
     answers: Record<string, Answer>,
     project?: ProjectFingerprint | null,
     preferences?: ContextPreference[],
+    scene?: GenerateScene,
+    questionStageMap?: Record<string, PromptStage>,
   ): PromptSegment {
     // 约束段：从 verify 阶段回答 + 标签推导否定式约束
-    const verifyAnswers = this.answersByStage(answers, 'verify');
-    const executeAnswers = this.answersByStage(answers, 'execute');
+    const verifyAnswers = this.answersByStage(answers, 'verify', questionStageMap);
+    const executeAnswers = this.answersByStage(answers, 'execute', questionStageMap);
     const lines: string[] = [];
 
-    // 项目自动注入约束（硬红线）
-    if (project) {
+    // 三模式系统：ppt 场景下跳过前端硬编码约束（npm/Tailwind/React/TS/Next.js 等）
+    if (project && scene !== 'ppt') {
       lines.push(`不得引入 package.json 中不存在的 npm 依赖`);
       if (project.package_manager) {
         const pm = project.package_manager;
@@ -424,26 +520,35 @@ export class PromptGenerator {
       }
     }
 
-    // 从 execute 回答推导
-    const respTag = tags.find((t) => t.label === '响应式');
-    if (respTag) {
-      if (respTag.value === '桌面优先，移动端自适应') lines.push('不得破坏移动端自适应');
-      if (respTag.value === '移动优先，桌面端扩展') lines.push('保持移动优先的断点顺序');
-      if (respTag.value === '仅桌面端，不响应式') lines.push('不需要响应式处理');
+    // 从 execute 回答推导（仅 frontend-ui 场景有这些标签）
+    if (scene !== 'ppt') {
+      const respTag = tags.find((t) => t.label === '响应式');
+      if (respTag) {
+        if (respTag.value === '桌面优先，移动端自适应') lines.push('不得破坏移动端自适应');
+        if (respTag.value === '移动优先，桌面端扩展') lines.push('保持移动优先的断点顺序');
+        if (respTag.value === '仅桌面端，不响应式') lines.push('不需要响应式处理');
+      }
+      const themeTag = tags.find((t) => t.label === '主题');
+      if (themeTag) {
+        if (themeTag.value === '仅深色') lines.push('不需要支持浅色主题');
+        if (themeTag.value === '仅浅色') lines.push('不需要支持深色主题');
+        if (themeTag.value === '双主题') lines.push('必须同时支持深色/浅色主题切换');
+      }
+      const impactTag = tags.find((t) => t.label === '影响');
+      if (impactTag?.value === '纯视觉，不影响逻辑') lines.push('不得改动任何交互逻辑代码');
+      if (impactTag?.value === '需要调整交互边界') lines.push('不得破坏现有交互逻辑的边界');
     }
-    const themeTag = tags.find((t) => t.label === '主题');
-    if (themeTag) {
-      if (themeTag.value === '仅深色') lines.push('不需要支持浅色主题');
-      if (themeTag.value === '仅浅色') lines.push('不需要支持深色主题');
-      if (themeTag.value === '双主题') lines.push('必须同时支持深色/浅色主题切换');
-    }
-    const impactTag = tags.find((t) => t.label === '影响');
-    if (impactTag?.value === '纯视觉，不影响逻辑') lines.push('不得改动任何交互逻辑代码');
-    if (impactTag?.value === '需要调整交互边界') lines.push('不得破坏现有交互逻辑的边界');
 
-    // 通用否定式约束
+    // 通用否定式约束（适用于所有场景）
     lines.push('不要使用"现代化、美观、流畅"等空话，必须给出可量化规格');
-    if (!project) lines.push('不得引入新的 npm 依赖');
+    if (!project && scene !== 'ppt') lines.push('不得引入新的 npm 依赖');
+
+    // 三模式系统：ppt 场景下追加 PPT 专属约束
+    if (scene === 'ppt') {
+      lines.push('');
+      lines.push('场景说明：当前为 PPT/演示文稿场景，使用 PPT 专属问题库');
+      lines.push('输出内容需符合演示文稿的排版与叙事逻辑，不要套用前端 UI 规范');
+    }
 
     // verify 回答中的回退策略作为约束
     for (const a of verifyAnswers) {
@@ -473,44 +578,56 @@ export class PromptGenerator {
     answers: Record<string, Answer>,
     seedInput: string,
     mode?: 'quick' | 'full',
+    scene?: GenerateScene,
+    questionStageMap?: Record<string, PromptStage>,
   ): PromptSegment {
     // 验证段：从 verify 阶段回答生成可观测条件
-    const verifyAnswers = this.answersByStage(answers, 'verify');
+    const verifyAnswers = this.answersByStage(answers, 'verify', questionStageMap);
     const lines: string[] = [];
 
-    const methodTag = tags.find((t) => t.label === '验证');
-    if (methodTag) {
-      if (methodTag.value === '截图对比前后') lines.push('截图对比改动前后视觉效果');
-      if (methodTag.value === '肉眼对照参考产品') lines.push('肉眼对照参考产品逐项核对');
-      if (methodTag.value === '走查清单逐项打勾') lines.push('走查清单逐项打勾验收');
-    }
+    // 三模式系统：ppt 场景下跳过前端专属验证标签（对比度/间距/布局等不适用 PPT）
+    if (scene !== 'ppt') {
+      const methodTag = tags.find((t) => t.label === '验证');
+      if (methodTag) {
+        if (methodTag.value === '截图对比前后') lines.push('截图对比改动前后视觉效果');
+        if (methodTag.value === '肉眼对照参考产品') lines.push('肉眼对照参考产品逐项核对');
+        if (methodTag.value === '走查清单逐项打勾') lines.push('走查清单逐项打勾验收');
+      }
 
-    const stdTag = tags.find((t) => t.label === '验证标准');
-    if (stdTag) {
-      lines.push(`客观标准：${stdTag.value}`);
-    }
+      const stdTag = tags.find((t) => t.label === '验证标准');
+      if (stdTag) {
+        lines.push(`客观标准：${stdTag.value}`);
+      }
 
-    // 对比度约束
-    const contrastTag = tags.find((t) => t.label === '对比度');
-    if (contrastTag) {
-      lines.push(`文字与背景对比度 ≥ ${contrastTag.value.includes('AAA') ? '7.0' : '4.5'}:1`);
-    }
+      // 对比度约束
+      const contrastTag = tags.find((t) => t.label === '对比度');
+      if (contrastTag) {
+        lines.push(`文字与背景对比度 ≥ ${contrastTag.value.includes('AAA') ? '7.0' : '4.5'}:1`);
+      }
 
-    // 间距约束
-    const layoutTag = tags.find((t) => t.label === '布局');
-    if (layoutTag) {
-      const padding = tags.find((t) => t.label === '内边距');
-      if (padding) lines.push(`内边距实测值 = ${padding.value}`);
+      // 间距约束
+      const layoutTag = tags.find((t) => t.label === '布局');
+      if (layoutTag) {
+        const padding = tags.find((t) => t.label === '内边距');
+        if (padding) lines.push(`内边距实测值 = ${padding.value}`);
+      }
     }
 
     // P3 增强：quick 模式下若 verify 段无答案，基于种子推断验证标准
-    // 避免空泛的"肉眼确认"，给 AI 可执行的验证条件
-    if (lines.length === 0 && mode === 'quick' && seedInput) {
+    // 三模式系统：ppt 场景下不调用前端关键词推断
+    if (lines.length === 0 && mode === 'quick' && seedInput && scene !== 'ppt') {
       lines.push(...this.inferVerifyFromSeed(seedInput));
     }
 
+    // 三模式系统：ppt 场景下提供 PPT 专属验证标准
     if (lines.length === 0) {
-      lines.push('改动后截图，肉眼确认符合上述规格段全部数值');
+      if (scene === 'ppt') {
+        lines.push('输出大纲/内容符合规格段中明确的所有要求（受众/篇幅/风格等）');
+        lines.push('内容结构清晰，适合演示场景（每页一个核心观点，避免信息过载）');
+        lines.push('如涉及具体软件操作，最终产物可在 PowerPoint/Keynote 中正常打开');
+      } else {
+        lines.push('改动后截图，肉眼确认符合上述规格段全部数值');
+      }
     }
 
     const raw = verifyAnswers.map((a) => a.raw).filter(Boolean).join(' / ');
@@ -557,9 +674,13 @@ export class PromptGenerator {
 
   // ──────── 工具方法 ────────
 
-  private answersByStage(answers: Record<string, Answer>, stage: PromptStage): Answer[] {
+  private answersByStage(answers: Record<string, Answer>, stage: PromptStage, questionStageMap?: Record<string, PromptStage>): Answer[] {
     return Object.values(answers).filter((a) => {
-      // 通过 questionId 前缀判断阶段
+      // 三模式系统：优先使用 questionStageMap 查找阶段（PPT 问题 ID 以 'o' 开头，无法通过前缀判断阶段）
+      if (questionStageMap && questionStageMap[a.questionId]) {
+        return questionStageMap[a.questionId] === stage;
+      }
+      // 通过 questionId 前缀判断阶段（前端/后端问题 ID 以 p/n/s/e/v 开头）
       const prefix = a.questionId.charAt(0);
       const stagePrefix: Record<PromptStage, string> = {
         perceive: 'p',
@@ -576,6 +697,7 @@ export class PromptGenerator {
     answers: Record<string, Answer>,
     seed: string,
     recentQA?: ContextRecentQA[],
+    questionStageMap?: Record<string, PromptStage>,
   ): string[] {
     const quotes: string[] = [];
     if (seed) quotes.push(seed);
@@ -588,7 +710,7 @@ export class PromptGenerator {
       }
     }
     for (const stage of STAGE_ORDER) {
-      const list = this.answersByStage(answers, stage);
+      const list = this.answersByStage(answers, stage, questionStageMap);
       for (const a of list) {
         if (a.raw && a.raw !== '__skipped__') quotes.push(a.raw);
       }

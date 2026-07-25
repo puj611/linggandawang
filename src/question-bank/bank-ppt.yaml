@@ -1,0 +1,382 @@
+# 灵感大王问题库 v1.0 — PPT/演示文稿场景
+# 覆盖场景：PPT / 幻灯片 / 演示文稿 / keynote
+# 分布：perceive 2 / name 1 / spec 4 / execute 1 / verify 2 = 10 条
+# 三模式系统：用户显式选择 PPT 模式时加载本库
+# Schema 见 src/question-bank/schema.json
+schema_version: "1.0"
+bank_id: "ppt-v1"
+scene: "ppt"
+total_questions: 10
+
+stages:
+  - id: perceive
+    name: "感知阶段"
+    order: 1
+  - id: name
+    name: "命名阶段"
+    order: 2
+  - id: spec
+    name: "规格阶段"
+    order: 3
+  - id: execute
+    name: "执行阶段"
+    order: 4
+  - id: verify
+    name: "验证阶段"
+    order: 5
+
+questions:
+  # ───────── perceive 2 条：感知阶段 ─────────
+  - id: "o-001"
+    stage: perceive
+    order: 1
+    text: "这次 PPT 是什么类型的任务？"
+    type: "single-choice"
+    options:
+      - label: "从零开始做一份新 PPT"
+        value: "new"
+        tags: ["PPT: 新建"]
+      - label: "修改/优化已有的 PPT"
+        value: "modify"
+        tags: ["PPT: 修改"]
+      - label: "只要大纲和内容，排版自己做"
+        value: "outline"
+        tags: ["PPT: 仅大纲"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["PPT: 待定"]
+    allow_custom: true
+    placeholder: "或者用你自己的话说..."
+    trigger_tags: []
+    jumps:
+      - when_answer: "new"
+        next_question_id: "o-003"
+      - when_answer: "modify"
+        next_question_id: "o-002"
+      - when_answer: "outline"
+        next_question_id: "o-003"
+      - when_answer: "auto"
+        next_question_id: "o-002"
+    intent_extraction:
+      keywords:
+        - { keyword: "新建", extract_tag: "PPT: 新建" }
+        - { keyword: "从零", extract_tag: "PPT: 新建" }
+        - { keyword: "修改", extract_tag: "PPT: 修改" }
+        - { keyword: "优化", extract_tag: "PPT: 修改" }
+        - { keyword: "大纲", extract_tag: "PPT: 仅大纲" }
+    required: true
+    quick_mode: true
+    why: "确定任务类型能让后续问题更精准，避免问无关的排版细节。"
+
+  - id: "o-002"
+    stage: perceive
+    order: 2
+    text: "这份 PPT 用在什么场合？"
+    type: "single-choice"
+    options:
+      - label: "内部汇报（周会/月报/项目汇报）"
+        value: "internal-report"
+        tags: ["场合: 内部汇报"]
+      - label: "对外提案（客户/合作方）"
+        value: "external-proposal"
+        tags: ["场合: 对外提案"]
+      - label: "技术分享/培训"
+        value: "tech-share"
+        tags: ["场合: 技术分享"]
+      - label: "公开演讲/会议演讲"
+        value: "keynote"
+        tags: ["场合: 公开演讲"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["场合: 待定"]
+    allow_custom: true
+    placeholder: "或者描述具体场合..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "汇报", extract_tag: "场合: 内部汇报" }
+        - { keyword: "周报", extract_tag: "场合: 内部汇报" }
+        - { keyword: "客户", extract_tag: "场合: 对外提案" }
+        - { keyword: "提案", extract_tag: "场合: 对外提案" }
+        - { keyword: "分享", extract_tag: "场合: 技术分享" }
+        - { keyword: "培训", extract_tag: "场合: 技术分享" }
+        - { keyword: "演讲", extract_tag: "场合: 公开演讲" }
+        - { keyword: "会议", extract_tag: "场合: 公开演讲" }
+    required: true
+    quick_mode: false
+    why: "场合决定 PPT 的正式程度、信息密度和视觉风格。"
+
+  # ───────── name 1 条：命名阶段 ─────────
+  - id: "o-003"
+    stage: name
+    order: 1
+    text: "PPT 的主题或核心内容方向是什么？"
+    type: "open"
+    options: []
+    allow_custom: true
+    placeholder: "例如：Q3 产品迭代复盘 / React Server Components 技术分享..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "复盘", extract_tag: "主题: 复盘" }
+        - { keyword: "分享", extract_tag: "主题: 分享" }
+        - { keyword: "汇报", extract_tag: "主题: 汇报" }
+        - { keyword: "提案", extract_tag: "主题: 提案" }
+        - { keyword: "总结", extract_tag: "主题: 总结" }
+    required: true
+    quick_mode: false
+    why: "主题是 PPT 的灵魂，后续所有规格都围绕它展开。"
+
+  # ───────── spec 4 条：规格阶段 ─────────
+  - id: "o-004"
+    stage: spec
+    order: 1
+    text: "目标受众是谁？"
+    type: "single-choice"
+    options:
+      - label: "技术团队（工程师/产品）"
+        value: "tech"
+        tags: ["受众: 技术"]
+      - label: "管理层/决策者"
+        value: "exec"
+        tags: ["受众: 管理层"]
+      - label: "客户/外部合作方"
+        value: "client"
+        tags: ["受众: 客户"]
+      - label: "混合受众（都要看）"
+        value: "mixed"
+        tags: ["受众: 混合"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["受众: 待定"]
+    allow_custom: true
+    placeholder: "或者描述受众特征..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "工程师", extract_tag: "受众: 技术" }
+        - { keyword: "技术", extract_tag: "受众: 技术" }
+        - { keyword: "老板", extract_tag: "受众: 管理层" }
+        - { keyword: "管理层", extract_tag: "受众: 管理层" }
+        - { keyword: "客户", extract_tag: "受众: 客户" }
+    required: true
+    quick_mode: true
+    why: "受众决定内容深度、术语使用和叙事方式。"
+
+  - id: "o-005"
+    stage: spec
+    order: 2
+    text: "需要什么输出格式？"
+    type: "single-choice"
+    options:
+      - label: "完整 PPT 内容（含每页文字 + 排版建议）"
+        value: "full-content"
+        tags: ["输出: 完整内容"]
+      - label: "只要大纲和结构（标题 + 要点）"
+        value: "outline"
+        tags: ["输出: 大纲"]
+      - label: "大纲 + 关键页详细内容"
+        value: "outline-plus"
+        tags: ["输出: 大纲+详页"]
+      - label: "演讲稿（含口播文案）"
+        value: "speech"
+        tags: ["输出: 演讲稿"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["输出: 待定"]
+    allow_custom: true
+    placeholder: "或者描述你需要的格式..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "完整", extract_tag: "输出: 完整内容" }
+        - { keyword: "大纲", extract_tag: "输出: 大纲" }
+        - { keyword: "演讲稿", extract_tag: "输出: 演讲稿" }
+        - { keyword: "口播", extract_tag: "输出: 演讲稿" }
+    required: true
+    quick_mode: false
+    why: "输出格式决定生成内容的颗粒度，避免产出不符合预期。"
+
+  - id: "o-006"
+    stage: spec
+    order: 3
+    text: "篇幅大概多少页？"
+    type: "single-choice"
+    options:
+      - label: "精简（5-10 页）"
+        value: "short"
+        tags: ["篇幅: 精简"]
+      - label: "标准（10-20 页）"
+        value: "medium"
+        tags: ["篇幅: 标准"]
+      - label: "详细（20-40 页）"
+        value: "long"
+        tags: ["篇幅: 详细"]
+      - label: "不限，看内容需要"
+        value: "flexible"
+        tags: ["篇幅: 不限"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["篇幅: 待定"]
+    allow_custom: true
+    placeholder: "或者输入具体页数..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "精简", extract_tag: "篇幅: 精简" }
+        - { keyword: "短", extract_tag: "篇幅: 精简" }
+        - { keyword: "标准", extract_tag: "篇幅: 标准" }
+        - { keyword: "详细", extract_tag: "篇幅: 详细" }
+        - { keyword: "长", extract_tag: "篇幅: 详细" }
+    required: true
+    quick_mode: true
+    why: "篇幅直接影响信息密度和结构划分。"
+
+  - id: "o-007"
+    stage: spec
+    order: 4
+    text: "希望什么视觉风格？"
+    type: "single-choice"
+    options:
+      - label: "商务专业（简洁/稳重）"
+        value: "business"
+        tags: ["风格: 商务"]
+      - label: "技术极客（代码/架构图为主）"
+        value: "tech"
+        tags: ["风格: 技术"]
+      - label: "活泼创意（色彩丰富/图形化）"
+        value: "creative"
+        tags: ["风格: 创意"]
+      - label: "极简主义（大量留白）"
+        value: "minimal"
+        tags: ["风格: 极简"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["风格: 待定"]
+    allow_custom: true
+    placeholder: "或者描述你想要的感觉..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "商务", extract_tag: "风格: 商务" }
+        - { keyword: "专业", extract_tag: "风格: 商务" }
+        - { keyword: "技术", extract_tag: "风格: 技术" }
+        - { keyword: "极客", extract_tag: "风格: 技术" }
+        - { keyword: "活泼", extract_tag: "风格: 创意" }
+        - { keyword: "创意", extract_tag: "风格: 创意" }
+        - { keyword: "极简", extract_tag: "风格: 极简" }
+        - { keyword: "留白", extract_tag: "风格: 极简" }
+    required: true
+    quick_mode: true
+    why: "风格统一能让 PPT 看起来更专业，避免东拼西凑的感觉。"
+
+  # ───────── execute 1 条：执行阶段 ─────────
+  - id: "o-008"
+    stage: execute
+    order: 1
+    text: "最终用什么工具产出？"
+    type: "single-choice"
+    options:
+      - label: "PowerPoint（.pptx）"
+        value: "pptx"
+        tags: ["工具: PowerPoint"]
+      - label: "Keynote"
+        value: "keynote"
+        tags: ["工具: Keynote"]
+      - label: "Markdown 转PPT（Marp/Slidev）"
+        value: "markdown"
+        tags: ["工具: Markdown"]
+      - label: "Google Slides"
+        value: "slides"
+        tags: ["工具: Google Slides"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["工具: 待定"]
+    allow_custom: true
+    placeholder: "或者说明你用的工具..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "pptx", extract_tag: "工具: PowerPoint" }
+        - { keyword: "powerpoint", extract_tag: "工具: PowerPoint" }
+        - { keyword: "keynote", extract_tag: "工具: Keynote" }
+        - { keyword: "marp", extract_tag: "工具: Markdown" }
+        - { keyword: "slidev", extract_tag: "工具: Markdown" }
+        - { keyword: "google", extract_tag: "工具: Google Slides" }
+    required: false
+    quick_mode: false
+    why: "工具决定输出格式和可用的排版能力。"
+
+  # ───────── verify 2 条：验证阶段 ─────────
+  - id: "o-009"
+    stage: verify
+    order: 1
+    text: "怎样算这份 PPT 做好了？"
+    type: "multi-choice"
+    options:
+      - label: "内容完整覆盖了我想讲的点"
+        value: "content-complete"
+        tags: ["验收: 内容完整"]
+      - label: "结构清晰，逻辑连贯"
+        value: "structure-clear"
+        tags: ["验收: 结构清晰"]
+      - label: "视觉风格符合预期"
+        value: "style-match"
+        tags: ["验收: 风格匹配"]
+      - label: "篇幅符合要求"
+        value: "length-fit"
+        tags: ["验收: 篇幅合适"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["验收: 待定"]
+    allow_custom: true
+    placeholder: "或者补充你的验收标准..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "完整", extract_tag: "验收: 内容完整" }
+        - { keyword: "清晰", extract_tag: "验收: 结构清晰" }
+        - { keyword: "逻辑", extract_tag: "验收: 结构清晰" }
+        - { keyword: "风格", extract_tag: "验收: 风格匹配" }
+    required: true
+    quick_mode: true
+    why: "明确的验收标准能避免反复修改，一次到位。"
+
+  - id: "o-010"
+    stage: verify
+    order: 2
+    text: "预计需要几轮修改？"
+    type: "single-choice"
+    options:
+      - label: "一次成型，不要改"
+        value: "one-shot"
+        tags: ["修改: 一次成型"]
+      - label: "1-2 轮微调即可"
+        value: "minor"
+        tags: ["修改: 微调"]
+      - label: "3-5 轮迭代"
+        value: "iterate"
+        tags: ["修改: 迭代"]
+      - label: "不知道，你决定（推荐）"
+        value: "auto"
+        tags: ["修改: 待定"]
+    allow_custom: true
+    placeholder: "或者说明修改预期..."
+    trigger_tags: []
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "一次", extract_tag: "修改: 一次成型" }
+        - { keyword: "微调", extract_tag: "修改: 微调" }
+        - { keyword: "迭代", extract_tag: "修改: 迭代" }
+    required: false
+    quick_mode: false
+    why: "修改轮次预期帮助控制产出节奏，避免过度打磨。"

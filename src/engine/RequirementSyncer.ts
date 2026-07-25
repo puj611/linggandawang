@@ -551,3 +551,31 @@ function normalizeDecomposition(raw: unknown): RequirementDecomposition | null {
 }
 
 export const requirementSyncer = new RequirementSyncer();
+
+/**
+ * 从已完成子任务中提取主题标签，用于 Selector 进度去重
+ * 提取逻辑：子任务标题 + 类型 + 优先级中的关键词
+ */
+export function extractCompletedTopics(requirements: Requirement[]): string[] {
+  const topics = new Set<string>();
+  for (const req of requirements) {
+    for (const st of req.subtasks) {
+      if (st.status !== 'done' && st.status !== 'skipped') continue;
+      // 从标题提取关键词（去掉常见停用词）
+      const titleWords = st.title
+        .replace(/[（）()【】\[\]]/g, ' ')
+        .split(/[\s,，、/]+/)
+        .map((w) => w.trim().toLowerCase())
+        .filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+      for (const w of titleWords) topics.add(w);
+      // 子任务类型也作为主题
+      topics.add(st.type);
+    }
+  }
+  return Array.from(topics);
+}
+
+const STOP_WORDS = new Set([
+  '的', '了', '在', '是', '和', '与', '或', '及', '等', '中', '为', '对',
+  'the', 'and', 'or', 'for', 'to', 'of', 'in', 'on', 'at', 'by', 'with',
+]);

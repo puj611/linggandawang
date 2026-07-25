@@ -27,6 +27,8 @@ export interface SelectorContext {
   quickMode?: boolean;
   // v2.0（Phase 4）：LLM 意图置信度，0-1，未配置 LLM 时由调用方传 0.5（中性）
   llmConfidence?: number;
+  // M11 新增：已完成子任务的主题标签集合，用于进度去重 — 与 trigger_tags 重叠的题降权
+  completedTopics?: string[];
 }
 
 // v2.0：归一化评分维度权重
@@ -60,6 +62,8 @@ export class Selector {
     const topTags = (ctx.tagScores ?? []).slice(0, 3).map((s) => s.tag);
     const matchedClusters = new Set(ctx.matchedClusterIds ?? []);
     const llmConfidence = typeof ctx.llmConfidence === 'number' ? clamp01(ctx.llmConfidence) : 0.5;
+    // M11：已完成子任务的主题标签（小写），用于进度去重降权
+    const completedSet = new Set((ctx.completedTopics ?? []).map((t) => t.toLowerCase()));
 
     // 计算 orderBonus 归一化用：本阶段最大 order
     const maxOrder = stageQuestions.reduce((m, q) => Math.max(m, q.order), 1);
@@ -80,8 +84,21 @@ export class Selector {
       // 维度 4：orderBonus（0-1）— order 越小分越高，1/maxOrder ~ 1
       const orderBonus = maxOrder > 1 ? 1 - (q.order - 1) / (maxOrder - 1) : 1;
 
-      // 最终归一化评分
-      const score = W_TAG_MATCH * tagMatch + W_CLUSTER * cluster + W_LLM_CONFIDENCE * llmScore + W_ORDER_BONUS * orderBonus;
+      // 基础归一化评分
+      let score = W_TAG_MATCH * tagMatch + W_CLUSTER * cluster + W_LLM_CONFIDENCE * llmScore + W_ORDER_BONUS * orderBonus;
+
+      // M11 进度去重：trigger_tags 与已完成子任务主题重叠时降权
+      // 重叠比例越高降权越多（最多降 60%），避免已处理过的题反复被选中
+      if (completedSet.size > 0 && q.trigger_tags.length > 0) {
+        let overlapCount = 0;
+        for (const tag of q.trigger_tags) {
+          if (completedSet.has(tag.toLowerCase())) overlapCount++;
+        }
+        const overlapRatio = overlapCount / q.trigger_tags.length;
+        if (overlapRatio > 0) {
+          score *= 1 - 0.6 * overlapRatio;
+        }
+      }
 
       return { q, score, tagMatch, cluster, orderBonus };
     });

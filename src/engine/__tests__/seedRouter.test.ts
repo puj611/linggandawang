@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   detectNegation,
   detectScene,
+  detectSceneWithChoice,
   matchAdjectiveClusters,
   aggregateTagScores,
   routeSeedWithClusters,
@@ -111,6 +112,70 @@ describe('seedRouter', () => {
       // backendHits (2) > frontendHits (1), so returns backend-api
       const result = detectScene('页面上的API接口');
       expect(result).toBe('backend-api');
+    });
+
+    // 三模式系统：PPT 场景测试
+    it('PPT 关键词命中返回 ppt', () => {
+      expect(detectScene('改 PPT')).toBe('ppt');
+      expect(detectScene('做一个 pptx 演示文稿')).toBe('ppt');
+      expect(detectScene('修改 keynote 幻灯片')).toBe('ppt');
+    });
+
+    it('文档/邮件/文案关键词不再判定为专属场景，返回默认 frontend-ui', () => {
+      // 三模式系统：文档/邮件/文案/图片/视频关键词不再属于任何专属场景
+      // 用户如需 PPT 场景，需手动选择 PPT 模式或描述中包含 PPT 关键词
+      expect(detectScene('写一份 word 文档')).toBe('frontend-ui');
+      expect(detectScene('起草一封邮件')).toBe('frontend-ui');
+      expect(detectScene('写广告语文案')).toBe('frontend-ui');
+    });
+
+    it('图片/视频/海报关键词不再判定为专属场景，返回默认 frontend-ui', () => {
+      expect(detectScene('设计一个 logo')).toBe('frontend-ui');
+      expect(detectScene('做个海报')).toBe('frontend-ui');
+      expect(detectScene('写视频脚本')).toBe('frontend-ui');
+    });
+
+    it('ppt 场景下 routeSeedWithClusters 返回 ppt 场景', () => {
+      const loader = new QuestionLoader();
+      const result = routeSeedWithClusters(loader, '改 PPT');
+      expect(result.scene).toBe('ppt');
+      // PPT 场景无专属路由（ROUTES 中无 scene: 'ppt'），matchedKeywords 为空
+      expect(result.matchedKeywords).toEqual([]);
+      // PPT 场景下无前端形容词簇匹配
+      expect(result.matchedClusters).toEqual([]);
+    });
+
+    it('前端关键词与 PPT 关键词混合时优先前端（保持向后兼容）', () => {
+      // "改 PPT 的按钮颜色" 同时命中前端（按钮/颜色）和 PPT（PPT）
+      // 应判定为 frontend-ui，保持向后兼容
+      expect(detectScene('改 PPT 的按钮颜色')).toBe('frontend-ui');
+    });
+
+    // 三模式系统：detectSceneWithChoice 测试
+    it('detectSceneWithChoice 非 auto 时强制返回用户选择的场景', () => {
+      expect(detectSceneWithChoice('改 PPT', 'frontend-ui')).toBe('frontend-ui');
+      expect(detectSceneWithChoice('按钮颜色', 'ppt')).toBe('ppt');
+      expect(detectSceneWithChoice('新增接口', 'backend-api')).toBe('backend-api');
+    });
+
+    it('detectSceneWithChoice auto 时走 detectScene 关键词检测', () => {
+      expect(detectSceneWithChoice('改 PPT', 'auto')).toBe('ppt');
+      expect(detectSceneWithChoice('按钮颜色', 'auto')).toBe('frontend-ui');
+      expect(detectSceneWithChoice('新增 RESTful 接口', 'auto')).toBe('backend-api');
+    });
+
+    // 三模式系统：forcedScene 参数测试
+    it('routeSeedWithClusters forcedScene 强制覆盖关键词检测', () => {
+      const loader = new QuestionLoader();
+      // "按钮颜色"正常检测为 frontend-ui，但 forcedScene='ppt' 时强制走 ppt
+      const result = routeSeedWithClusters(loader, '按钮颜色', 'ppt');
+      expect(result.scene).toBe('ppt');
+    });
+
+    it('routeSeedWithClusters forcedScene=null 时走 detectScene', () => {
+      const loader = new QuestionLoader();
+      const result = routeSeedWithClusters(loader, '按钮颜色', null);
+      expect(result.scene).toBe('frontend-ui');
     });
   });
 

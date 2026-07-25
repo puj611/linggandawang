@@ -123,16 +123,10 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
     set({ ctx, loaded: true });
   },
   // P1-4：所有 mutating 操作通过 enqueue 串行化
+  // 死锁修复：enqueue 内部不得再调用其他 enqueue 方法（如 save），必须用 _applyPatch 直接操作
   save: (patch) =>
     enqueue(async () => {
-      const cur = get().ctx;
-      const next: LinggandawangContext = {
-        ...cur,
-        ...patch,
-        timestamps: { ...cur.timestamps, updated_at: new Date().toISOString() },
-      };
-      await writePersisted(next);
-      set({ ctx: next });
+      await _applyPatch(set, get, patch);
     }),
   archiveIfStale: () =>
     enqueue(async () => {
@@ -155,20 +149,20 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
     enqueue(async () => {
       const cur = get().ctx;
       const list = [...(cur.recent_qa ?? []), qa].slice(-MAX_RECENT_QA);
-      await get().save({ recent_qa: list });
+      await _applyPatch(set, get, { recent_qa: list });
     }),
   setIntentTags: (tags) =>
     enqueue(async () => {
-      await get().save({ intent_tags: tags });
+      await _applyPatch(set, get, { intent_tags: tags });
     }),
   setLastPrompt: (md) =>
     enqueue(async () => {
-      await get().save({ last_prompt: md });
+      await _applyPatch(set, get, { last_prompt: md });
     }),
   setDevProgress: (patch) =>
     enqueue(async () => {
       const cur = get().ctx;
-      await get().save({ dev_progress: { ...cur.dev_progress, ...patch } });
+      await _applyPatch(set, get, { dev_progress: { ...cur.dev_progress, ...patch } });
     }),
   // v2.0 新增：累积用户偏好。同 key 同 value → 仅更新 confirmed_at；同 key 不同 value → 视为偏好升级，保留最新
   appendPreference: (pref) =>
@@ -185,7 +179,7 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
         const filtered = existing.filter((p) => p.key !== pref.key);
         next = [...filtered, pref].slice(-MAX_PREFERENCES);
       }
-      await get().save({ preferences: next });
+      await _applyPatch(set, get, { preferences: next });
     }),
   appendPreferences: (prefs) =>
     enqueue(async () => {
@@ -201,7 +195,7 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
           existing = [...filtered, pref];
         }
       }
-      await get().save({ preferences: existing.slice(-MAX_PREFERENCES) });
+      await _applyPatch(set, get, { preferences: existing.slice(-MAX_PREFERENCES) });
     }),
   getRecentQA: (limit) => {
     const list = get().ctx.recent_qa ?? [];
@@ -211,3 +205,21 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
     return get().ctx.preferences ?? [];
   },
 }));
+
+/** 死锁修复：非 enqueue 的内部 patch 应用器。
+ *  enqueue 方法内部必须调用此 helper 而非 get().save()，
+ *  否则嵌套 enqueue 会导致 opsChain 死锁（task1 等 task2，task2 等 task1）。 */
+async function _applyPatch(
+  set: (partial: Partial<ContextStoreState>) => void,
+  get: () => ContextStoreState,
+  patch: Partial<LinggandawangContext>,
+): Promise<void> {
+  const cur = get().ctx;
+  const next: LinggandawangContext = {
+    ...cur,
+    ...patch,
+    timestamps: { ...cur.timestamps, updated_at: new Date().toISOString() },
+  };
+  await writePersisted(next);
+  set({ ctx: next });
+}

@@ -51,6 +51,7 @@ function getTagColor(tag: string): string {
 
 export function ProjectScanDashboard({ onClose }: Props) {
   const fingerprint = useProjectStore((s) => s.fingerprint);
+  const setFullScanResult = useProjectStore((s) => s.setFullScanResult);
   const [result, setResult] = useState<FullScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +65,7 @@ export function ProjectScanDashboard({ onClose }: Props) {
       const res = await fullScanProject(fingerprint.path);
       if (res) {
         setResult(res);
+        setFullScanResult(res);
       } else {
         setError('深度扫描不可用（仅 Tauri 桌面端支持）');
       }
@@ -72,7 +74,7 @@ export function ProjectScanDashboard({ onClose }: Props) {
     } finally {
       setScanning(false);
     }
-  }, [fingerprint?.path]);
+  }, [fingerprint?.path, setFullScanResult]);
 
   useEffect(() => {
     if (fingerprint?.path && !result && !scanning) {

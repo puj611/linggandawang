@@ -11,6 +11,7 @@ import { ScreenshotDropZone } from './ScreenshotDropZone';
 import { DiagnosisReport, type DiagnosisIssue } from './DiagnosisReport';
 import { ImageExtractResult } from './ImageExtractResult';
 import { ReferenceImagePanel } from './ReferenceImagePanel';
+import { InspireButton } from './InspireButton';
 import { screenshotDiagnoser } from '@/engine/ScreenshotDiagnoser';
 import { imagePromptExtractor, type ExtractedPrompt } from '@/engine/ImagePromptExtractor';
 import { useFeatureStore } from '@/stores/featureStore';
@@ -18,12 +19,13 @@ import { useWindowStore } from '@/stores/windowStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { ProjectBadge } from './ProjectBadge';
 import { ProjectOnboarding } from './ProjectOnboarding';
+import { LLMModeBadge } from './LLMModeBadge';
 import { isTauri } from '@/lib/env';
 import { isVisionModel } from '@/lib/llm/types';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { questionLoader } from '@/engine/QuestionLoader';
 import type { ScreenshotPayload } from '@/hooks/useScreenshotPaste';
-import type { FlowMode } from '@/engine/types';
+import type { FlowMode, SceneChoice } from '@/engine/types';
 
 interface Props {
   droppedImage: ScreenshotPayload | null;
@@ -55,6 +57,9 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   const [input, setInput] = useState('');
   // P3 模式记忆：初始值从 localStorage 读取
   const [mode, setMode] = useState<FlowMode>(loadStoredMode);
+  // 三模式系统：场景选择从全局 appStore 读取（与 ReferenceImagePanel 等组件共享）
+  const sceneChoice = useAppStore((s) => s.sceneChoice);
+  const setSceneChoice = useAppStore((s) => s.setSceneChoice);
   const [issues, setIssues] = useState<DiagnosisIssue[] | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const [extractResult, setExtractResult] = useState<ExtractedPrompt | null>(null);
@@ -75,6 +80,10 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   const handleModeChange = (m: FlowMode) => {
     setMode(m);
     saveStoredMode(m);
+  };
+  // 三模式系统：sceneChoice 变化时通过 appStore 持久化（appStore 内部处理 localStorage）
+  const handleSceneChange = (s: SceneChoice) => {
+    setSceneChoice(s);
   };
   const collapse = useAppStore((s) => s.collapse);
   const transition = useAppStore((s) => s.transition);
@@ -133,17 +142,17 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
     e.preventDefault();
     if (!input.trim()) return;
     if (mode === 'direct') {
-      directGenerate(input.trim());
+      void directGenerate(input.trim(), sceneChoice);
     } else {
-      void start(input.trim(), mode);
+      void start(input.trim(), mode, sceneChoice);
     }
   };
 
   const onTemplate = (text: string) => {
     if (mode === 'direct') {
-      void directGenerate(text);
+      void directGenerate(text, sceneChoice);
     } else {
-      void start(text, mode);
+      void start(text, mode, sceneChoice);
     }
   };
 
@@ -194,7 +203,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   const onInsertIssues = async (tags: Parameters<typeof addScreenshotTags>[0]) => {
     await addScreenshotTags(tags);
     if (useAppStore.getState().state === 'expanded') {
-      void start('截图诊断已加入标签，继续提问');
+      void start('截图诊断已加入标签，继续提问', 'full', sceneChoice);
     } else {
       transition('question');
     }
@@ -221,21 +230,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
       >
         <div className="flex items-center gap-3 text-text-tertiary">
           <span className="text-xs font-medium tracking-wide">灵感大王</span>
-          {/* 模式徽章：点击跳转设置；基础模式用中性色，智能模式用品牌色 */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              openSettings();
-            }}
-            title={hasApiKey ? '智能模式（已配置 LLM）- 点击设置' : '基础模式（未配置 LLM）- 点击配置 LLM 获得智能增强'}
-            className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors no-drag ${
-              hasApiKey
-                ? 'bg-brand-soft text-brand border-brand/30 hover:bg-brand/15'
-                : 'bg-surface-2 text-text-tertiary border-border hover:bg-surface-3 hover:text-text-secondary'
-            }`}
-          >
-            {hasApiKey ? '✨ 智能模式' : '⚙ 基础模式'}
-          </button>
+          <LLMModeBadge />
         </div>
         <div className="flex items-center gap-1 no-drag">
           <button
@@ -282,7 +277,11 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
       {/* 内容区：可滚动 */}
       <div className="flex-1 overflow-y-auto">
         {/* 输入区 */}
-        <form onSubmit={onSubmit} className="p-4 pb-3">
+        <form onSubmit={onSubmit} className="p-4 pb-3 relative">
+          {/* 灵感按钮：放在 textarea 上方右侧 */}
+          <div className="flex justify-end mb-1.5">
+            <InspireButton onSelect={(seed) => setInput(seed)} />
+          </div>
           <textarea
             autoFocus
             value={input}
@@ -292,6 +291,29 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
             maxLength={2000}
             className="w-full bg-surface-2 border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder-text-tertiary resize-none focus:outline-none focus:border-brand transition-colors leading-relaxed"
           />
+          {/* 三模式系统：场景选择（放在 FlowMode 上方） */}
+          <div className="flex gap-1 mt-2 bg-surface-2 rounded-btn p-1">
+            {([
+              { value: 'auto', label: '自动检测', hint: '根据描述自动判断场景' },
+              { value: 'frontend-ui', label: '前端', hint: '前端界面 / UI 相关' },
+              { value: 'backend-api', label: '后端', hint: '后端接口 / API 相关' },
+              { value: 'ppt', label: 'PPT', hint: 'PPT / 演示文稿 / 幻灯片' },
+            ] as const).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleSceneChange(opt.value)}
+                title={opt.hint}
+                className={`flex-1 px-2 py-1.5 text-xs rounded transition-all ${
+                  sceneChoice === opt.value
+                    ? 'bg-surface-1 text-text-primary shadow-sm font-medium'
+                    : 'text-text-tertiary hover:text-text-secondary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           {/* 模式选择 */}
           <div className="flex gap-1 mt-2 bg-surface-2 rounded-btn p-1">
             {([

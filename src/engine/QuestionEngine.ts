@@ -1,6 +1,6 @@
 // src/engine/QuestionEngine.ts
 // 提问引擎状态机：IDLE → PERCEIVE → NAME → SPEC → EXECUTE → VERIFY → COMPLETE
-import type { Question, StageName, PromptStage, QuestionBank, FlowMode } from './types';
+import type { Question, StageName, PromptStage, QuestionBank, FlowMode, SceneType, SceneChoice } from './types';
 import { STAGE_ORDER, STAGE_TO_STATE } from './types';
 import type { QuestionLoader } from './QuestionLoader';
 import { Selector } from './Selector';
@@ -22,6 +22,8 @@ export interface EngineSnapshot {
   seedInput: string;
   startedAt: string | null;
   isComplete: boolean;
+  /** 方向A 新增：本次 start 检测到的场景类型，供 PromptGenerator 决定是否走通用模板 */
+  scene: SceneType;
 }
 
 export interface AnswerResult {
@@ -59,6 +61,10 @@ export class QuestionEngine {
   private routeSource: 'keyword' | 'cluster' | 'fallback' | 'llm' = 'fallback';
   // 提问模式：direct=直接生成 / quick=快速提问 / full=详细诊断
   private mode: FlowMode = 'full';
+  // 方向A 新增：本次 start 的场景类型，other 场景下跳过提问直接进入 COMPLETE
+  private scene: SceneType = 'frontend-ui';
+  // M11 新增：已完成子任务的主题标签，供 Selector 进度去重
+  private completedTopics: string[] = [];
   // v1.2 新增：历史栈，每条记录一次「当前题 + 阶段 + askedIds 快照 + 标签 + answers 快照」
   private history: Array<{
     current: Question | null;
@@ -88,6 +94,8 @@ export class QuestionEngine {
     mode: FlowMode = 'full',
     llmAnalysis?: LLMIntentAnalysis | null,
     recentQA?: { question_text: string; answer: string }[],
+    sceneChoice?: SceneChoice,
+    completedTopics?: string[],
   ): Question | null {
     this.reset();
     this.mode = mode;
@@ -95,6 +103,10 @@ export class QuestionEngine {
     this.startedAt = new Date().toISOString();
     this.stage = 'PERCEIVE';
     this._llmAnalysis = llmAnalysis ?? null;
+    this.completedTopics = completedTopics ?? [];
+
+    // 三模式系统：用户显式选择场景时，强制走该场景
+    const forcedScene = sceneChoice && sceneChoice !== 'auto' ? sceneChoice : null;
 
     // v2.0：LLM 分析可用时，用 LLM 结果替代关键词提取 + 形容词簇路由
     let routed: ReturnType<typeof routeSeedWithClusters>;
@@ -114,12 +126,16 @@ export class QuestionEngine {
           created_at: new Date().toISOString(),
         });
       }
-      routed = routeWithLLMAnalysis(this.loader, seed, llmAnalysis);
+      routed = routeWithLLMAnalysis(this.loader, seed, llmAnalysis, forcedScene);
       this.routeSource = 'llm';
     } else {
       // 降级：使用原有 seed 关键词提取 + 形容词簇路由
+      // 三模式系统：先设置场景，让 extractFromSeed 使用正确场景的问题库关键词
+      if (forcedScene) {
+        this.loader.setScene(forcedScene);
+      }
       this.extractFromSeed(seed);
-      routed = routeSeedWithClusters(this.loader, seed);
+      routed = routeSeedWithClusters(this.loader, seed, forcedScene);
       const isKeywordHit =
         routed.matchedKeywords.length > 0 &&
         !routed.question?.id.startsWith('dyn-clarify-') &&
@@ -132,6 +148,8 @@ export class QuestionEngine {
     this.matchedClusterIds = this.matchedClusters.map((m) => m.cluster.id);
     this.matchedKeywords = routed.matchedKeywords ?? [];
     this.hasDynamicClarification = !!routed.dynamicClarification;
+    // 方向A：保存本次路由检测到的场景，供 snapshot 暴露给 PromptGenerator
+    this.scene = (routed.scene ?? 'frontend-ui') as SceneType;
 
     // r4增强：从 recentQA 提取已确认标签，加权并入 tagScores（跨会话上下文记忆）
     if (recentQA && recentQA.length > 0) {
@@ -145,6 +163,7 @@ export class QuestionEngine {
       return null;
     }
 
+    // 三模式系统：ppt 场景正常走提问流程（不再跳过）
     const isQuick = mode === 'quick';
 
     if (routed.question) {
@@ -347,6 +366,7 @@ export class QuestionEngine {
       matchedClusterIds: this.matchedClusterIds, // v1.1：注入种子命中的簇 ID
       quickMode: isQuick, // 快速模式过滤
       llmConfidence, // v2.0：注入 LLM 置信度
+      completedTopics: this.completedTopics, // M11：进度去重
     });
     if (sameStageNext) {
       this.current = sameStageNext;
@@ -483,6 +503,7 @@ export class QuestionEngine {
       seedInput: this.seedInput,
       startedAt: this.startedAt,
       isComplete: this.isComplete(),
+      scene: this.scene,
     };
   }
 
@@ -504,19 +525,59 @@ export class QuestionEngine {
     this.routeSource = 'fallback'; // v1.1
     this.mode = 'full';
     this.history = []; // v1.2
+    this.scene = 'frontend-ui'; // 方向A：重置场景
+  }
+
+  /** 方向A 新增：获取本次 start 检测到的场景类型 */
+  getScene(): SceneType {
+    return this.scene;
+  }
+
+  /** 三模式系统：构建当前场景问题库的 ID→stage 映射。
+   *  PPT 问题 ID 以 'o' 开头，PromptGenerator.answersByStage 无法通过前缀判断阶段，
+   *  需要此映射显式指定。前端/后端问题库仍可通过前缀判断，此方法返回的 map 对它们无害。
+   */
+  getQuestionStageMap(): Record<string, import('./types').PromptStage> {
+    const map: Record<string, import('./types').PromptStage> = {};
+    try {
+      const bank = this.loader.getBank();
+      for (const q of bank.questions) {
+        map[q.id] = q.stage;
+      }
+    } catch {
+      // 降级：返回空 map，answersByStage 回退到前缀判断
+    }
+    return map;
   }
 
   private extractFromSeed(seed: string) {
     if (!seed) return;
-    // 复用 p-001 的 intent_extraction 规则做种子关键词提取
-    const p001 = this.loader.getQuestionById('p-001');
-    if (!p001?.intent_extraction?.keywords) return;
-    for (const rule of p001.intent_extraction.keywords) {
-      if (seed.toLowerCase().includes(rule.keyword.toLowerCase())) {
-        this.intentTags.push(
-          this.makeTag(rule.extract_tag, p001, 'extracted-keyword'),
-        );
+    // 三模式系统：根据当前场景使用对应问题库的关键词规则
+    const scene = this.loader.getScene();
+    const firstQuestionId = scene === 'ppt' ? 'o-001' : scene === 'backend-api' ? 'b-001' : 'p-001';
+    const firstQ = this.loader.getQuestionById(firstQuestionId);
+    if (firstQ?.intent_extraction?.keywords) {
+      for (const rule of firstQ.intent_extraction.keywords) {
+        if (seed.toLowerCase().includes(rule.keyword.toLowerCase())) {
+          this.intentTags.push(
+            this.makeTag(rule.extract_tag, firstQ, 'extracted-keyword'),
+          );
+        }
       }
+    }
+    // 三模式系统：PPT 场景下，将种子输入作为主题意图标签（让用户看到系统理解了他们的输入）
+    if (scene === 'ppt') {
+      this.intentTags.push({
+        id: uuidv4(),
+        label: '主题',
+        value: seed,
+        stage: 'name',
+        source_question_id: 'seed-input',
+        source_type: 'extracted-keyword',
+        confidence: 0.8,
+        deletable: true,
+        created_at: new Date().toISOString(),
+      });
     }
   }
 

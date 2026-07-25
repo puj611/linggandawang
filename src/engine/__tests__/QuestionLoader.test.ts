@@ -14,11 +14,11 @@ describe('QuestionLoader', () => {
     const loader = new QuestionLoader();
     const bank = loader.load();
     const count = (stage: string) => bank.questions.filter((q) => q.stage === stage).length;
-    expect(count('perceive')).toBe(9);
-    expect(count('name')).toBe(10);
-    expect(count('spec')).toBe(12);
-    expect(count('execute')).toBe(7);
-    expect(count('verify')).toBe(7);
+    expect(count('perceive')).toBe(12);
+    expect(count('name')).toBe(13);
+    expect(count('spec')).toBe(15);
+    expect(count('execute')).toBe(10);
+    expect(count('verify')).toBe(10);
   });
 
   it('ID 唯一且符合阶段前缀', () => {

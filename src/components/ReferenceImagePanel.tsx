@@ -30,8 +30,10 @@ export function ReferenceImagePanel() {
   const [dragging, setDragging] = useState(false);
   const [addedFlash, setAddedFlash] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const { addScreenshotTags, start } = useFlow();
+  const { addScreenshotTags, directGenerate } = useFlow();
   const transition = useAppStore((s) => s.transition);
+  // 三模式系统：读取全局场景选择
+  const sceneChoice = useAppStore((s) => s.sceneChoice);
 
   // 添加一张图片文件（最多 MAX_IMAGES 张，多余会被忽略）
   const addImageFile = useCallback(async (file: File) => {
@@ -116,16 +118,21 @@ export function ReferenceImagePanel() {
       deletable: true,
       created_at: new Date().toISOString(),
     }));
-    await addScreenshotTags(tags);
     setAddedFlash(true);
     setTimeout(() => setAddedFlash(false), 1500);
     const state = useAppStore.getState().state;
     if (state === 'expanded') {
-      start('参照图已加入标签，继续提问');
+      // expanded 态：先 directGenerate 生成基础提示词，进入 result 态后再 addScreenshotTags 重生成
+      // 这样参考图标签会被包含在最终提示词中（directGenerate 的 resetEngineStore 会清空标签，所以先生成再加标签）
+      await directGenerate('参照图已加入标签，生成提示词', sceneChoice);
+      // directGenerate 完成后状态应为 result，此时 addScreenshotTags 会重生成 prompt 包含标签
+      await addScreenshotTags(tags);
     } else if (state === 'result') {
-      // addScreenshotTags 内部已重生成 prompt，无需额外动作
+      // result 态：直接 addScreenshotTags 重生成 prompt
+      await addScreenshotTags(tags);
     } else if (state === 'question') {
       // 提问态：标签已加入，继续回答下一题
+      await addScreenshotTags(tags);
     } else {
       transition('question');
     }

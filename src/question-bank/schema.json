@@ -18,7 +18,7 @@
     "scene": {
       "type": "string",
       "description": "问题库覆盖场景，Demo 阶段仅 frontend-ui",
-      "enum": ["frontend-ui", "backend-api", "fullstack"]
+      "enum": ["frontend-ui", "backend-api", "ppt", "fullstack"]
     },
     "total_questions": {
       "type": "integer",
@@ -57,7 +57,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[pnsev]-\\d{3}$",
+          "pattern": "^[pnsevob]-\\d{3}$",
           "description": "问题 ID，阶段前缀(p/n/s/e/v) + 三位序号"
         },
         "stage": {

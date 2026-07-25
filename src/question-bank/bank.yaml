@@ -1,12 +1,12 @@
-# 灵感大王问题库 v1.2
+# 灵感大王问题库 v1.3
 # 覆盖场景：前端 UI（D3 决策：窄而深）
-# 分布：perceive 9 / name 10 / spec 12 / execute 7 / verify 7 = 45 条
+# 分布：perceive 12 / name 13 / spec 15 / execute 10 / verify 10 = 60 条
 # 维护人：寇豆码（PM 许清楚 W1 末交付前先填一版）
 # Schema 见 src/question-bank/schema.json
 schema_version: "1.0"
 bank_id: "frontend-ui-v1"
 scene: "frontend-ui"
-total_questions: 45
+total_questions: 60
 
 stages:
   - id: perceive
@@ -1298,6 +1298,389 @@ questions:
     allow_custom: false
     placeholder: ""
     trigger_tags: ["无障碍: 键盘导航", "无障碍: WCAG"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # ───────── v1.3 新增：覆盖更多场景 ─────────
+
+  # perceive 新增 3 条
+  - id: "p-010"
+    stage: perceive
+    order: 10
+    text: "这个改动影响性能吗？比如加载速度、动画流畅度？"
+    why: "性能约束会影响实现方案的选择（懒加载/虚拟滚动/防抖等）"
+    type: "single-choice"
+    options:
+      - label: "不影响性能，纯视觉调整"
+        value: "no-perf"
+        tags: ["性能: 无影响"]
+      - label: "需要关注加载速度"
+        value: "loading"
+        tags: ["性能: 加载速度"]
+      - label: "需要关注动画流畅度"
+        value: "animation"
+        tags: ["性能: 动画流畅"]
+    allow_custom: true
+    placeholder: "或者描述你的性能顾虑..."
+    trigger_tags: ["性能: 加载速度", "性能: 动画流畅"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "卡顿", extract_tag: "性能: 动画流畅" }
+        - { keyword: "慢", extract_tag: "性能: 加载速度" }
+    required: false
+    quick_mode: true
+
+  - id: "p-011"
+    stage: perceive
+    order: 11
+    text: "这个改动需要在移动端也生效吗？"
+    why: "响应式需求影响布局方案和断点设计"
+    type: "single-choice"
+    options:
+      - label: "仅桌面端，不管移动端"
+        value: "desktop-only"
+        tags: ["响应式: 仅桌面"]
+      - label: "桌面端为主，移动端自适应"
+        value: "desktop-first"
+        tags: ["响应式: 桌面优先"]
+      - label: "移动端为主，桌面端扩展"
+        value: "mobile-first"
+        tags: ["响应式: 移动优先"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["响应式: 桌面优先", "响应式: 移动优先"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+    quick_mode: true
+
+  - id: "p-012"
+    stage: perceive
+    order: 12
+    text: "有没有参考图或竞品截图？"
+    why: "参考图能大幅降低描述歧义，让规格更精准"
+    type: "open"
+    options: []
+    allow_custom: true
+    placeholder: "粘贴图片链接或描述参考来源..."
+    trigger_tags: ["参考: 有参考图"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "参考", extract_tag: "参考: 有参考图" }
+        - { keyword: "截图", extract_tag: "参考: 有参考图" }
+    required: false
+
+  # name 新增 3 条
+  - id: "n-011"
+    stage: name
+    order: 11
+    text: "这个「不对劲」的感觉，更像是哪种？"
+    why: "精确定位痛点类型，指导后续规格方向"
+    type: "single-choice"
+    options:
+      - label: "间距/留白不协调"
+        value: "spacing"
+        tags: ["痛点: 间距问题"]
+      - label: "颜色/对比度不舒服"
+        value: "color"
+        tags: ["痛点: 颜色问题"]
+      - label: "字体/排版看着别扭"
+        value: "typography"
+        tags: ["痛点: 排版问题"]
+      - label: "交互反馈不明确"
+        value: "interaction"
+        tags: ["痛点: 交互问题"]
+    allow_custom: true
+    placeholder: "或者用你自己的话描述..."
+    trigger_tags: ["痛点: 间距问题", "痛点: 颜色问题", "痛点: 排版问题"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "间距", extract_tag: "痛点: 间距问题" }
+        - { keyword: "颜色", extract_tag: "痛点: 颜色问题" }
+        - { keyword: "字体", extract_tag: "痛点: 排版问题" }
+    required: false
+
+  - id: "n-012"
+    stage: name
+    order: 12
+    text: "这个问题是偶尔出现还是每次都这样？"
+    why: "频率信息帮助判断是偶发 bug 还是系统性设计问题"
+    type: "single-choice"
+    options:
+      - label: "每次都这样，稳定复现"
+        value: "always"
+        tags: ["频率: 必现"]
+      - label: "偶尔出现，特定条件下才触发"
+        value: "sometimes"
+        tags: ["频率: 偶现"]
+      - label: "只出现过一次"
+        value: "once"
+        tags: ["频率: 单次"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["频率: 必现", "频率: 偶现"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "n-013"
+    stage: name
+    order: 13
+    text: "这个问题影响了多少页面/组件？"
+    why: "影响范围决定改动量和回归测试范围"
+    type: "single-choice"
+    options:
+      - label: "就一个组件/一个地方"
+        value: "single"
+        tags: ["范围: 单点"]
+      - label: "多个组件/多个页面都有"
+        value: "multiple"
+        tags: ["范围: 多点"]
+      - label: "全局性问题，所有地方都有"
+        value: "global"
+        tags: ["范围: 全局"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["范围: 单点", "范围: 全局"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # spec 新增 3 条
+  - id: "s-013"
+    stage: spec
+    order: 13
+    text: "圆角风格是什么？"
+    why: "圆角是视觉一致性的关键要素"
+    type: "single-choice"
+    options:
+      - label: "无圆角（直角）"
+        value: "none"
+        tags: ["圆角: 0px"]
+      - label: "小圆角（4-8px）"
+        value: "small"
+        tags: ["圆角: 6px"]
+      - label: "中圆角（12-16px）"
+        value: "medium"
+        tags: ["圆角: 12px"]
+      - label: "大圆角（20px+）"
+        value: "large"
+        tags: ["圆角: 20px"]
+      - label: "全圆角（胶囊形）"
+        value: "pill"
+        tags: ["圆角: 9999px"]
+    allow_custom: true
+    placeholder: "输入具体圆角值..."
+    trigger_tags: ["圆角: 6px", "圆角: 12px", "圆角: 20px"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "圆角", extract_tag: "圆角: 6px" }
+        - { keyword: "直角", extract_tag: "圆角: 0px" }
+    required: false
+
+  - id: "s-014"
+    stage: spec
+    order: 14
+    text: "阴影/投影风格是什么？"
+    why: "阴影层次影响视觉深度和卡片层级"
+    type: "single-choice"
+    options:
+      - label: "无阴影（扁平风格）"
+        value: "none"
+        tags: ["阴影: 无"]
+      - label: "轻阴影（微妙层次）"
+        value: "light"
+        tags: ["阴影: 轻"]
+      - label: "中等阴影（明显层次）"
+        value: "medium"
+        tags: ["阴影: 中"]
+      - label: "重阴影（强立体感）"
+        value: "heavy"
+        tags: ["阴影: 重"]
+    allow_custom: true
+    placeholder: "输入具体 shadow 值..."
+    trigger_tags: ["阴影: 轻", "阴影: 中", "阴影: 重"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "s-015"
+    stage: spec
+    order: 15
+    text: "动画/过渡效果要什么风格？"
+    why: "动效风格影响用户体验的流畅感"
+    type: "single-choice"
+    options:
+      - label: "不要动画，直接切换"
+        value: "none"
+        tags: ["动画: 无"]
+      - label: "简单淡入淡出（200ms）"
+        value: "fade"
+        tags: ["动画: 淡入淡出"]
+      - label: "滑入滑出（300ms）"
+        value: "slide"
+        tags: ["动画: 滑动"]
+      - label: "弹性动画（有回弹感）"
+        value: "spring"
+        tags: ["动画: 弹性"]
+    allow_custom: true
+    placeholder: "描述你想要的动效..."
+    trigger_tags: ["动画: 淡入淡出", "动画: 滑动", "动画: 弹性"]
+    jumps: []
+    intent_extraction:
+      keywords:
+        - { keyword: "动画", extract_tag: "动画: 淡入淡出" }
+        - { keyword: "过渡", extract_tag: "动画: 淡入淡出" }
+    required: false
+    quick_mode: true
+
+  # execute 新增 3 条
+  - id: "e-008"
+    stage: execute
+    order: 8
+    text: "这个改动需要写测试吗？"
+    why: "测试需求影响实现复杂度和交付标准"
+    type: "single-choice"
+    options:
+      - label: "不需要测试"
+        value: "none"
+        tags: ["测试: 无"]
+      - label: "写简单的单元测试"
+        value: "unit"
+        tags: ["测试: 单元测试"]
+      - label: "需要集成测试覆盖"
+        value: "integration"
+        tags: ["测试: 集成测试"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["测试: 单元测试", "测试: 集成测试"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "e-009"
+    stage: execute
+    order: 9
+    text: "改动涉及数据格式或 API 吗？"
+    why: "数据层改动需要额外考虑兼容性和迁移"
+    type: "single-choice"
+    options:
+      - label: "不涉及，纯 UI 改动"
+        value: "ui-only"
+        tags: ["数据: 纯UI"]
+      - label: "涉及本地存储格式调整"
+        value: "local-storage"
+        tags: ["数据: 本地存储"]
+      - label: "涉及 API 接口变动"
+        value: "api"
+        tags: ["数据: API变动"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["数据: 本地存储", "数据: API变动"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "e-010"
+    stage: execute
+    order: 10
+    text: "这个改动需要通知团队成员吗？"
+    why: "协作需求影响改动的可见性和文档要求"
+    type: "single-choice"
+    options:
+      - label: "不用，我自己改就行"
+        value: "solo"
+        tags: ["协作: 独立"]
+      - label: "需要在 PR 里说明"
+        value: "pr-note"
+        tags: ["协作: PR说明"]
+      - label: "需要同步给整个团队"
+        value: "team-sync"
+        tags: ["协作: 团队同步"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["协作: PR说明", "协作: 团队同步"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  # verify 新增 3 条
+  - id: "v-008"
+    stage: verify
+    order: 8
+    text: "改动后需要回归测试哪些方面？"
+    why: "回归范围影响测试清单和验收标准"
+    type: "multi-choice"
+    options:
+      - label: "视觉一致性（颜色/字体/间距）"
+        value: "visual"
+        tags: ["回归: 视觉"]
+      - label: "交互功能（点击/输入/跳转）"
+        value: "interaction"
+        tags: ["回归: 交互"]
+      - label: "响应式布局（多断点）"
+        value: "responsive"
+        tags: ["回归: 响应式"]
+      - label: "性能指标（加载/动画）"
+        value: "performance"
+        tags: ["回归: 性能"]
+    allow_custom: true
+    placeholder: "添加其他回归项..."
+    trigger_tags: ["回归: 视觉", "回归: 交互", "回归: 响应式"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "v-009"
+    stage: verify
+    order: 9
+    text: "如何记录改动前后的对比？"
+    why: "对比记录是验收和回溯的重要依据"
+    type: "single-choice"
+    options:
+      - label: "截图对比即可"
+        value: "screenshot"
+        tags: ["记录: 截图"]
+      - label: "需要录屏展示交互"
+        value: "video"
+        tags: ["记录: 录屏"]
+      - label: "不需要记录"
+        value: "none"
+        tags: ["记录: 无"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["记录: 截图", "记录: 录屏"]
+    jumps: []
+    intent_extraction: {}
+    required: false
+
+  - id: "v-010"
+    stage: verify
+    order: 10
+    text: "改动完成后，什么情况下需要回滚？"
+    why: "明确回滚条件让验证更有针对性"
+    type: "multi-choice"
+    options:
+      - label: "出现 JS 报错就回滚"
+        value: "js-error"
+        tags: ["回滚: JS报错"]
+      - label: "视觉明显不对就回滚"
+        value: "visual-bug"
+        tags: ["回滚: 视觉异常"]
+      - label: "性能下降超过 20% 就回滚"
+        value: "perf-regression"
+        tags: ["回滚: 性能回退"]
+      - label: "不需要回滚机制"
+        value: "none"
+        tags: ["回滚: 无"]
+    allow_custom: false
+    placeholder: ""
+    trigger_tags: ["回滚: JS报错", "回滚: 视觉异常", "回滚: 性能回退"]
     jumps: []
     intent_extraction: {}
     required: false

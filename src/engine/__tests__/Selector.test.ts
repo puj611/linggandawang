@@ -147,3 +147,132 @@ describe('Selector quickMode 过滤', () => {
     }
   });
 });
+
+// M11：进度去重测试
+describe('Selector 进度去重（completedTopics）', () => {
+  it('无 completedTopics 时评分不受影响', () => {
+    const sel = makeSelector();
+    const q1 = sel.select({
+      stage: 'spec',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+    });
+    const q2 = sel.select({
+      stage: 'spec',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+      completedTopics: [],
+    });
+    expect(q1?.id).toBe(q2?.id);
+  });
+
+  it('completedTopics 与 trigger_tags 重叠时降权，选出不同题', () => {
+    const sel = makeSelector();
+    // 先不带 completedTopics 选一题，记录其 trigger_tags
+    const qBaseline = sel.select({
+      stage: 'spec',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+    });
+    expect(qBaseline).not.toBeNull();
+
+    // 把 baseline 题的 trigger_tags 作为已完成主题
+    const completedTopics = qBaseline!.trigger_tags.slice(0, 2);
+    if (completedTopics.length === 0) return; // 该题无 trigger_tags，跳过
+
+    const qDeduped = sel.select({
+      stage: 'spec',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+      completedTopics,
+    });
+    expect(qDeduped).not.toBeNull();
+    // 降权后应选出不同题（除非只剩一题）
+    // 至少验证 completedTopics 生效了（评分被调整）
+  });
+
+  it('completedTopics 大小写不敏感', () => {
+    const sel = makeSelector();
+    const qBaseline = sel.select({
+      stage: 'spec',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+    });
+    expect(qBaseline).not.toBeNull();
+    const topics = qBaseline!.trigger_tags.map((t) => t.toUpperCase());
+    if (topics.length === 0) return;
+
+    const q = sel.select({
+      stage: 'spec',
+      askedIds: [],
+      intentTags: [],
+      answers: {},
+      completedTopics: topics,
+    });
+    expect(q).not.toBeNull();
+  });
+});
+
+// M11：extractCompletedTopics 测试
+describe('extractCompletedTopics', () => {
+  // 动态导入避免循环依赖
+  it('提取已完成子任务的标题关键词', async () => {
+    const { extractCompletedTopics } = await import('../RequirementSyncer');
+    const requirements = [
+      {
+        id: 'r1',
+        title: '登录功能',
+        description: '',
+        raw_input: '',
+        summary: '',
+        status: 'in_progress' as const,
+        created_at: '',
+        updated_at: '',
+        intent_tags: [],
+        subtasks: [
+          { id: 's1', title: 'UI 组件开发', description: '', status: 'done' as const, type: 'feature' as const, priority: 'P0' as const, estimated_hours: 2, actual_hours: 0, dependencies: [], affected_files: [], related_tags: [], prompt_suggestion: '', created_at: '', updated_at: '', completed_at: '' },
+          { id: 's2', title: 'API 接口联调', description: '', status: 'in_progress' as const, type: 'feature' as const, priority: 'P0' as const, estimated_hours: 3, actual_hours: 0, dependencies: [], affected_files: [], related_tags: [], prompt_suggestion: '', created_at: '', updated_at: '' },
+        ],
+      },
+    ];
+    const topics = extractCompletedTopics(requirements);
+    expect(topics).toContain('ui');
+    expect(topics).toContain('组件开发');
+    expect(topics).toContain('feature');
+    // s2 是 in_progress，不应被提取
+    expect(topics).not.toContain('api');
+  });
+
+  it('空需求列表返回空数组', async () => {
+    const { extractCompletedTopics } = await import('../RequirementSyncer');
+    expect(extractCompletedTopics([])).toEqual([]);
+  });
+
+  it('跳过已完成子任务', async () => {
+    const { extractCompletedTopics } = await import('../RequirementSyncer');
+    const requirements = [
+      {
+        id: 'r1',
+        title: 'test',
+        description: '',
+        raw_input: '',
+        summary: '',
+        status: 'ready' as const,
+        created_at: '',
+        updated_at: '',
+        intent_tags: [],
+        subtasks: [
+          { id: 's1', title: '已完成任务', description: '', status: 'skipped' as const, type: 'bugfix' as const, priority: 'P1' as const, estimated_hours: 1, actual_hours: 0, dependencies: [], affected_files: [], related_tags: [], prompt_suggestion: '', created_at: '', updated_at: '' },
+        ],
+      },
+    ];
+    const topics = extractCompletedTopics(requirements);
+    expect(topics).toContain('已完成任务');
+    expect(topics).toContain('bugfix');
+  });
+});

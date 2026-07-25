@@ -8,8 +8,15 @@ export type StageName = 'IDLE' | 'PERCEIVE' | 'NAME' | 'SPEC' | 'EXECUTE' | 'VER
 /** 提问流程模式：direct=直接生成 / quick=快速提问(仅核心题) / full=详细诊断(全部题) */
 export type FlowMode = 'direct' | 'quick' | 'full';
 
-/** 支持的场景类型 */
-export type SceneType = 'frontend-ui' | 'backend-api';
+/** 支持的场景类型
+ *  - frontend-ui: 前端界面（默认，完整问题库支持）
+ *  - backend-api: 后端接口（P1.1 新增，23 题问题库）
+ *  - ppt: PPT/演示文稿/幻灯片（三模式系统新增，10 题问题库）
+ */
+export type SceneType = 'frontend-ui' | 'backend-api' | 'ppt';
+
+/** 用户显式选择的场景（'auto' 表示自动检测） */
+export type SceneChoice = SceneType | 'auto';
 
 export type QuestionType = 'single-choice' | 'multi-choice' | 'open' | 'scale';
 

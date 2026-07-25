@@ -10,6 +10,7 @@ import { SkipConfirmDialog } from './SkipConfirmDialog';
 import { STAGE_LABEL } from '@/engine/types';
 import type { PromptStage } from '@/engine/types';
 import { useAppStore } from '@/stores/appStore';
+import { LLMModeBadge } from './LLMModeBadge';
 
 const STAGES: PromptStage[] = ['perceive', 'name', 'spec', 'execute', 'verify'];
 
@@ -161,9 +162,12 @@ export function QuestionPanel() {
             <span className="text-xs text-text-secondary font-medium">
               {STAGE_LABEL[currentQuestion.stage]}（{stageIdx + 1}/5）
             </span>
-            <span className="text-xs text-text-tertiary">
-              <span className="text-brand font-semibold">{intentTags.length}</span> 标签
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-tertiary">
+                <span className="text-brand font-semibold">{intentTags.length}</span> 标签
+              </span>
+              <LLMModeBadge />
+            </div>
           </div>
         </div>
 
