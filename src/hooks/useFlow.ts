@@ -25,6 +25,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { analyzeIntent } from '@/engine/LLMIntentAnalyzer';
 import { evaluateFollowup, generateFollowupQuestion } from '@/engine/SmartFollowup';
 import { retrieveSimilar } from '@/lib/vectorStore';
+// #region debug-instrumentation
+import { reportDebug, setDebugRunId } from '@/lib/debugReporter';
+// 默认 pre；修复后切换为 post
+setDebugRunId('pre');
+// #endregion debug-instrumentation
 
 // 模块级单例：所有组件共享同一 engine 实例，避免组件切换时状态丢失
 let engineInstance: QuestionEngine | null = null;
@@ -319,8 +324,16 @@ export function useFlow() {
           if (decision) {
             // 异步调 LLM 生成追问题（8s 超时降级）
             const followup = await generateFollowupQuestion(decision);
+            // #region debug-point answer.followup (H5)
+            reportDebug({ point: 'answer.followup.afterAwait', phase: 'info', hypothesisId: 'H5', data: { mounted: mountedRef.current, hasFollowup: !!followup, isComplete: result.isComplete, hasNext: !!result.nextQuestion } });
+            // #endregion debug-point answer.followup (H5)
             // v2.3：8s 等待期间组件可能卸载，卸载后不再 setState（防止内存泄漏/React 警告）
-            if (!mountedRef.current) return;
+            if (!mountedRef.current) {
+              // #region debug-point answer.followup (H5)
+              reportDebug({ point: 'answer.followup.earlyReturn', phase: 'info', hypothesisId: 'H5', data: { reason: 'mountedRef false', isComplete: result.isComplete } });
+              // #endregion debug-point answer.followup (H5)
+              return;
+            }
             if (followup) {
               // 插入追问题，覆盖原本的 nextQuestion
               engine.insertFollowup(followup.question);
@@ -342,6 +355,9 @@ export function useFlow() {
 
       if (result.isComplete || !result.nextQuestion) {
         // v2.3：显式 await，保证 finishAndGenerate 内部的 ctxStore 写入完成
+        // #region debug-point answer.finishAndGenerate (H5)
+        reportDebug({ point: 'answer.callingFinishAndGenerate', phase: 'start', hypothesisId: 'H5', data: { isComplete: result.isComplete, hasNext: !!result.nextQuestion } });
+        // #endregion debug-point answer.finishAndGenerate (H5)
         await finishAndGenerate();
       } else {
         setCanUndo(engine.canUndo());
@@ -390,11 +406,23 @@ export function useFlow() {
   const finishAndGenerate = useCallback(async () => {
     const engine = getEngine();
     const snap = engine.snapshot();
+    // #region debug-point finishAndGenerate.enter
+    reportDebug({ point: 'finishAndGenerate.enter', phase: 'start', hypothesisId: 'H1', data: { pendingQA: pendingRecentQARef.current.length, hasResult: !!useEngineStore.getState().result, appState: useAppStore.getState().state } });
+    // #endregion debug-point finishAndGenerate.enter
     // v2.1：读取上下文喂给 PromptGenerator
     // v2.3：先 flush pending recentQA 到持久化，确保本次会话 QA 不丢失且只写一次
     if (pendingRecentQARef.current.length > 0) {
-      await ctxStore.appendRecentQAs(pendingRecentQARef.current);
-      pendingRecentQARef.current = [];
+      // #region debug-point appendRecentQAs (H1)
+      reportDebug({ point: 'appendRecentQAs.start', phase: 'start', hypothesisId: 'H1', data: { count: pendingRecentQARef.current.length } });
+      try {
+        await ctxStore.appendRecentQAs(pendingRecentQARef.current);
+        pendingRecentQARef.current = [];
+        reportDebug({ point: 'appendRecentQAs.end', phase: 'end', hypothesisId: 'H1', data: { ok: true } });
+      } catch (e) {
+        reportDebug({ point: 'appendRecentQAs.error', phase: 'error', hypothesisId: 'H1', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
+        throw e; // 保持原行为：让 finishAndGenerate reject
+      }
+      // #endregion debug-point appendRecentQAs (H1)
     }
     const recentQA = ctxStore.getRecentQA(20);
     const preferences = ctxStore.getPreferences();
@@ -407,7 +435,12 @@ export function useFlow() {
     try {
       const seedInput = snap.seedInput;
       if (seedInput && seedInput.trim().length > 2) {
+        // #region debug-point retrieveSimilar (H3)
+        reportDebug({ point: 'retrieveSimilar.start', phase: 'start', hypothesisId: 'H3' });
+        const startTs = performance.now();
         const results = await retrieveSimilar(seedInput, 3);
+        reportDebug({ point: 'retrieveSimilar.end', phase: 'end', hypothesisId: 'H3', data: { durationMs: Math.round(performance.now() - startTs), count: results.length } });
+        // #endregion debug-point retrieveSimilar (H3)
         retrievedContext = results.map((r) => ({
           question: r.entry.metadata.questionText,
           answer: r.entry.metadata.answer,
@@ -416,10 +449,15 @@ export function useFlow() {
       }
     } catch (e) {
       console.warn('[useFlow] 向量检索失败，降级到无 RAG 模式', e);
+      // #region debug-point retrieveSimilar (H3)
+      reportDebug({ point: 'retrieveSimilar.error', phase: 'error', hypothesisId: 'H3', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
+      // #endregion debug-point retrieveSimilar (H3)
     }
 
     // 异常防护：prompt 生成或持久化失败时，仍需 transition 到安全状态，避免永久 loading
     try {
+      // #region debug-point promptGenerator.generate (H4)
+      reportDebug({ point: 'promptGenerator.generate.start', phase: 'start', hypothesisId: 'H4' });
       const prompt = promptGenerator.generate({
         intentTags: snap.intentTags,
         answers: snap.answers,
@@ -434,26 +472,48 @@ export function useFlow() {
         scene: engine.getScene(),
         questionStageMap: engine.getQuestionStageMap(),
       });
+      reportDebug({ point: 'promptGenerator.generate.end', phase: 'end', hypothesisId: 'H4' });
+      // #endregion debug-point promptGenerator.generate (H4)
       setResult(prompt);
+      // #region debug-point setResult.done (H1)
+      reportDebug({ point: 'setResult.done', phase: 'info', hypothesisId: 'H1', data: { hasResult: true } });
+      // #endregion debug-point setResult.done (H1)
       // 持久化失败不阻塞 UI（已修复死锁，但仍可能因磁盘问题失败）
       try {
+        // #region debug-point persist (H2)
+        reportDebug({ point: 'persist.start', phase: 'start', hypothesisId: 'H2' });
+        const persistStart = performance.now();
         await ctxStore.setIntentTags(snap.intentTags);
+        reportDebug({ point: 'persist.setIntentTags.done', phase: 'info', hypothesisId: 'H2', data: { elapsedMs: Math.round(performance.now() - persistStart) } });
         await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
+        reportDebug({ point: 'persist.setLastPrompt.done', phase: 'info', hypothesisId: 'H2', data: { elapsedMs: Math.round(performance.now() - persistStart) } });
         // v2.1：累积本次提问沉淀的稳定偏好（场景/主题/响应式等）
         const newPrefs = extractPreferencesFromEngine(engine);
         if (newPrefs.length > 0) {
           await ctxStore.appendPreferences(newPrefs);
+          reportDebug({ point: 'persist.appendPreferences.done', phase: 'info', hypothesisId: 'H2', data: { count: newPrefs.length, elapsedMs: Math.round(performance.now() - persistStart) } });
         }
+        reportDebug({ point: 'persist.end', phase: 'end', hypothesisId: 'H2', data: { totalMs: Math.round(performance.now() - persistStart) } });
+        // #endregion debug-point persist (H2)
       } catch (persistErr) {
         console.warn('[useFlow] 持久化失败，不影响结果展示', persistErr);
+        // #region debug-point persist (H2)
+        reportDebug({ point: 'persist.error', phase: 'error', hypothesisId: 'H2', error: persistErr instanceof Error ? `${persistErr.name}: ${persistErr.message}` : String(persistErr) });
+        // #endregion debug-point persist (H2)
       }
       pushRecentPrompt(promptGenerator.toMarkdown(prompt));
     } catch (genErr) {
       console.error('[useFlow] 提示词生成失败，回退到 expanded', genErr);
+      // #region debug-point promptGenerator.generate (H4)
+      reportDebug({ point: 'promptGenerator.generate.error', phase: 'error', hypothesisId: 'H4', error: genErr instanceof Error ? `${genErr.name}: ${genErr.message}` : String(genErr) });
+      // #endregion debug-point promptGenerator.generate (H4)
       transition('expanded');
       return;
     }
     transition('result');
+    // #region debug-point finishAndGenerate.exit
+    reportDebug({ point: 'finishAndGenerate.exit', phase: 'end', hypothesisId: 'H1', data: { finalAppState: useAppStore.getState().state, hasResult: !!useEngineStore.getState().result } });
+    // #endregion debug-point finishAndGenerate.exit
   }, [setResult, ctxStore, transition, projectFingerprint, fullScanResult]);
 
   /** 用户在二次确认中选择"结束并生成"

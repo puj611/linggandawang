@@ -130,7 +130,7 @@ describe('OpenAICompatibleAdapter.chat - P0 用例 T01-T07', () => {
     await expectation;
   });
 
-  it('T03: 外部 signal 8s 超时抛出"被外部取消"错误', async () => {
+  it('T03: 外部 signal 8s 超时抛出"被调用方取消"错误', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
     fetchSpy.mockImplementationOnce(makeAbortablePendingFetch());
@@ -142,7 +142,8 @@ describe('OpenAICompatibleAdapter.chat - P0 用例 T01-T07', () => {
       controller.signal,
     );
     // 先 attach rejection handler，避免推进 timer 后 promise 已 reject 但无 handler
-    const expectation = expect(promise).rejects.toThrow(/外部取消|超时/);
+    // 注意：消息不含"超时"字样，避免被 classifyLLMError 误分类为 timeout 触发无意义重试
+    const expectation = expect(promise).rejects.toThrow('LLM 请求被调用方取消');
 
     // 8s 后外部 abort
     await vi.advanceTimersByTimeAsync(8000);
@@ -159,7 +160,7 @@ describe('OpenAICompatibleAdapter.chat - P0 用例 T01-T07', () => {
 
     await expect(
       adapter.chat(makeRequest(), API_KEY, BASE_URL, controller.signal),
-    ).rejects.toThrow(/外部取消|超时/);
+    ).rejects.toThrow('LLM 请求被调用方取消');
   });
 
   it('T04: HTTP 401 抛出含 401 的错误', async () => {

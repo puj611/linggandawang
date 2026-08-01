@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { useLLMAvailabilityStore } from '@/stores/llmAvailabilityStore';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { useLocalLLMStore } from '@/stores/localLLMStore';
+import { useAppStore } from '@/stores/appStore';
 
 type Mode = 'cloud' | 'local' | 'basic';
 
-function getMode(hasApiKey: boolean, localRunning: boolean): Mode {
+function getMode(hasApiKey: boolean, localRunning: boolean, override: Mode | null): Mode {
+  if (override) return override;
   if (localRunning) return 'local';
   if (hasApiKey) return 'cloud';
   return 'basic';
@@ -25,15 +27,44 @@ export function LLMModeBadge() {
   const availabilityStatus = useLLMAvailabilityStore((s) => s.status);
   const getStatusMessage = useLLMAvailabilityStore((s) => s.getStatusMessage);
   const resetAvailability = useLLMAvailabilityStore((s) => s.reset);
+  const llmModeOverride = useAppStore((s) => s.llmModeOverride);
+  const setLlmModeOverride = useAppStore((s) => s.setLlmModeOverride);
+  const openSettings = useAppStore((s) => s.openSettings);
 
   const [showDetail, setShowDetail] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   const localRunning = localStatus?.running ?? false;
-  const mode = getMode(hasApiKey, localRunning);
+  const mode = getMode(hasApiKey, localRunning, llmModeOverride);
   const config = MODE_CONFIG[mode];
   const degraded = availabilityStatus === 'degraded';
   const statusMsg = degraded ? getStatusMessage() : null;
+
+  // 点击模式行：切换模式
+  const handleModeClick = (target: Mode) => {
+    if (target === mode) return; // 已是当前模式
+    if (target === 'cloud') {
+      if (!hasApiKey) {
+        // 没有配置 API Key，打开设置面板
+        openSettings();
+        setShowDetail(false);
+        return;
+      }
+      setLlmModeOverride('cloud');
+    } else if (target === 'local') {
+      if (!localRunning) {
+        // 没有启动本地 SLM，打开设置面板
+        openSettings();
+        setShowDetail(false);
+        return;
+      }
+      setLlmModeOverride('local');
+    } else {
+      // basic：强制基础模式，跳过 LLM
+      setLlmModeOverride('basic');
+    }
+    setShowDetail(false);
+  };
 
   // 熔断倒计时
   useEffect(() => {
@@ -77,18 +108,21 @@ export function LLMModeBadge() {
               label="智能模式"
               desc="云端 LLM 增强（意图分析/动态追问/图片拆解）"
               color="text-[#7DD29D]"
+              onClick={() => handleModeClick('cloud')}
             />
             <ModeRow
               active={mode === 'local'}
               label="本地模式"
               desc="本地 SLM 推理（数据不出机器，零成本）"
               color="text-[#8B9AE8]"
+              onClick={() => handleModeClick('local')}
             />
             <ModeRow
               active={mode === 'basic' || degraded}
               label="基础模式"
               desc="纯规则引擎（核心提问流程完整可用）"
               color="text-text-tertiary"
+              onClick={() => handleModeClick('basic')}
             />
           </div>
 
@@ -125,19 +159,24 @@ export function LLMModeBadge() {
   );
 }
 
-function ModeRow({ active, label, desc, color }: {
+function ModeRow({ active, label, desc, color, onClick }: {
   active: boolean;
   label: string;
   desc: string;
   color: string;
+  onClick?: () => void;
 }) {
   return (
-    <div className={`flex items-start gap-2 px-2 py-1 rounded ${active ? 'bg-surface-2' : ''}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-start gap-2 px-2 py-1 rounded transition-colors text-left ${active ? 'bg-surface-2' : 'hover:bg-surface-2/50 cursor-pointer'}`}
+    >
       <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${active ? color : 'bg-surface-3'}`} />
       <div className="min-w-0">
         <div className={`text-[9px] ${active ? 'text-text-primary font-medium' : 'text-text-tertiary'}`}>{label}</div>
         <div className="text-[8px] text-text-tertiary leading-snug">{desc}</div>
       </div>
-    </div>
+    </button>
   );
 }

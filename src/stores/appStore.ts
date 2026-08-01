@@ -16,12 +16,16 @@ function loadStoredSceneChoice(): SceneChoice {
   return 'auto';
 }
 
+type LLMModeOverride = 'cloud' | 'local' | 'basic' | null;
+
 interface AppStore {
   state: AppState;
   settingsOpen: boolean;
   skipConfirmOpen: boolean;
   /** 三模式系统：全局共享的场景选择（ExpandedCard 写入，ReferenceImagePanel 等读取） */
   sceneChoice: SceneChoice;
+  /** LLM 模式手动覆盖（null=自动检测，'basic'=强制基础模式跳过 LLM，'cloud'=强制云端，'local'=强制本地） */
+  llmModeOverride: LLMModeOverride;
   transition: (next: AppState) => void;
   toggleExpand: () => void;
   expand: () => void;
@@ -33,6 +37,8 @@ interface AppStore {
   closeSkipConfirm: () => void;
   /** 三模式系统：设置场景选择并持久化到 localStorage */
   setSceneChoice: (s: SceneChoice) => void;
+  /** 设置 LLM 模式手动覆盖 */
+  setLlmModeOverride: (m: LLMModeOverride) => void;
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -40,6 +46,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   settingsOpen: false,
   skipConfirmOpen: false,
   sceneChoice: loadStoredSceneChoice(),
+  llmModeOverride: null,
   transition: (next) => set({ state: next }),
   toggleExpand: () => {
     const cur = get().state;
@@ -61,4 +68,5 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // 静默降级
     }
   },
+  setLlmModeOverride: (m) => set({ llmModeOverride: m }),
 }));

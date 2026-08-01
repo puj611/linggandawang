@@ -94,6 +94,41 @@ export const INSPIRE_SEEDS: SeedTemplate[] = [
     seed: '竞品分析报告 PPT，对比 3-5 家竞品的功能、定价与市场策略',
     description: '竞品调研/市场分析场景',
   },
+  {
+    id: 'ppt-011',
+    category: 'ppt',
+    title: '公司介绍',
+    seed: '公司介绍演示文稿，展示业务范围、团队实力、合作案例与联系方式',
+    description: '企业宣传/合作接洽场景',
+  },
+  {
+    id: 'ppt-012',
+    category: 'ppt',
+    title: '学术答辩',
+    seed: '毕业论文答辩 PPT，包含研究背景、方法、实验数据与结论展望',
+    description: '学术答辩/研究汇报场景',
+  },
+  {
+    id: 'ppt-013',
+    category: 'ppt',
+    title: '营销提案',
+    seed: '营销方案提案 PPT，面向客户，阐述推广策略、预算分配与预期效果',
+    description: '营销/广告提案场景',
+  },
+  {
+    id: 'ppt-014',
+    category: 'ppt',
+    title: '产品教程',
+    seed: '产品使用教程幻灯片，分步骤讲解核心功能，配截图与操作提示',
+    description: '用户教育/帮助文档场景',
+  },
+  {
+    id: 'ppt-015',
+    category: 'ppt',
+    title: '节日活动',
+    seed: '节日营销活动方案 PPT，含活动主题、玩法规则、奖品设置与传播节奏',
+    description: '节日/活动策划场景',
+  },
 
   // ===== 前端 UI 模式 =====
   {
@@ -165,6 +200,41 @@ export const INSPIRE_SEEDS: SeedTemplate[] = [
     title: '聊天界面',
     seed: '即时通讯聊天界面，含会话列表、消息气泡、输入框与表情面板',
     description: 'IM/聊天场景',
+  },
+  {
+    id: 'fe-011',
+    category: 'frontend-ui',
+    title: '拖拽看板',
+    seed: 'Trello 风格拖拽看板，多列任务卡片，支持拖拽、筛选与标签',
+    description: '看板/任务管理场景',
+  },
+  {
+    id: 'fe-012',
+    category: 'frontend-ui',
+    title: '视频播放',
+    seed: '在线视频播放页，含自定义播放器、播放列表、弹幕与画质切换',
+    description: '视频/媒体播放场景',
+  },
+  {
+    id: 'fe-013',
+    category: 'frontend-ui',
+    title: '日历组件',
+    seed: '月视图日历组件，含日期选择、事件标记、拖拽创建与农历显示',
+    description: '日历/日程场景',
+  },
+  {
+    id: 'fe-014',
+    category: 'frontend-ui',
+    title: '文件预览',
+    seed: '在线文件预览页，支持 PDF/Word/Excel 格式，含缩略图、翻页与下载',
+    description: '文档/文件查看场景',
+  },
+  {
+    id: 'fe-015',
+    category: 'frontend-ui',
+    title: '地图导航',
+    seed: '地图导航界面，含位置标记、路线规划、周边搜索与实时路况',
+    description: '地图/LBS 场景',
   },
 
   // ===== 后端 API 模式 =====
@@ -238,16 +308,44 @@ export const INSPIRE_SEEDS: SeedTemplate[] = [
     seed: 'RBAC 权限管理接口，含角色、权限、资源三者关联与鉴权中间件',
     description: '权限/RBAC 场景',
   },
+  {
+    id: 'be-011',
+    category: 'backend-api',
+    title: 'WebSocket',
+    seed: 'WebSocket 实时通讯接口，含心跳保活、断线重连与消息广播',
+    description: '长连接/实时通讯场景',
+  },
+  {
+    id: 'be-012',
+    category: 'backend-api',
+    title: '限流接口',
+    seed: '接口限流防刷接口，支持 IP/用户/接口多维度令牌桶与滑动窗口',
+    description: '限流/防刷场景',
+  },
+  {
+    id: 'be-013',
+    category: 'backend-api',
+    title: '分布式锁',
+    seed: '分布式锁接口，基于 Redis 实现库存扣减防超卖与幂等控制',
+    description: '并发/分布式场景',
+  },
+  {
+    id: 'be-014',
+    category: 'backend-api',
+    title: '定时任务',
+    seed: '定时任务调度接口，支持 Cron 表达式、任务日志、失败重试与手动触发',
+    description: '任务调度/批处理场景',
+  },
+  {
+    id: 'be-015',
+    category: 'backend-api',
+    title: 'API 网关',
+    seed: 'API 网关路由配置接口，含鉴权转发、限流熔断、灰度发布与监控埋点',
+    description: '网关/服务治理场景',
+  },
 ];
 
 /** 根据当前场景选择过滤种子 */
 export function getSeedsByScene(scene: SceneType): SeedTemplate[] {
   return INSPIRE_SEEDS.filter((s) => s.category === scene);
-}
-
-/** 随机获取一个种子（用于"换一个"功能） */
-export function getRandomSeed(scene: SceneType, excludeId?: string): SeedTemplate | null {
-  const pool = getSeedsByScene(scene).filter((s) => s.id !== excludeId);
-  if (pool.length === 0) return null;
-  return pool[Math.floor(Math.random() * pool.length)];
 }

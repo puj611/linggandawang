@@ -212,7 +212,8 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') {
           if (signal?.aborted) {
-            throw new Error('LLM 请求被外部取消（调用方超时或主动取消）');
+            // 注意：消息不含"超时"字样，避免被 classifyLLMError 误分类为 timeout（retryable=true）导致 withRetry 无意义重试已 aborted 的请求
+            throw new Error('LLM 请求被调用方取消');
           }
           throw new Error(isLocal
             ? `本地模型推理超时（${timeoutMs / 1000}秒），请检查模型文件或硬件配置`

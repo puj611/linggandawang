@@ -6,6 +6,7 @@ import { getAdapter } from '@/lib/llm';
 import type { LLMResponse } from '@/lib/llm/types';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { useLLMAvailabilityStore } from '@/stores/llmAvailabilityStore';
+import { useAppStore } from '@/stores/appStore';
 import { buildIntentAnalysisMessages } from './prompts/intent-analysis';
 import type { TagScore, SceneType } from './types';
 
@@ -81,6 +82,11 @@ export async function analyzeIntent(
   const { config, hasApiKey } = useApiKeyStore.getState();
   if (!config || !hasApiKey) {
     return null; // 未配置 LLM，降级
+  }
+
+  // 用户手动选择基础模式时，跳过 LLM 调用
+  if (useAppStore.getState().llmModeOverride === 'basic') {
+    return null;
   }
 
   // r5增强：熔断器检查，熔断期间直接降级，避免每次都等超时

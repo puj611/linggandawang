@@ -2,7 +2,7 @@
 // 灵感广场按钮：点击弹出当前场景的种子列表，一键填充输入框
 import { useState, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
-import { getSeedsByScene, getRandomSeed } from '@/data/inspireSeeds';
+import { getSeedsByScene } from '@/data/inspireSeeds';
 import type { SceneType } from '@/engine/types';
 
 interface Props {
@@ -17,35 +17,44 @@ const SCENE_LABELS: Record<SceneType, string> = {
   'ppt': 'PPT',
 };
 
+/** Fisher-Yates 洗牌 */
+function shuffle<T>(arr: readonly T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 export function InspireButton({ onSelect }: Props) {
   const [open, setOpen] = useState(false);
+  // 换一个计数器：每次自增触发 useMemo 重新随机抽取，避免调用 onSelect 直接填入输入框
+  const [shuffleVersion, setShuffleVersion] = useState(0);
   const sceneChoice = useAppStore((s) => s.sceneChoice);
 
-  // auto 模式下展示全部三类的第一个种子，显式场景下展示该场景全部种子
+  // auto 模式：每类随机取 2 个，共 6 个；显式场景：打乱该场景全部种子顺序
+  // 依赖 shuffleVersion：点"换一个"时仅刷新列表显示，不触发 onSelect、不关闭面板
   const seeds = useMemo(() => {
     if (sceneChoice === 'auto') {
-      // auto 模式：展示每类前 2 个，共 6 个
       return [
-        ...getSeedsByScene('ppt').slice(0, 2),
-        ...getSeedsByScene('frontend-ui').slice(0, 2),
-        ...getSeedsByScene('backend-api').slice(0, 2),
+        ...shuffle(getSeedsByScene('ppt')).slice(0, 2),
+        ...shuffle(getSeedsByScene('frontend-ui')).slice(0, 2),
+        ...shuffle(getSeedsByScene('backend-api')).slice(0, 2),
       ];
     }
-    return getSeedsByScene(sceneChoice);
-  }, [sceneChoice]);
+    return shuffle(getSeedsByScene(sceneChoice));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneChoice, shuffleVersion]);
 
   const handleSelect = (seed: string) => {
     onSelect(seed);
     setOpen(false);
   };
 
-  // 换一个：随机抽取当前场景的种子
+  // 换一个：仅刷新列表显示，不填充输入框、不关闭面板
   const handleShuffle = () => {
-    const scene: SceneType = sceneChoice === 'auto' ? 'frontend-ui' : sceneChoice;
-    const random = getRandomSeed(scene);
-    if (random) {
-      handleSelect(random.seed);
-    }
+    setShuffleVersion((v) => v + 1);
   };
 
   return (
