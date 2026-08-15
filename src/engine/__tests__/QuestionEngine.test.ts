@@ -189,3 +189,109 @@ describe('QuestionEngine PPT 场景', () => {
     expect(next?.id).toBe('o-004');
   });
 });
+
+// P0-1（超时修复）：applyLLMAnalysis 延迟应用 LLM 分析
+describe('QuestionEngine.applyLLMAnalysis（P0-1）', () => {
+  function makeLLMAnalysis(overrides?: Partial<import('../LLMIntentAnalyzer').LLMIntentAnalysis>) {
+    return {
+      scene: 'frontend-ui',
+      pain_points: [],
+      detected_dimensions: [{ tag: '间距: 太挤', weight: 0.6, confidence: 0.8 }],
+      urgency: 'medium',
+      ambiguity_score: 0.2,
+      suggested_followup: null,
+      followup_options: [],
+      source: 'llm',
+      ...overrides,
+    } as import('../LLMIntentAnalyzer').LLMIntentAnalysis;
+  }
+
+  it('未作答时，LLM 高歧义澄清题可替换规则路由的首题', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    // 规则路由：'修 UI' → p-001
+    const first = engine.start('修 UI', 'full', null, [], 'auto');
+    expect(first?.id).toBe('p-001');
+
+    // LLM 判为高歧义，给出澄清题
+    const analysis = makeLLMAnalysis({
+      ambiguity_score: 0.8,
+      suggested_followup: '你说的"修 UI"，是想调整整体风格还是修具体某个元素？',
+      detected_dimensions: [],
+    });
+
+    const result = engine.applyLLMAnalysis(analysis);
+    expect(result.replaced).toBe(true);
+    expect(result.question?.id).toBe(engine.currentQuestion()?.id);
+    expect(engine.currentQuestion()?.id).toMatch(/^dyn-llm-clarify-/);
+    // 路由来源更新为 llm
+    expect(engine.getRouteSource()).toBe('llm');
+    // askedIds 同步为新的首题
+    expect(engine.snapshot().askedIds).toEqual([engine.currentQuestion()?.id]);
+  });
+
+  it('未作答时，LLM 低歧义不换题但更新 tagScores 与意图标签', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    const first = engine.start('修 UI', 'full', null, [], 'auto');
+    expect(first?.id).toBe('p-001');
+
+    const analysis = makeLLMAnalysis({
+      ambiguity_score: 0.2,
+      detected_dimensions: [
+        { tag: '间距: 太挤', weight: 0.7, confidence: 0.9 },
+        { tag: '配色: 不协调', weight: 0.3, confidence: 0.8 },
+      ],
+    });
+
+    const result = engine.applyLLMAnalysis(analysis);
+    // 低歧义不换题（首题仍是 p-001）
+    expect(result.replaced).toBe(false);
+    expect(engine.currentQuestion()?.id).toBe('p-001');
+    // tagScores 被 LLM dimensions 更新
+    const scores = engine.getTagScores().map((s) => s.tag);
+    expect(scores).toEqual(expect.arrayContaining(['间距: 太挤', '配色: 不协调']));
+    // intentTags 补充了 LLM 分析标签
+    expect(engine.getIntentTags().some((t) => t.source_question_id === 'llm-analysis')).toBe(true);
+  });
+
+  it('已作答后 applyLLMAnalysis 不换题（避免打断用户流程）', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    engine.start('修 UI', 'full', null, [], 'auto');
+    // 用户已答首题
+    const first = engine.currentQuestion();
+    engine.answer('fix-ui', '修一个看不顺眼的 UI', ['场景: 修UI']);
+    const answeredId = first?.id;
+
+    const analysis = makeLLMAnalysis({ ambiguity_score: 0.8, suggested_followup: 'x' });
+    const result = engine.applyLLMAnalysis(analysis);
+    // 不应换题（当前仍为答题后的下一题，而非 LLM 澄清题）
+    expect(result.replaced).toBe(false);
+    expect(engine.currentQuestion()?.id).not.toMatch(/^dyn-llm-clarify-/);
+    // 已作答记录保留
+    expect(Object.keys(engine.getAnswers())).toContain(answeredId);
+  });
+
+  it('重复 applyLLMAnalysis 不产生重复 LLM 意图标签（去重）', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    engine.start('修 UI', 'full', null, [], 'auto');
+
+    const analysis = makeLLMAnalysis({});
+    engine.applyLLMAnalysis(analysis);
+    engine.applyLLMAnalysis(analysis);
+
+    const llmTags = engine
+      .getIntentTags()
+      .filter((t) => t.source_question_id === 'llm-analysis');
+    expect(llmTags.length).toBeGreaterThan(0);
+    // 去重：每对 label:value 只出现一次
+    const keySet = new Set(llmTags.map((t) => `${t.label}:${t.value}`));
+    expect(keySet.size).toBe(llmTags.length);
+  });
+});

@@ -63,7 +63,7 @@ describe('withRetry', () => {
       .mockRejectedValueOnce(new Error('LLM 请求失败 (500)'))
       .mockResolvedValueOnce('ok-after-2-retries');
 
-    const result = await withRetry(fn, 2);
+    const result = await withRetry(fn, undefined, 2);
     expect(result).toBe('ok-after-2-retries');
     expect(fn).toHaveBeenCalledTimes(3); // 初次 + 2 次重试
   });
@@ -72,7 +72,7 @@ describe('withRetry', () => {
     const err = new TypeError('Failed to fetch');
     const fn = vi.fn().mockRejectedValue(err);
 
-    await expect(withRetry(fn, 2)).rejects.toBe(err);
+    await expect(withRetry(fn, undefined, 2)).rejects.toBe(err);
     expect(fn).toHaveBeenCalledTimes(3); // 初次 + 2 次重试
   });
 
@@ -100,9 +100,70 @@ describe('withRetry', () => {
   });
 
   it('maxRetries=0 时不重试', async () => {
+    // r6 修复：签名变为 withRetry(fn, externalSignal?, maxRetries=2)
+    // 必须显式传 undefined 作为 externalSignal，否则 0 会被当成 signal
     const fn = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
-    await expect(withRetry(fn, 0)).rejects.toThrow('Failed to fetch');
+    await expect(withRetry(fn, undefined, 0)).rejects.toThrow('Failed to fetch');
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('r6 修复：外部 signal 已 aborted 时不重试，直接抛出（即使错误可重试）', async () => {
+    // 模拟：函数持续抛网络错误（可重试），但外部 signal 已被 abort
+    // 期望：withRetry 检测到 externalSignal.aborted 后立即抛，不进入重试
+    const controller = new AbortController();
+    controller.abort(); // 预先 abort
+
+    const fn = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await expect(withRetry(fn, controller.signal)).rejects.toThrow('Failed to fetch');
+    // 关键断言：只调用 1 次（初次失败后立即抛），没有 1s/3s 退避重试
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('r6 修复：调用过程中外部 signal 被 abort，下次 catch 时立即抛', async () => {
+    // 模拟真实场景：analyzeIntent 的 8s 业务超时
+    // - fn 第一次返回会被业务级 signal abort（抛 AbortError）
+    // - withRetry 必须在 catch 块内检查到 externalSignal.aborted=true 立即抛
+    const controller = new AbortController();
+
+    // mock setTimeout 让 sleep(1000)/sleep(3000) 立即 resolve，否则测试要等真实时间
+    // 但关键路径不应触发 sleep（因为 catch 后立即抛）
+    const fn = vi.fn().mockImplementation(async () => {
+      // 模拟 fetch 抛 AbortError 之前，外部已经 abort
+      controller.abort();
+      const abortErr = new Error('The operation was aborted');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    });
+
+    const start = Date.now();
+    await expect(withRetry(fn, controller.signal)).rejects.toThrow('The operation was aborted');
+    const elapsed = Date.now() - start;
+
+    // 关键断言：只调用 1 次，且不经过 1s 退避
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeLessThan(100); // 远小于 1s 退避
+  });
+
+  it('r6 修复：不可重试错误优先于 externalSignal 检查（auth 不会触发退避）', async () => {
+    // 即使有 externalSignal，不可重试错误也应直接抛（保持原有行为）
+    const controller = new AbortController();
+    const fn = vi.fn().mockRejectedValue(new Error('LLM 请求失败 (401): Unauthorized'));
+
+    await expect(withRetry(fn, controller.signal)).rejects.toThrow(/401/);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('r6 修复：未传 externalSignal 时行为不变（不短路）', async () => {
+    // 回归测试：不传 signal 时，retryable 错误仍按指数退避重试
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce('ok');
+
+    const result = await withRetry(fn);
+    expect(result).toBe('ok');
+    expect(fn).toHaveBeenCalledTimes(2);
   });
 
   it('默认 maxRetries=2', async () => {
@@ -137,7 +198,7 @@ describe('withRetry', () => {
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
       .mockResolvedValueOnce('ok');
 
-    await withRetry(fn, 2);
+    await withRetry(fn, undefined, 2);
 
     // 验证 setTimeout 被调用，间隔分别为 1000ms 和 3000ms
     const calls = setTimeoutSpy.mock.calls;

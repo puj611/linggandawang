@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mockGetAdapter = vi.fn();
 const mockBuildIntentAnalysisMessages = vi.fn();
 const mockApiKeyState = {
-  config: null as null | { provider: 'openai'; baseUrl: string; model: string },
+  config: null as null | { provider: 'openai' | 'local'; baseUrl: string; model: string },
   hasApiKey: false,
   getApiKey: vi.fn(),
 };
@@ -136,6 +136,33 @@ describe('analyzeIntent - P0 用例 T08-T09 降级测试', () => {
 
     expect(result).toBeNull();
     // 应调用 recordFailure 记录失败
+    expect(mockLLMAvailabilityState.recordFailure).toHaveBeenCalledTimes(1);
+    expect(mockLLMAvailabilityState.recordSuccess).not.toHaveBeenCalled();
+  });
+
+  it('T09.1（P0-2）: 本地 provider 超时也应为 8s（与云端对齐，不再 30s）', async () => {
+    vi.useFakeTimers();
+    mockApiKeyState.config = {
+      provider: 'local',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      model: 'local',
+    };
+    mockApiKeyState.hasApiKey = true;
+    mockApiKeyState.getApiKey.mockResolvedValue('local-key');
+
+    const abortErr = new Error('The operation was aborted');
+    abortErr.name = 'AbortError';
+    const mockChat = vi.fn().mockRejectedValue(abortErr);
+    mockGetAdapter.mockReturnValue({ chat: mockChat });
+
+    const promise = analyzeIntent('test');
+    // P0-2：本地意图分析超时从 30s 收敛到 8s
+    // 推进 8s 后应已降级（若仍为旧 30s，8s 时不会 resolve）
+    await vi.advanceTimersByTimeAsync(8000);
+    const result = await promise;
+
+    expect(result).toBeNull();
+    // 8s 内已触发超时降级，说明本地超时不再是 30s
     expect(mockLLMAvailabilityState.recordFailure).toHaveBeenCalledTimes(1);
     expect(mockLLMAvailabilityState.recordSuccess).not.toHaveBeenCalled();
   });

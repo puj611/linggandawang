@@ -1,6 +1,6 @@
 // src/components/QuestionPanel.tsx
 // 提问态：单问题对话气泡
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useEngineStore } from '@/stores/engineStore';
 import { useFlow } from '@/hooks/useFlow';
 import { useDrag } from '@/hooks/useDrag';
@@ -14,9 +14,15 @@ import { LLMModeBadge } from './LLMModeBadge';
 
 const STAGES: PromptStage[] = ['perceive', 'name', 'spec', 'execute', 'verify'];
 
+// P0-3：加载超时阈值自适应。预期等待 = 意图分析超时（云端/本地均 8s）+ 容差 2s。
+// 此前固定写死 12s：文案与实际不符（实际在等意图分析），且本地模型旧超时 30s 时会误触发。
+// 现在意图分析已不阻塞首题（P0-1），此阈值仅作兜底，仍需与 provider 匹配避免误报。
+const LOADING_TIMEOUT_MS = 10000; // 云端/本地意图分析均 8s，+2s 容差 = 10s 兜底
+
 export function QuestionPanel() {
   // v2.3：逐个 selector 精准订阅，避免整 store 订阅导致无关状态变化触发重渲染
   const currentQuestion = useEngineStore((s) => s.currentQuestion);
+  const isProcessing = useEngineStore((s) => s.isProcessing);
   const intentTags = useEngineStore((s) => s.intentTags);
   const consecutiveSkips = useEngineStore((s) => s.consecutiveSkips);
   const canUndo = useEngineStore((s) => s.canUndo);
@@ -28,6 +34,19 @@ export function QuestionPanel() {
   const { resizeProps, width } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
 
+  // P0-3：加载超时检测：currentQuestion 为空超过预期等待（10s）时显示重试按钮，避免永久 loading
+  // 注意：isProcessing 为 true 时（start/directGenerate 进行中）跳过超时，避免 LLM 分析期间误触发
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  useEffect(() => {
+    if (!currentQuestion && !isProcessing) {
+      setLoadingTimeout(false);
+      const timer = setTimeout(() => setLoadingTimeout(true), LOADING_TIMEOUT_MS);
+      return () => clearTimeout(timer);
+    }
+    setLoadingTimeout(false);
+    return undefined;
+  }, [currentQuestion, isProcessing]);
+
   if (!currentQuestion) {
     return (
       <div
@@ -38,14 +57,32 @@ export function QuestionPanel() {
           className="window-panel p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center gap-3"
           style={{ width: `${width}px`, minHeight: '200px' }}
         >
-          <div className="relative">
-            <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-            <div className="absolute inset-0 w-8 h-8 border border-brand/30 rounded-full animate-pulse-soft" />
-          </div>
-          <div>
-            <p className="text-text-primary text-sm font-medium">正在生成提示词</p>
-            <p className="text-xs text-text-tertiary mt-1">灵感大王正在整理你的意图标签...</p>
-          </div>
+          {loadingTimeout ? (
+            <>
+              <div className="text-semantic-warning text-2xl">⚠</div>
+              <div>
+                <p className="text-text-primary text-sm font-medium">生成超时</p>
+              <p className="text-xs text-text-tertiary mt-1">提示词生成超过预期时间未完成，可能是后台响应卡住，请重试</p>
+              </div>
+              <button
+                onClick={backToExpanded}
+                className="primary-btn px-4 py-2 text-xs mt-1"
+              >
+                返回重新开始
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="relative">
+                <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                <div className="absolute inset-0 w-8 h-8 border border-brand/30 rounded-full animate-pulse-soft" />
+              </div>
+              <div>
+                <p className="text-text-primary text-sm font-medium">正在生成提示词</p>
+                <p className="text-xs text-text-tertiary mt-1">灵感大王正在整理你的意图标签...</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

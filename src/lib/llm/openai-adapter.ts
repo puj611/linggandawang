@@ -167,6 +167,7 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
     // 本地推理超时更长（CPU 推理较慢），云端保持 30s
     const timeoutMs = isLocal ? 120000 : 30000;
 
+    // r6修复：传入外层 signal，让 withRetry 在外层 abort 时立即抛出，避免重试已 abort 的请求
     return withRetry(async () => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -224,7 +225,7 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
         clearTimeout(timeout);
         if (signal) signal.removeEventListener('abort', onExternalAbort);
       }
-    });
+    }, signal);
   }
 
   async chatStream(

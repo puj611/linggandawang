@@ -63,9 +63,11 @@ export function analysisToIntentTags(
 
 const DEFAULT_TIMEOUT_MS = 8000; // full 模式 LLM 分析超时 8 秒
 const QUICK_TIMEOUT_MS = 4000; // quick 模式 LLM 分析超时 4 秒（P3 快速通道：更快降级到规则路由）
-// Phase B：本地模型推理较慢，超时时间更长
-const LOCAL_DEFAULT_TIMEOUT_MS = 30000; // 本地模型 full 模式 30 秒
-const LOCAL_QUICK_TIMEOUT_MS = 15000; // 本地模型 quick 模式 15 秒
+// P0-2：本地意图分析超时与云端对齐（此前 30s/15s 远高于 UI 12s 兜底阈值，
+// 导致自动检测+详细诊断下本地模型未配置/未启动时，等待期超过 12s 触发"生成超时"）。
+// 意图分析只是路由决策，不值得为它等待 30s；超时后由规则路由兜底。
+const LOCAL_DEFAULT_TIMEOUT_MS = 8000; // 本地模型 full 模式 8 秒
+const LOCAL_QUICK_TIMEOUT_MS = 4000; // 本地模型 quick 模式 4 秒
 
 /**
  * 分析用户意图

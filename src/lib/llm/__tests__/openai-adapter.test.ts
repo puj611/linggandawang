@@ -422,3 +422,57 @@ function makeRequestSafe(): LLMRequest {
     max_tokens: 50,
   };
 }
+
+/**
+ * 集成测试：adapter + 真实 withRetry 的端到端行为
+ *
+ * 此处不 mock '../withRetry'，验证 r6 修复在真实集成下的行为：
+ * - 外部 signal abort 后，withRetry 必须立即抛出，不再 1s+3s 退避
+ *
+ * 这是防止"dist 未重新构建"型 meta-bug 复发的关键端到端测试。
+ */
+describe('OpenAICompatibleAdapter + withRetry 集成（r6 修复）', () => {
+  let adapter: OpenAICompatibleAdapter;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let fetchSpy: any;
+
+  beforeEach(() => {
+    // 不 mock withRetry — 使用真实实现
+    vi.resetModules();
+    adapter = new OpenAICompatibleAdapter('openai');
+    fetchSpy = vi.spyOn(globalThis, 'fetch' as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('外部 abort 后 ≤ 1s 内必须拒绝（不再 1s+3s 退避）', async () => {
+    // 模拟真实场景：LLMIntentAnalyzer 8s 业务超时
+    // 旧行为（r6 修复前）：外部 abort → fetch 抛 AbortError → withRetry 看到 timeout 错误（可重试）→ 退避 1s 后重试 → 再退避 3s 后再重试 → 总耗时 4s+ → 错过 QuestionPanel 12s 兜底
+    // 新行为（r6 修复后）：外部 abort → fetch 抛 AbortError → withRetry 检测 externalSignal.aborted=true → 立即抛
+    vi.useFakeTimers();
+    fetchSpy.mockImplementationOnce(makeAbortablePendingFetch());
+
+    const controller = new AbortController();
+    const promise = adapter.chat(
+      makeRequestSafe(),
+      API_KEY,
+      BASE_URL,
+      controller.signal,
+    );
+    const expectation = expect(promise).rejects.toThrow('LLM 请求被调用方取消');
+
+    // 推进 8s 触发外部 abort
+    await vi.advanceTimersByTimeAsync(8000);
+    controller.abort();
+
+    await expectation;
+
+    // 关键断言：从外部 abort 到 promise 拒绝，不应经过 1s 退避
+    // 注意：fake timers 下 Date.now() 也受 mock 影响，所以用 fetch 调用次数间接证明
+    // fetch 只被调用 1 次（初次），没有第二次重试
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});

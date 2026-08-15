@@ -10,7 +10,7 @@ import { useEngineStore } from '@/stores/engineStore';
 import { useContextStore } from '@/stores/contextStore';
 import { questionLoader } from '@/engine/QuestionLoader';
 import { QuestionEngine } from '@/engine/QuestionEngine';
-import type { FlowMode, SceneChoice } from '@/engine/types';
+import type { FlowMode, SceneChoice, Question } from '@/engine/types';
 import { promptGenerator } from '@/engine/PromptGenerator';
 import { pushRecentPrompt } from '@/components/RecentPromptList';
 import type { PromptResult } from '@/types/prompt';
@@ -25,10 +25,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { analyzeIntent } from '@/engine/LLMIntentAnalyzer';
 import { evaluateFollowup, generateFollowupQuestion } from '@/engine/SmartFollowup';
 import { retrieveSimilar } from '@/lib/vectorStore';
+import { withTimeoutSafe } from '@/lib/withTimeout';
 // #region debug-instrumentation
 import { reportDebug, setDebugRunId } from '@/lib/debugReporter';
 // 默认 pre；修复后切换为 post
-setDebugRunId('pre');
+setDebugRunId('post');
 // #endregion debug-instrumentation
 
 // 模块级单例：所有组件共享同一 engine 实例，避免组件切换时状态丢失
@@ -199,40 +200,17 @@ export function useFlow() {
         answer: qa.answer,
       }));
 
-      // 三模式系统：用户显式选择场景时跳过 LLM 分析（场景已确定，无需检测，立即响应）
-      // auto 模式保留 LLM 分析用于场景检测和意图提取
-      let llmAnalysis = null;
-      if (sceneChoice === 'auto') {
-        try {
-          const projectStack = projectFingerprint
-            ? [projectFingerprint.framework, projectFingerprint.language, projectFingerprint.css_solution]
-                .filter(Boolean)
-                .join(' / ')
-            : undefined;
-          llmAnalysis = await analyzeIntent(
-            seed,
-            projectStack,
-            recentQA,
-            mode === 'quick' ? 'quick' : 'full',
-          );
-        } catch (e) {
-          console.warn('[useFlow] LLM 意图分析失败，降级到关键词匹配', e);
-        }
-      }
-
-      // P1-5：await 期间若用户已再次 start，放弃本次后续操作
-      if (mySeq !== startSeq) return;
-      // v2.3：组件卸载后也不再继续
-      if (!mountedRef.current) return;
-
-      // 异常防护：engine.start 或后续 setState 抛异常时，回退到 expanded 态避免永久 loading
+      // P0-1（超时修复）：首题立即用规则路由出题，不再阻塞等待 LLM 意图分析
+      // 之前：await analyzeIntent（云端8s/本地30s）期间 UI 卡在"正在生成提示词"，12s 后触发超时弹窗
+      // 现在：先用规则路由立即出题；LLM 分析并行执行，返回后延迟应用（换题/增强后续选题）
+      let firstQuestion: Question | null = null;
       try {
-        const q = engine.start(seed, mode, llmAnalysis, recentQAForEngine, sceneChoice, completedTopics);
+        firstQuestion = engine.start(seed, mode, null, recentQAForEngine, sceneChoice, completedTopics);
         setSeedInput(seed);
         setStage(engine.getStage());
-        if (q) {
-          setCurrentQuestion(q);
-          addAsked(q.id);
+        if (firstQuestion) {
+          setCurrentQuestion(firstQuestion);
+          addAsked(firstQuestion.id);
         } else {
           // engine.start 返回 null（首题缺失），回退到 expanded 避免卡在 loading
           console.error('[useFlow] engine.start 返回 null，首题缺失，回退到 expanded');
@@ -254,8 +232,8 @@ export function useFlow() {
           matchedKeywords: engine.getMatchedKeywords(),
           matchedClusterIds: engine.getMatchedClusterIds(),
           matchedClusterForms: engine.getMatchedClusters().map((m) => m.matched_form),
-          firstQuestionId: q?.id ?? null,
-          firstQuestionStage: q?.stage ?? null,
+          firstQuestionId: firstQuestion?.id ?? null,
+          firstQuestionStage: firstQuestion?.stage ?? null,
           hasDynamicClarification: engine.getHasDynamicClarification(),
           topTagScores: engine
             .getTagScores()
@@ -266,9 +244,47 @@ export function useFlow() {
       } catch (e) {
         console.error('[useFlow] start 内部异常，回退到 expanded', e);
         transition('expanded');
+        return;
+      }
+
+      // P0-1：LLM 意图分析并行执行，不阻塞首题展示
+      // 返回后仅当本次 start 仍有效时才应用（换题/增强），避免过期结果覆盖新会话
+      if (sceneChoice === 'auto') {
+        void (async () => {
+          try {
+            const projectStack = projectFingerprint
+              ? [projectFingerprint.framework, projectFingerprint.language, projectFingerprint.css_solution]
+                  .filter(Boolean)
+                  .join(' / ')
+              : undefined;
+            const llmAnalysis = await analyzeIntent(
+              seed,
+              projectStack,
+              recentQA,
+              mode === 'quick' ? 'quick' : 'full',
+            );
+            // P1-5：await 期间若用户已再次 start，放弃本次
+            if (mySeq !== startSeq) return;
+            // v2.3：组件卸载后不再继续
+            if (!mountedRef.current) return;
+            if (!llmAnalysis) return;
+
+            const { replaced, question } = engine.applyLLMAnalysis(llmAnalysis);
+            // 同步 engine 的意图标签（含 LLM 补充）到 store
+            useEngineStore.getState().setIntentTags(engine.getIntentTags());
+            if (replaced && question) {
+              // 换题：更新 UI 到 LLM 路由的首题
+              setCurrentQuestion(question);
+              addAsked(question.id);
+              setStage(engine.getStage());
+            }
+          } catch (e) {
+            console.warn('[useFlow] LLM 意图分析失败，保持规则路由', e);
+          }
+        })();
       }
     },
-    [resetEngineStore, setSeedInput, setStage, setCurrentQuestion, addAsked, addIntentTag, transition, projectFingerprint, ctxStore],
+    [resetEngineStore, setSeedInput, setStage, setCurrentQuestion, addAsked, addIntentTag, transition, projectFingerprint, ctxStore, completedTopics],
   );
 
   /** 提交答案
@@ -403,117 +419,144 @@ export function useFlow() {
    *  RAG：通过向量检索注入相似历史 QA 增强上下文
    *  注意：必须定义在 finishEarlyAndGenerate 之前，因为后者引用它
    */
+  /** 生成提示词并进入结果态
+   *  v3.0 重构：transition('result') 尽早执行，持久化移到后台不阻塞 UI
+   *  - retrieveSimilar 2s 超时（非关键 RAG 增强）
+   *  - setResult 后立即 transition，用户秒级看到结果
+   *  - appendRecentQAs/setIntentTags/setLastPrompt/appendPreferences 后台异步执行
+   *  - 读取 recentQA 时合并 persisted + pending，不依赖 appendRecentQAs 先完成
+   */
+  /** 生成提示词并进入结果态
+   *  v3.0 重构：transition('result') 尽早执行，持久化移到后台不阻塞 UI
+   *  v3.1 安全加固：5s 硬超时兜底 + 顶层 try/catch，确保任何异常都不永久卡住
+   *  - retrieveSimilar 2s 超时（非关键 RAG 增强）
+   *  - setResult 后立即 transition，用户秒级看到结果
+   *  - appendRecentQAs/setIntentTags/setLastPrompt/appendPreferences 后台异步执行
+   *  - 读取 recentQA 时合并 persisted + pending，不依赖 appendRecentQAs 先完成
+   *  - 5s 硬超时：任何原因导致未在 5s 内 transition，强制回到 expanded
+   */
   const finishAndGenerate = useCallback(async () => {
-    const engine = getEngine();
-    const snap = engine.snapshot();
-    // #region debug-point finishAndGenerate.enter
-    reportDebug({ point: 'finishAndGenerate.enter', phase: 'start', hypothesisId: 'H1', data: { pendingQA: pendingRecentQARef.current.length, hasResult: !!useEngineStore.getState().result, appState: useAppStore.getState().state } });
-    // #endregion debug-point finishAndGenerate.enter
-    // v2.1：读取上下文喂给 PromptGenerator
-    // v2.3：先 flush pending recentQA 到持久化，确保本次会话 QA 不丢失且只写一次
-    if (pendingRecentQARef.current.length > 0) {
-      // #region debug-point appendRecentQAs (H1)
-      reportDebug({ point: 'appendRecentQAs.start', phase: 'start', hypothesisId: 'H1', data: { count: pendingRecentQARef.current.length } });
-      try {
-        await ctxStore.appendRecentQAs(pendingRecentQARef.current);
-        pendingRecentQARef.current = [];
-        reportDebug({ point: 'appendRecentQAs.end', phase: 'end', hypothesisId: 'H1', data: { ok: true } });
-      } catch (e) {
-        reportDebug({ point: 'appendRecentQAs.error', phase: 'error', hypothesisId: 'H1', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
-        throw e; // 保持原行为：让 finishAndGenerate reject
+    // 5s 硬超时兜底：任何原因导致 finishAndGenerate 未在 5s 内 transition，强制回到 expanded
+    let transitioned = false;
+    const hardFallback = setTimeout(() => {
+      if (!transitioned) {
+        console.warn('[useFlow] finishAndGenerate 5s 硬超时，强制 transition 到 expanded');
+        try { useAppStore.getState().transition('expanded'); } catch (fe) { console.error('[useFlow] hardFallback transition failed', fe); }
       }
-      // #endregion debug-point appendRecentQAs (H1)
-    }
-    const recentQA = ctxStore.getRecentQA(20);
-    const preferences = ctxStore.getPreferences();
-    // P3：传递 mode（direct/quick/full → quick/full，direct 无需推断）
-    const engineMode = engine.getMode();
-    const genMode = engineMode === 'quick' ? 'quick' : 'full';
+    }, 5000);
 
-    // RAG：通过向量检索获取相似历史 QA（异步，失败时降级为空）
-    let retrievedContext: Array<{ question: string; answer: string; score: number }> = [];
     try {
-      const seedInput = snap.seedInput;
-      if (seedInput && seedInput.trim().length > 2) {
-        // #region debug-point retrieveSimilar (H3)
-        reportDebug({ point: 'retrieveSimilar.start', phase: 'start', hypothesisId: 'H3' });
-        const startTs = performance.now();
-        const results = await retrieveSimilar(seedInput, 3);
-        reportDebug({ point: 'retrieveSimilar.end', phase: 'end', hypothesisId: 'H3', data: { durationMs: Math.round(performance.now() - startTs), count: results.length } });
-        // #endregion debug-point retrieveSimilar (H3)
-        retrievedContext = results.map((r) => ({
-          question: r.entry.metadata.questionText,
-          answer: r.entry.metadata.answer,
-          score: r.score,
-        }));
-      }
-    } catch (e) {
-      console.warn('[useFlow] 向量检索失败，降级到无 RAG 模式', e);
-      // #region debug-point retrieveSimilar (H3)
-      reportDebug({ point: 'retrieveSimilar.error', phase: 'error', hypothesisId: 'H3', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
-      // #endregion debug-point retrieveSimilar (H3)
-    }
+      const engine = getEngine();
+      const snap = engine.snapshot();
+      // #region debug-point finishAndGenerate.enter
+      reportDebug({ point: 'finishAndGenerate.enter', phase: 'start', hypothesisId: 'H1', data: { pendingQA: pendingRecentQARef.current.length, hasResult: !!useEngineStore.getState().result, appState: useAppStore.getState().state } });
+      // #endregion debug-point finishAndGenerate.enter
 
-    // 异常防护：prompt 生成或持久化失败时，仍需 transition 到安全状态，避免永久 loading
-    try {
-      // #region debug-point promptGenerator.generate (H4)
-      reportDebug({ point: 'promptGenerator.generate.start', phase: 'start', hypothesisId: 'H4' });
-      const prompt = promptGenerator.generate({
-        intentTags: snap.intentTags,
-        answers: snap.answers,
-        seedInput: snap.seedInput,
-        project: projectFingerprint,
-        scanResult: fullScanResult,
-        recentQA,
-        preferences,
-        mode: genMode,
-        retrievedContext,
-        // 三模式系统：传入场景类型 + 问题阶段映射（PPT 问题 ID 以 'o' 开头，需显式映射阶段）
-        scene: engine.getScene(),
-        questionStageMap: engine.getQuestionStageMap(),
-      });
-      reportDebug({ point: 'promptGenerator.generate.end', phase: 'end', hypothesisId: 'H4' });
-      // #endregion debug-point promptGenerator.generate (H4)
-      setResult(prompt);
-      // #region debug-point setResult.done (H1)
-      reportDebug({ point: 'setResult.done', phase: 'info', hypothesisId: 'H1', data: { hasResult: true } });
-      // #endregion debug-point setResult.done (H1)
-      // 持久化失败不阻塞 UI（已修复死锁，但仍可能因磁盘问题失败）
+      // 读取上下文（合并 persisted + pending，不依赖 appendRecentQAs 先完成）
+      const persistedQA = ctxStore.getRecentQA(20);
+      const recentQA = [...persistedQA, ...pendingRecentQARef.current].slice(-20);
+      const preferences = ctxStore.getPreferences();
+      const engineMode = engine.getMode();
+      const genMode = engineMode === 'quick' ? 'quick' : 'full';
+
+      // RAG：通过向量检索获取相似历史 QA（2s 超时，非关键，降级返回空）
+      let retrievedContext: Array<{ question: string; answer: string; score: number }> = [];
       try {
-        // #region debug-point persist (H2)
-        reportDebug({ point: 'persist.start', phase: 'start', hypothesisId: 'H2' });
-        const persistStart = performance.now();
-        await ctxStore.setIntentTags(snap.intentTags);
-        reportDebug({ point: 'persist.setIntentTags.done', phase: 'info', hypothesisId: 'H2', data: { elapsedMs: Math.round(performance.now() - persistStart) } });
-        await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
-        reportDebug({ point: 'persist.setLastPrompt.done', phase: 'info', hypothesisId: 'H2', data: { elapsedMs: Math.round(performance.now() - persistStart) } });
-        // v2.1：累积本次提问沉淀的稳定偏好（场景/主题/响应式等）
-        const newPrefs = extractPreferencesFromEngine(engine);
-        if (newPrefs.length > 0) {
-          await ctxStore.appendPreferences(newPrefs);
-          reportDebug({ point: 'persist.appendPreferences.done', phase: 'info', hypothesisId: 'H2', data: { count: newPrefs.length, elapsedMs: Math.round(performance.now() - persistStart) } });
+        const seedInput = snap.seedInput;
+        if (seedInput && seedInput.trim().length > 2) {
+          // #region debug-point retrieveSimilar (H3)
+          reportDebug({ point: 'retrieveSimilar.start', phase: 'start', hypothesisId: 'H3' });
+          const ragStart = performance.now();
+          const results = await Promise.race([
+            retrieveSimilar(seedInput, 3),
+            new Promise<[]>((resolve) => setTimeout(() => resolve([]), 2000)),
+          ]);
+          reportDebug({ point: 'retrieveSimilar.end', phase: 'end', hypothesisId: 'H3', data: { durationMs: Math.round(performance.now() - ragStart), count: results.length } });
+          // #endregion debug-point retrieveSimilar (H3)
+          retrievedContext = results.map((r) => ({
+            question: r.entry.metadata.questionText,
+            answer: r.entry.metadata.answer,
+            score: r.score,
+          }));
         }
-        reportDebug({ point: 'persist.end', phase: 'end', hypothesisId: 'H2', data: { totalMs: Math.round(performance.now() - persistStart) } });
-        // #endregion debug-point persist (H2)
-      } catch (persistErr) {
-        console.warn('[useFlow] 持久化失败，不影响结果展示', persistErr);
-        // #region debug-point persist (H2)
-        reportDebug({ point: 'persist.error', phase: 'error', hypothesisId: 'H2', error: persistErr instanceof Error ? `${persistErr.name}: ${persistErr.message}` : String(persistErr) });
-        // #endregion debug-point persist (H2)
+      } catch (e) {
+        console.warn('[useFlow] 向量检索失败，降级到无 RAG 模式', e);
+        reportDebug({ point: 'retrieveSimilar.error', phase: 'error', hypothesisId: 'H3', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
       }
-      pushRecentPrompt(promptGenerator.toMarkdown(prompt));
-    } catch (genErr) {
-      console.error('[useFlow] 提示词生成失败，回退到 expanded', genErr);
-      // #region debug-point promptGenerator.generate (H4)
-      reportDebug({ point: 'promptGenerator.generate.error', phase: 'error', hypothesisId: 'H4', error: genErr instanceof Error ? `${genErr.name}: ${genErr.message}` : String(genErr) });
-      // #endregion debug-point promptGenerator.generate (H4)
-      transition('expanded');
-      return;
+
+      // 生成提示词（同步）— 失败时回退到 expanded 避免永久 loading
+      let prompt: PromptResult;
+      try {
+        // #region debug-point promptGenerator.generate (H4)
+        reportDebug({ point: 'promptGenerator.generate.start', phase: 'start', hypothesisId: 'H4' });
+        prompt = promptGenerator.generate({
+          intentTags: snap.intentTags,
+          answers: snap.answers,
+          seedInput: snap.seedInput,
+          project: projectFingerprint,
+          scanResult: fullScanResult,
+          recentQA,
+          preferences,
+          mode: genMode,
+          retrievedContext,
+          // 三模式系统：传入场景类型 + 问题阶段映射
+          scene: engine.getScene(),
+          questionStageMap: engine.getQuestionStageMap(),
+        });
+        reportDebug({ point: 'promptGenerator.generate.end', phase: 'end', hypothesisId: 'H4' });
+        // #endregion debug-point promptGenerator.generate (H4)
+      } catch (genErr) {
+        console.error('[useFlow] 提示词生成失败，回退到 expanded', genErr);
+        reportDebug({ point: 'promptGenerator.generate.error', phase: 'error', hypothesisId: 'H4', error: genErr instanceof Error ? `${genErr.name}: ${genErr.message}` : String(genErr) });
+        transitioned = true;
+        clearTimeout(hardFallback);
+        transition('expanded');
+        return;
+      }
+
+      // ★ 立即设置 result 并 transition（用户尽快看到结果，不被持久化阻塞）
+      setResult(prompt);
+      transitioned = true;
+      clearTimeout(hardFallback);
+      transition('result');
+      reportDebug({ point: 'finishAndGenerate.transitionResult', phase: 'info', hypothesisId: 'H1', data: { hasResult: true, finalAppState: useAppStore.getState().state } });
+
+      // ★ 后台持久化（不阻塞 UI，失败只记录日志）
+      // flush pending recentQA + setIntentTags + setLastPrompt + appendPreferences + pushRecentPrompt
+      void (async () => {
+        try {
+          // flush pending recentQA 到持久化
+          if (pendingRecentQARef.current.length > 0) {
+            const pendingSnapshot = pendingRecentQARef.current;
+            pendingRecentQARef.current = [];
+            await withTimeoutSafe(
+              ctxStore.appendRecentQAs(pendingSnapshot),
+              8000,
+              'appendRecentQAs',
+              undefined as void,
+            );
+          }
+          await withTimeoutSafe(ctxStore.setIntentTags(snap.intentTags), 5000, 'setIntentTags', undefined as void);
+          await withTimeoutSafe(ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt)), 5000, 'setLastPrompt', undefined as void);
+          // v2.1：累积本次提问沉淀的稳定偏好（场景/主题/响应式等）
+          const newPrefs = extractPreferencesFromEngine(engine);
+          if (newPrefs.length > 0) {
+            await withTimeoutSafe(ctxStore.appendPreferences(newPrefs), 5000, 'appendPreferences', undefined as void);
+          }
+          pushRecentPrompt(promptGenerator.toMarkdown(prompt));
+          reportDebug({ point: 'finishAndGenerate.backgroundPersist.done', phase: 'end', hypothesisId: 'H2' });
+        } catch (e) {
+          console.warn('[useFlow] 后台持久化失败', e);
+          reportDebug({ point: 'finishAndGenerate.backgroundPersist.error', phase: 'error', hypothesisId: 'H2', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
+        }
+      })();
+    } catch (e) {
+      // 顶层 catch：任何未预见的异常都不应让用户永久卡在 loading 界面
+      console.error('[useFlow] finishAndGenerate unhandled error，回退到 expanded', e);
+      transitioned = true;
+      clearTimeout(hardFallback);
+      try { transition('expanded'); } catch (te) { console.error('[useFlow] 顶层 catch transition failed', te); }
     }
-    transition('result');
-    // #region debug-point finishAndGenerate.exit
-    reportDebug({ point: 'finishAndGenerate.exit', phase: 'end', hypothesisId: 'H1', data: { finalAppState: useAppStore.getState().state, hasResult: !!useEngineStore.getState().result } });
-    // #endregion debug-point finishAndGenerate.exit
   }, [setResult, ctxStore, transition, projectFingerprint, fullScanResult]);
 
   /** 用户在二次确认中选择"结束并生成"
@@ -626,7 +669,7 @@ export function useFlow() {
           });
           setResult(prompt);
           await ctxStore.setIntentTags(engine.getIntentTags());
-          await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
+        await ctxStore.setLastPrompt(promptGenerator.toMarkdown(prompt));
         } catch (e) {
           console.error('[useFlow] addScreenshotTags 重生成失败，保留旧结果', e);
         }

@@ -10,9 +10,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import type { SegmentKey } from '@/engine/PromptGenerator';
 
+// P0-3：加载超时阈值自适应。预期等待 = 生成提示词（含 RAG 检索 ≤2s + 生成 ≤5s 硬兜底）+ 容差。
+// 此前固定写死 12s 且文案"超过 12 秒"与实际不符，现改为统一的兜底阈值。
+const LOADING_TIMEOUT_MS = 10000;
+
 export function ResultPanel() {
   // v2.3：逐个 selector 精准订阅
   const result = useEngineStore((s) => s.result);
+  const isProcessing = useEngineStore((s) => s.isProcessing);
   const intentTags = useEngineStore((s) => s.intentTags);
   const { copyPrompt, exportPrompt, restart, removeTag, updateSection } = useFlow();
   const [copied, setCopied] = useState(false);
@@ -32,6 +37,19 @@ export function ResultPanel() {
     };
   }, []);
 
+  // P0-3：加载超时检测：result 为空超过预期等待（10s）时显示重试按钮，避免永久 loading
+  // 注意：isProcessing 为 true 时跳过超时，避免 start 期间误触发
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  useEffect(() => {
+    if (!result && !isProcessing) {
+      setLoadingTimeout(false);
+      const timer = setTimeout(() => setLoadingTimeout(true), LOADING_TIMEOUT_MS);
+      return () => clearTimeout(timer);
+    }
+    setLoadingTimeout(false);
+    return undefined;
+  }, [result, isProcessing]);
+
   if (!result) {
     return (
       <div
@@ -42,14 +60,32 @@ export function ResultPanel() {
           className="window-panel p-6 text-text-secondary flex flex-col items-center justify-center gap-3"
           style={{ width: `${width}px`, minHeight: '200px' }}
         >
-          <div className="relative">
-            <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-            <div className="absolute inset-0 w-8 h-8 border border-brand/30 rounded-full animate-pulse-soft" />
-          </div>
-          <div className="text-center">
-            <p className="text-text-primary text-sm font-medium">正在生成提示词</p>
-            <p className="text-xs text-text-tertiary mt-1">灵感大王正在组织你的意图标签和规格...</p>
-          </div>
+          {loadingTimeout ? (
+            <>
+              <div className="text-semantic-warning text-2xl">⚠</div>
+              <div className="text-center">
+                <p className="text-text-primary text-sm font-medium">生成超时</p>
+                <p className="text-xs text-text-tertiary mt-1">提示词生成超过预期时间未完成，可能是后台响应卡住，请重试</p>
+              </div>
+              <button
+                onClick={backToExpanded}
+                className="primary-btn px-4 py-2 text-xs mt-1"
+              >
+                返回重新开始
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="relative">
+                <div className="w-8 h-8 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                <div className="absolute inset-0 w-8 h-8 border border-brand/30 rounded-full animate-pulse-soft" />
+              </div>
+              <div className="text-center">
+                <p className="text-text-primary text-sm font-medium">正在生成提示词</p>
+                <p className="text-xs text-text-tertiary mt-1">灵感大王正在组织你的意图标签和规格...</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
