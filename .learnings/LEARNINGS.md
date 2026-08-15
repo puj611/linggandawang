@@ -459,3 +459,28 @@ TRAE 内置终端跑前端命令前先 `where.exe node` 验证；若缺失，可
 ### Metadata
 - Source: error
 - Tags: trae, terminal, node, path, adobe, tooling
+
+---
+
+## [LRN-20260805-021] correction
+
+**Logged**: 2026-08-05T15:40:00+08:00
+**Priority**: critical
+**Status**: pending
+**Area**: build
+
+### Summary
+源码修复 ≠ 应用生效：必须 `tsc -b && vite build` 重建 dist，否则 Tauri 加载旧产物导致修复无效
+
+### Details
+2026-08-05 复盘"自动检测+详细诊断对话框超时"问题：源码已修（withRetry 增加 externalSignal 短路、openai-adapter.ts 错误消息改为"LLM 请求被调用方取消"），但 dist 仍是 2026-08-01 14:47 的旧版本，导致桌面端仍按旧逻辑走 8s 超时 + 1s+3s 退避 = 12s 命中 QuestionPanel 兜底。这是 2026-08-01 debug-prompt-generating-stuck.md §10 meta-bug 的二次重演。
+
+诊断方法：直接读 dist 中 withRetry 的 minified 块（旧版 `ls` 函数无 `e?.aborted` 短路，新版 `ds` 函数有 `e?.aborted` 短路），并对比源码 mtime 与 dist mtime。
+
+### Suggested Action
+**任何源码修改后必须执行 `npm run build`（含 `tsc -b && vite build`），且验证 dist 内含本次修复的特征字符串**（如新错误消息、关键分支条件）。建议在 AGENTS.md 中加一条"修复闭环"清单：源码改 → tsc 通过 → build 成功 → dist mtime 更新 → dist 内含新特征 → 桌面端重启加载新 dist → 行为验证。
+
+### Metadata
+- Source: error
+- Related Files: src/lib/llm/withRetry.ts, src/lib/llm/openai-adapter.ts, debug-prompt-generating-stuck.md
+- Tags: build, dist, vite, tsc, meta-bug, tauri, deployment-pipeline

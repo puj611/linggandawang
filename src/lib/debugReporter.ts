@@ -68,4 +68,12 @@ export async function traceAsync<T>(
     throw e;
   }
 }
+
+// #region debug-point canary — 模块级，import/HMR 时立即触发，用于验证日志管线是否连通
+// 若此 canary 到达 Debug Server，证明：(1) WebView 加载的是 Vite 服务的插桩代码 (2) CSP 放行 7777 (3) sendBeacon/fetch 工作
+// 若不到达，证明 WebView 加载的是 dist/ 旧构建（无 HMR）或 CSP 拦截
+try {
+  reportDebug({ point: 'canary.moduleLoad', phase: 'info', data: { href: typeof location !== 'undefined' ? location.href : 'unknown', ua: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 80) : 'unknown' } });
+} catch {}
+// #endregion debug-point canary
 // #endregion debug-instrumentation

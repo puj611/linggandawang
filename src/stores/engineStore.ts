@@ -16,6 +16,7 @@ interface EngineStore {
   consecutiveSkips: number;
   result: PromptResult | null;
   startedAt: string | null;
+  isProcessing: boolean;
   canUndo: boolean;
   setStage: (s: StageName) => void;
   setCurrentQuestion: (q: Question | null) => void;
@@ -32,6 +33,7 @@ interface EngineStore {
   resetSkip: () => void;
   setResult: (r: PromptResult | null) => void;
   setCanUndo: (v: boolean) => void;
+  setIsProcessing: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -45,6 +47,7 @@ export const useEngineStore = create<EngineStore>((set) => ({
   consecutiveSkips: 0,
   result: null,
   startedAt: null,
+  isProcessing: false,
   canUndo: false,
   setStage: (s) => set({ stage: s }),
   setCurrentQuestion: (q) => set({ currentQuestion: q }),
@@ -67,6 +70,7 @@ export const useEngineStore = create<EngineStore>((set) => ({
   resetSkip: () => set({ consecutiveSkips: 0 }),
   setResult: (r) => set({ result: r }),
   setCanUndo: (v) => set({ canUndo: v }),
+  setIsProcessing: (v) => set({ isProcessing: v }),
   reset: () =>
     set({
       stage: 'IDLE',
@@ -78,6 +82,7 @@ export const useEngineStore = create<EngineStore>((set) => ({
       consecutiveSkips: 0,
       result: null,
       startedAt: null,
+      isProcessing: false,
       canUndo: false,
     }),
 }));

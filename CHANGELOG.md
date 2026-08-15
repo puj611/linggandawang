@@ -2,6 +2,21 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.5.0] - 2026-08-05 - P0-1/P0-2/P0-3 超时修复
+
+### Bug 修复
+- **消除「自动检测+详细诊断」12s 超时无应答**（长期未解决故障）：
+  - P0-1：`start()` 先用规则路由立即出题，不再 `await analyzeIntent` 阻塞首题展示（此前云端 8s/本地 30s 等待期间 UI 卡在"正在生成提示词"，12s 后触发超时弹窗）
+  - LLM 意图分析改为并行执行，返回后通过新增的 `QuestionEngine.applyLLMAnalysis()` 延迟应用：更新 intentTags / tagScores 供后续选题增强；若用户尚未作答且 LLM 判定高歧义，可替换首题为 LLM 澄清题
+  - 过期结果防护：LLM 返回时校验 `startSeq` 与 `mountedRef`，避免覆盖新会话状态
+  - P0-2：本地意图分析超时从 30s/15s 收敛到 8s/4s（与云端对齐）。意图分析只是路由决策，不值得等 30s；`LOCAL_DEFAULT_TIMEOUT_MS`/`LOCAL_QUICK_TIMEOUT_MS` 原远高于 UI 12s 兜底阈值，超时后由规则路由兜底
+  - P0-3：QuestionPanel / ResultPanel 加载超时阈值由固定 12s 改为自适应 10s（预期等待 = 意图分析 8s + 容差 2s），并纠正误导性文案"提示词生成超过 12 秒"为"超过预期时间未完成"
+
+### 验证
+- tsc -b：0 错误
+- vitest run：328/328 通过（新增 `applyLLMAnalysis` 4 个 + 本地超时 1 个测试）
+- vite build：成功
+
 ## [0.3.0] - 2026-07-15 - M11 需求同步器
 
 ### 新功能（需求同步器）
