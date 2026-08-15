@@ -41,6 +41,9 @@ export function SettingsPanel() {
   }, []);
 
   const startRecordHotkey = () => {
+    // 修复泄漏：重新进入录制前，先移除上一次可能残留的 keydown listener
+    // （上一次若在未按键时被关闭/取消，handler 仍挂在 document 上）
+    cleanupRef.current?.();
     setRecording(true);
     const handler = (e: KeyboardEvent) => {
       e.preventDefault();

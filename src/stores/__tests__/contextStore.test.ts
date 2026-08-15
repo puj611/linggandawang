@@ -67,4 +67,22 @@ describe('contextStore 死锁回归', () => {
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(2000);
   });
+
+  it('B1 回归：写操作先于 load 时，数据不丢失且 loaded 置为 true', async () => {
+    const store = useContextStore.getState();
+    const before = store.getRecentQA().length;
+    // 先触发写操作（此时可能尚未 load）
+    const qa = {
+      question_id: 'b1-race',
+      question_text: 'B1 竞态回归',
+      answer: '答案',
+      answered_at: new Date().toISOString(),
+    };
+    await store.appendRecentQA(qa);
+    // 再补一次显式 load，不应覆盖刚写入的数据
+    await store.load();
+    const after = store.getRecentQA().length;
+    expect(after).toBe(before + 1);
+    expect(useContextStore.getState().loaded).toBe(true);
+  });
 });

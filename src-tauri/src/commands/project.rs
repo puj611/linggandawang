@@ -128,11 +128,10 @@ pub async fn pick_project_folder(
     }
 }
 
-#[tauri::command]
-pub fn scan_project(
-    path: String,
-    state: tauri::State<'_, ProjectScanState>,
-) -> Result<ScanProjectResult, String> {
+/// 授权校验：仅允许扫描用户通过 pick_project_folder 选择的目录。
+/// 抽取为共享 helper，使所有扫描命令（含 scan_file_tree_cmd / git_status_cmd / analyze_deps_cmd）
+/// 都执行同样的目录白名单校验，避免任意目录读取的授权绕过。
+fn assert_authorized(state: &ProjectScanState, path: &str) -> Result<(), String> {
     let allowed = state
         .0
         .lock()
@@ -142,7 +141,7 @@ pub fn scan_project(
 
     match allowed {
         Some(allowed_path) => {
-            let req_canonical = PathBuf::from(&path)
+            let req_canonical = PathBuf::from(path)
                 .canonicalize()
                 .map_err(|e| format!("路径解析失败: {}", e))?;
             let allowed_canonical = PathBuf::from(&allowed_path)
@@ -156,6 +155,15 @@ pub fn scan_project(
             return Err("请先通过文件夹选择器选择要扫描的项目目录".to_string());
         }
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn scan_project(
+    path: String,
+    state: tauri::State<'_, ProjectScanState>,
+) -> Result<ScanProjectResult, String> {
+    assert_authorized(&state, &path)?;
 
     let root = PathBuf::from(&path);
     if !root.exists() {
@@ -197,29 +205,7 @@ pub fn full_scan_project(
     max_depth: Option<usize>,
     state: tauri::State<'_, ProjectScanState>,
 ) -> Result<scanner::FullScanResult, String> {
-    let allowed = state
-        .0
-        .lock()
-        .map(|guard| guard.as_ref().map(|s| s.to_string()))
-        .ok()
-        .flatten();
-
-    match allowed {
-        Some(allowed_path) => {
-            let req_canonical = PathBuf::from(&path)
-                .canonicalize()
-                .map_err(|e| format!("路径解析失败: {}", e))?;
-            let allowed_canonical = PathBuf::from(&allowed_path)
-                .canonicalize()
-                .map_err(|e| format!("已选路径解析失败: {}", e))?;
-            if req_canonical != allowed_canonical {
-                return Err("无权限扫描此目录（请先通过文件夹选择器选择目录）".to_string());
-            }
-        }
-        None => {
-            return Err("请先通过文件夹选择器选择要扫描的项目目录".to_string());
-        }
-    }
+    assert_authorized(&state, &path)?;
 
     let root = PathBuf::from(&path);
     if !root.exists() {
@@ -237,7 +223,9 @@ pub fn full_scan_project(
 pub fn scan_file_tree_cmd(
     path: String,
     max_depth: Option<usize>,
+    state: tauri::State<'_, ProjectScanState>,
 ) -> Result<scanner::FileTree, String> {
+    assert_authorized(&state, &path)?;
     let root = PathBuf::from(&path);
     if !root.exists() || !root.is_dir() {
         return Err(format!("无效目录: {}", path));
@@ -246,7 +234,11 @@ pub fn scan_file_tree_cmd(
 }
 
 #[tauri::command]
-pub fn git_status_cmd(path: String) -> Result<scanner::GitStatus, String> {
+pub fn git_status_cmd(
+    path: String,
+    state: tauri::State<'_, ProjectScanState>,
+) -> Result<scanner::GitStatus, String> {
+    assert_authorized(&state, &path)?;
     let root = PathBuf::from(&path);
     if !root.exists() || !root.is_dir() {
         return Err(format!("无效目录: {}", path));
@@ -255,7 +247,11 @@ pub fn git_status_cmd(path: String) -> Result<scanner::GitStatus, String> {
 }
 
 #[tauri::command]
-pub fn analyze_deps_cmd(path: String) -> Result<scanner::DependencyGraph, String> {
+pub fn analyze_deps_cmd(
+    path: String,
+    state: tauri::State<'_, ProjectScanState>,
+) -> Result<scanner::DependencyGraph, String> {
+    assert_authorized(&state, &path)?;
     let root = PathBuf::from(&path);
     if !root.exists() || !root.is_dir() {
         return Err(format!("无效目录: {}", path));

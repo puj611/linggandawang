@@ -521,14 +521,18 @@ export function useFlow() {
       transition('result');
       reportDebug({ point: 'finishAndGenerate.transitionResult', phase: 'info', hypothesisId: 'H1', data: { hasResult: true, finalAppState: useAppStore.getState().state } });
 
+      // B2 修复：同步捕获 pending QA 快照并立刻清空 ref。
+      // 若留到后台 async 里才读取，restart()/directGenerate() 可能先清空
+      // pendingRecentQARef，导致本次持久化丢数据（restart 与 finish 并发竞态）。
+      const pendingSnapshot = pendingRecentQARef.current;
+      pendingRecentQARef.current = [];
+
       // ★ 后台持久化（不阻塞 UI，失败只记录日志）
       // flush pending recentQA + setIntentTags + setLastPrompt + appendPreferences + pushRecentPrompt
       void (async () => {
         try {
           // flush pending recentQA 到持久化
-          if (pendingRecentQARef.current.length > 0) {
-            const pendingSnapshot = pendingRecentQARef.current;
-            pendingRecentQARef.current = [];
+          if (pendingSnapshot.length > 0) {
             await withTimeoutSafe(
               ctxStore.appendRecentQAs(pendingSnapshot),
               8000,

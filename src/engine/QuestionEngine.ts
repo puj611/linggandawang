@@ -331,43 +331,48 @@ export class QuestionEngine {
    */
   applyLLMAnalysis(analysis: LLMIntentAnalysis): { replaced: boolean; question: Question | null } {
     this._llmAnalysis = analysis;
+    // B4 修复：用户是否已作答。若已作答，说明认可了规则路由方向，
+    // 此时不得再用 LLM 分析覆盖 tagScores / 补充 intentTags，避免与已确认状态冲突。
+    const userAnswered = Object.keys(this.answers).length > 0;
 
-    // 1. 补充 LLM 意图标签（去重）
-    const llmTags = analysisToIntentTags(analysis);
-    for (const t of llmTags) {
-      const dup = this.intentTags.some(
-        (x) =>
-          x.label === t.label &&
-          x.value === t.value &&
-          x.source_question_id === 'llm-analysis',
-      );
-      if (!dup) {
-        this.intentTags.push({
-          id: uuidv4(),
-          label: t.label,
-          value: t.value,
-          stage: 'perceive',
-          source_question_id: 'llm-analysis',
-          source_type: 'extracted-keyword',
-          confidence: 0.9,
-          deletable: true,
-          created_at: new Date().toISOString(),
-        });
+    if (!userAnswered) {
+      // 1. 补充 LLM 意图标签（去重）
+      const llmTags = analysisToIntentTags(analysis);
+      for (const t of llmTags) {
+        const dup = this.intentTags.some(
+          (x) =>
+            x.label === t.label &&
+            x.value === t.value &&
+            x.source_question_id === 'llm-analysis',
+        );
+        if (!dup) {
+          this.intentTags.push({
+            id: uuidv4(),
+            label: t.label,
+            value: t.value,
+            stage: 'perceive',
+            source_question_id: 'llm-analysis',
+            source_type: 'extracted-keyword',
+            confidence: 0.9,
+            deletable: true,
+            created_at: new Date().toISOString(),
+          });
+        }
       }
-    }
 
-    // 2. 用 LLM detected_dimensions 更新 tagScores（后续选题/追问受益）
-    if (analysis.detected_dimensions.length > 0) {
-      this.tagScores = analysis.detected_dimensions.map((d) => ({
-        tag: d.tag,
-        weight: d.weight,
-        source_clusters: ['llm-analysis'],
-      }));
+      // 2. 用 LLM detected_dimensions 更新 tagScores（后续选题/追问受益）
+      if (analysis.detected_dimensions.length > 0) {
+        this.tagScores = analysis.detected_dimensions.map((d) => ({
+          tag: d.tag,
+          weight: d.weight,
+          source_clusters: ['llm-analysis'],
+        }));
+      }
     }
 
     // 3. 若用户尚未作答，用 LLM 分析重新路由首题（换题）
     //    auto 模式下 forcedScene 为 null，与 start 阶段一致
-    if (Object.keys(this.answers).length === 0 && this.current) {
+    if (!userAnswered && this.current) {
       const routed = routeWithLLMAnalysis(this.loader, this.seedInput, analysis, null);
       if (routed.question && routed.question.id !== this.current.id) {
         this.current = routed.question;

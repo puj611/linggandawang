@@ -276,6 +276,30 @@ describe('QuestionEngine.applyLLMAnalysis（P0-1）', () => {
     expect(Object.keys(engine.getAnswers())).toContain(answeredId);
   });
 
+  it('B4 修复：已作答后 applyLLMAnalysis 不覆盖 tagScores / 不注入 LLM 标签', () => {
+    const loader = new QuestionLoader();
+    loader.load();
+    const engine = new QuestionEngine(loader);
+    engine.start('修 UI', 'full', null, [], 'auto');
+    // 用户已答首题：认可了规则路由方向
+    engine.answer('fix-ui', '修一个看不顺眼的 UI', ['场景: 修UI']);
+    const tagScoresBefore = engine.getTagScores();
+
+    // LLM 分析返回带 detected_dimensions，但用户已作答 → 不应覆盖 tagScores
+    const analysis = makeLLMAnalysis({
+      detected_dimensions: [{ tag: '风格: 极简', weight: 0.99, confidence: 0.9 }],
+    });
+    engine.applyLLMAnalysis(analysis);
+
+    // tagScores 保持答后的规则聚合结果，未被 LLM 覆盖
+    expect(engine.getTagScores()).toEqual(tagScoresBefore);
+    // 不注入 LLM 来源的意图标签
+    const llmTags = engine
+      .getIntentTags()
+      .filter((t) => t.source_question_id === 'llm-analysis');
+    expect(llmTags.length).toBe(0);
+  });
+
   it('重复 applyLLMAnalysis 不产生重复 LLM 意图标签（去重）', () => {
     const loader = new QuestionLoader();
     loader.load();

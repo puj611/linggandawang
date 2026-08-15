@@ -117,21 +117,42 @@ interface ContextStoreState {
   getPreferences: () => ContextPreference[];
 }
 
-export const useContextStore = create<ContextStoreState>((set, get) => ({
+export const useContextStore = create<ContextStoreState>((set, get) => {
+  // B1 修复：load 与写操作的串行化门控。
+  // 所有写操作必须先等 load 完成（ensureLoaded），避免基于空 ctx 覆盖已持久化数据；
+  // load 幂等共享，无论由 App.load() 还是写操作触发，磁盘只读一次。
+  let loadPromise: Promise<void> | null = null;
+  const ensureLoaded = (): Promise<void> => {
+    if (!loadPromise) {
+      loadPromise = (async () => {
+        const ctx = await readPersisted();
+        set({ ctx, loaded: true });
+      })();
+      // 加载失败时重置标志允许下次重试，且不中断整个写操作链
+      loadPromise.catch(() => { loadPromise = null; });
+    }
+    return loadPromise;
+  };
+  // 写操作统一入口：先入串行队列，再确保 load 已完成，最后执行 task。
+  // 相比直接 enqueue，保证读写顺序一致（load 先于所有写操作应用）。
+  const delayed = <T>(task: () => Promise<T>): Promise<T> =>
+    enqueue(async () => {
+      await ensureLoaded();
+      return task();
+    });
+
+  return {
   ctx: emptyContext(),
   loaded: false,
-  load: async () => {
-    const ctx = await readPersisted();
-    set({ ctx, loaded: true });
-  },
-  // P1-4：所有 mutating 操作通过 enqueue 串行化
-  // 死锁修复：enqueue 内部不得再调用其他 enqueue 方法（如 save），必须用 _applyPatch 直接操作
+  load: () => ensureLoaded(),
+  // B1 修复：所有 mutating 操作通过 delayed（先 ensureLoaded 再入队串行执行）
+  // 死锁修复：task 内部不得再调用其他 enqueue 方法（如 save），必须用 _applyPatch 直接操作
   save: (patch) =>
-    enqueue(async () => {
+    delayed(async () => {
       await _applyPatch(set, get, patch);
     }),
   archiveIfStale: () =>
-    enqueue(async () => {
+    delayed(async () => {
       const cur = get().ctx;
       const updated = new Date(cur.timestamps.updated_at).getTime();
       if (Date.now() - updated > ARCHIVE_TTL_MS) {
@@ -142,40 +163,40 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
       return false;
     }),
   clear: () =>
-    enqueue(async () => {
+    delayed(async () => {
       const fresh = emptyContext();
       await writePersisted(fresh);
       set({ ctx: fresh });
     }),
   appendRecentQA: (qa) =>
-    enqueue(async () => {
+    delayed(async () => {
       const cur = get().ctx;
       const list = [...(cur.recent_qa ?? []), qa].slice(-MAX_RECENT_QA);
       await _applyPatch(set, get, { recent_qa: list });
     }),
   appendRecentQAs: (qas) =>
-    enqueue(async () => {
+    delayed(async () => {
       if (qas.length === 0) return;
       const cur = get().ctx;
       const list = [...(cur.recent_qa ?? []), ...qas].slice(-MAX_RECENT_QA);
       await _applyPatch(set, get, { recent_qa: list });
     }),
   setIntentTags: (tags) =>
-    enqueue(async () => {
+    delayed(async () => {
       await _applyPatch(set, get, { intent_tags: tags });
     }),
   setLastPrompt: (md) =>
-    enqueue(async () => {
+    delayed(async () => {
       await _applyPatch(set, get, { last_prompt: md });
     }),
   setDevProgress: (patch) =>
-    enqueue(async () => {
+    delayed(async () => {
       const cur = get().ctx;
       await _applyPatch(set, get, { dev_progress: { ...cur.dev_progress, ...patch } });
     }),
   // v2.0 新增：累积用户偏好。同 key 同 value → 仅更新 confirmed_at；同 key 不同 value → 视为偏好升级，保留最新
   appendPreference: (pref) =>
-    enqueue(async () => {
+    delayed(async () => {
       const cur = get().ctx;
       const existing = cur.preferences ?? [];
       // 同 key 同 value 视为同一偏好，更新时间戳
@@ -191,7 +212,7 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
       await _applyPatch(set, get, { preferences: next });
     }),
   appendPreferences: (prefs) =>
-    enqueue(async () => {
+    delayed(async () => {
       if (prefs.length === 0) return;
       const cur = get().ctx;
       let existing = [...(cur.preferences ?? [])];
@@ -213,7 +234,8 @@ export const useContextStore = create<ContextStoreState>((set, get) => ({
   getPreferences: () => {
     return get().ctx.preferences ?? [];
   },
-}));
+  };
+});
 
 /** 死锁修复：非 enqueue 的内部 patch 应用器。
  *  enqueue 方法内部必须调用此 helper 而非 get().save()，

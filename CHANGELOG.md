@@ -2,6 +2,47 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.5.2] - 2026-08-15 - 安全授权 + 竞态/事务 + Ball 键盘化
+
+### 安全修复
+- **HIGH：修复 project.rs 三命令授权绕过**（`scan_file_tree_cmd` / `git_status_cmd` / `analyze_deps_cmd`）
+  - 根因：这三个命令接收任意 `path` 直接调用 scanner 读取文件树/git 状态/依赖图，未与 `pick_project_folder` 选择的目录校验，可被用于任意目录信息泄露。
+  - 修法：抽取 `assert_authorized` helper，与 `scan_project`/`full_scan_project` 一致的 canonical 路径白名单校验，三个命令增加 `state` 参数并执行校验。
+
+### Bug 修复（竞态/事务 B2-B4）
+- **B2：finishAndGenerate 后台持久化与 restart 竞态丢数据**
+  - 根因：后台 `void(async()=>{...})` 内部才读取 `pendingRecentQARef.current`，若 `restart()`/`directGenerate()` 先清空 ref，本次持久化丢失。
+  - 修法：在 `transition('result')` 前同步捕获 pending 快照到局部变量，后台用快照持久化。
+- **B3：Ball 右键菜单与拖动/点击竞态**
+  - 修法：`onContextMenu` 增加 `stopPropagation`，且拖动后（`didDragRef`）不误弹菜单并复位拖动状态。
+- **B4：applyLLMAnalysis 覆盖用户已作答状态**
+  - 根因：LLM 分析返回后无条件用 `detected_dimensions` 覆盖 `tagScores` 并注入 LLM 意图标签，即使用户已作答（认可规则路由方向）。
+  - 修法：仅当 `userAnswered` 为 false 时补充 tagScores / intentTags / 换题；已作答时仅更新 `_llmAnalysis` 引用供后续使用。
+
+### 无障碍
+- **Ball 键盘化**：悬浮球增加 `role="button"` / `tabIndex={0}`，Enter/Space 触发展开，纯键盘用户可操作。
+
+### 验证
+- tsc -b：0 错误
+- vitest run：330/330 通过（新增 B4 回归测试 1 个）
+- cargo check：通过
+- vite build：成功
+
+## [0.5.1] - 2026-08-15 - B1 数据安全 + SettingsPanel 泄漏修复
+
+### Bug 修复
+- **B1：contextStore 启动竞态导致数据丢失**
+  - 根因：`load()` 不走 `opsQueue` 串行化。App 启动时 `load` 与用户写操作（`appendRecentQA`/`setIntentTags` 等）并发时，写操作可能基于空 ctx 执行并落盘，随后 `load` 用旧快照覆盖内存，导致已写入数据丢失。
+  - 修法：所有 mutating 操作统一改用 `delayed()` 入口——先入串行队列，再 `await ensureLoaded()`（确保磁盘已加载完成、`loaded=true`），最后执行 read-modify-write。`load` 幂等共享，无论由 `App.load()` 还是写操作触发，磁盘只读一次；加载失败时重置标志允许重试。
+  - 不变量：Safety=持久化数据永不被陈旧内存快照覆盖；Liveness=所有写操作按调用顺序最终落盘。
+- **SettingsPanel：keydown 监听器泄漏**
+  - 根因：`startRecordHotkey` 每次注册新 `keydown` handler，但若上一次在未按键时被关闭/取消，旧 handler 仍挂在 `document` 上，重复进入录制会累积泄漏。
+  - 修法：注册新 handler 前先执行 `cleanupRef.current?.()` 移除上一次残留 listener。
+
+### 验证
+- tsc -b：0 错误
+- vitest run：329/329 通过（新增 B1 竞态回归测试 1 个）
+
 ## [0.5.0] - 2026-08-05 - P0-1/P0-2/P0-3 超时修复
 
 ### Bug 修复

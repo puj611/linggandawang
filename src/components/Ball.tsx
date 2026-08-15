@@ -75,8 +75,23 @@ export function Ball() {
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    // B3 修复：拖动后不打开菜单。拖动结束（尤其触摸/触控板）会触发 contextmenu，
+    // 此时 didDragRef 为 true，应忽略并复位，避免误弹菜单与拖动状态冲突。
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
     setMenuPos({ x: e.clientX, y: e.clientY });
     setMenuOpen(true);
+  };
+
+  // 键盘化：Enter/Space 触发展开（与 onClick 等价），便于纯键盘用户操作悬浮球
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpand();
+    }
   };
 
   // 点击外部 / ESC 关闭菜单
@@ -132,6 +147,10 @@ export function Ball() {
         onPointerDown={onBallPointerDown}
         onPointerMove={onBallPointerMove}
         onPointerUp={onBallPointerUp}
+        onKeyDown={onKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label="灵感大王悬浮球，回车或空格触发展开"
         className={`fixed group z-[9999] rounded-full flex items-center justify-center select-none ${
           dragging ? '' : 'transition-all duration-200 hover:scale-110'
         }`}
@@ -148,7 +167,6 @@ export function Ball() {
           cursor: dragProps.style?.cursor,
         }}
         title="拖动移动 / 单击展开 / 右键菜单 / Alt+Shift+Space 切换"
-        aria-label="灵感大王悬浮球"
       >
         <svg
           width="22"
