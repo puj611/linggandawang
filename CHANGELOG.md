@@ -2,6 +2,27 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.6.0] - 2026-08-15 - 密钥 Rust 代理 + SQL 权限细化 + SSRF 归一化 + a11y
+
+### 安全加固
+- **密钥 Rust 代理注入**（[llm_proxy.rs](file:///d:/AI工作平台/灵感大王/src-tauri/src/commands/llm_proxy.rs)）
+  - Tauri 模式下 LLM 请求改走新命令 `llm_proxy_chat` / `llm_proxy_test`：Rust 从 keyring 读取 API Key 并注入 Authorization header，前端不再接触明文 key。
+  - `openai-adapter.ts` 的 `chat` / `testConnection` 在 Tauri 模式走代理，浏览器模式保留直连降级。
+- **SSRF 归一化补全**：Rust 代理侧做 DNS 解析校验（`tokio::net::lookup_host`），校验域名解析结果不落内网（覆盖前端 JS 无法处理、且可被直接绕过的 DNS 重绑定 SSRF）。协议白名单 + IPv4/IPv6 私有/保留/链路本地齐全。
+- **SQL 权限细化**：capabilities 中 sql 命令（load/execute/select/close）由全局 scope 改为 ACL 对象形式，限定仅允许操作 `sqlite:linggandawang.db`，阻断对任意数据库文件的访问。
+
+### 无障碍（a11y）
+- Ball 悬浮球：`role="button"` + `tabIndex={0}` + Enter/Space 触发展开（此前 B2-B4 轮已做键盘化，补充）。
+- ImageExtractResult 关闭按钮补 `aria-label`。
+- 审查确认核心交互组件（ExpandedCard/QuestionPanel/ResultPanel/LLMModeBadge/InspireButton/IntentTagChips 等）交互元素已为原生 `<button>`，天然可键盘访问。
+
+### 验证
+- cargo check：通过
+- cargo test：5/5 通过（新增 SSRF `is_private_ip` 单元测试）
+- tsc -b：0 错误
+- vitest run：330/330 通过
+- vite build：成功
+
 ## [0.5.2] - 2026-08-15 - 安全授权 + 竞态/事务 + Ball 键盘化
 
 ### 安全修复

@@ -4,6 +4,7 @@
 
 import type { LLMAdapter, LLMProvider, LLMRequest, LLMResponse, LLMStreamChunk } from './types';
 import { withRetry } from './withRetry';
+import { isTauri } from '@/lib/env';
 
 /** 校验 baseUrl 安全性：仅允许 HTTPS（本地开发除外），拒绝内网地址
  *  防护范围：
@@ -153,6 +154,11 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
     baseUrl: string,
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
+    // 密钥 Rust 代理注入：Tauri 模式下请求走 Rust 代理，key 由 Rust 从 keyring 注入，
+    // 前端不接触明文 key；SSRF（含 DNS 重绑定）由 Rust 侧校验。
+    if (isTauri()) {
+      return this.chatViaProxy(request, baseUrl);
+    }
     validateBaseUrl(baseUrl);
     const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
     const isLocal = this.provider === 'local';
@@ -226,6 +232,33 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
         if (signal) signal.removeEventListener('abort', onExternalAbort);
       }
     }, signal);
+  }
+
+  /** 通过 Rust 代理发起非流式 chat：key 由 Rust 注入，前端不持有明文】
+   *  仅 Tauri 模式使用；浏览器模式走直连（chat 内降级） */
+  private async chatViaProxy(request: LLMRequest, baseUrl: string): Promise<LLMResponse> {
+    // Rust 侧为最终校验，前端前置校验仅用于快速失败
+    validateBaseUrl(baseUrl);
+    const { invoke } = await import('@tauri-apps/api/core');
+    const data = await invoke<{
+      choices?: { message?: { content?: string } }[];
+      model?: string;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    }>('llm_proxy_chat', {
+      req: {
+        provider: this.provider,
+        base_url: baseUrl,
+        model: request.model || (this.provider === 'local' ? 'local' : 'gpt-4o-mini'),
+        messages: request.messages,
+        temperature: request.temperature,
+        max_tokens: request.max_tokens,
+      },
+    });
+    return {
+      content: data.choices?.[0]?.message?.content ?? '',
+      model: data.model ?? request.model ?? '',
+      usage: data.usage,
+    };
   }
 
   async chatStream(
@@ -345,6 +378,18 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
   }
 
   async testConnection(apiKey: string, baseUrl: string, signal?: AbortSignal): Promise<boolean> {
+    // 密钥 Rust 代理注入：Tauri 模式下测试也走 Rust 代理（key 注入 + SSRF 校验）
+    if (isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<boolean>('llm_proxy_test', {
+          provider: this.provider,
+          baseUrl,
+        });
+      } catch {
+        return false;
+      }
+    }
     validateBaseUrl(baseUrl);
     const isLocal = this.provider === 'local';
     try {

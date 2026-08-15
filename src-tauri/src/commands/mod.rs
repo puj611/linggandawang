@@ -4,6 +4,7 @@
 pub mod api_key;
 pub mod context;
 pub mod image;
+pub mod llm_proxy;
 pub mod project;
 pub mod requirement;
 pub mod sidecar;

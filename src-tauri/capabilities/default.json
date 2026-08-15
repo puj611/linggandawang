@@ -28,10 +28,22 @@
     "fs:scope-app",
     "fs:scope-app-recursive",
     "sql:default",
-    "sql:allow-execute",
-    "sql:allow-select",
-    "sql:allow-close",
-    "sql:allow-load",
+    {
+      "identifier": "sql:allow-load",
+      "allow": [{ "identifier": "sqlite:linggandawang.db" }]
+    },
+    {
+      "identifier": "sql:allow-execute",
+      "allow": [{ "identifier": "sqlite:linggandawang.db" }]
+    },
+    {
+      "identifier": "sql:allow-select",
+      "allow": [{ "identifier": "sqlite:linggandawang.db" }]
+    },
+    {
+      "identifier": "sql:allow-close",
+      "allow": [{ "identifier": "sqlite:linggandawang.db" }]
+    },
     "dialog:default",
     "dialog:allow-open"
   ]

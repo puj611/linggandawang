@@ -9,6 +9,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 use commands::context;
 use commands::api_key;
+use commands::llm_proxy;
 use commands::project;
 use commands::window;
 use commands::image;
@@ -88,6 +89,9 @@ pub fn run() {
             api_key::save_api_key,
             api_key::load_api_key,
             api_key::delete_api_key,
+            // LLM 代理命令（密钥注入 + SSRF 校验）
+            llm_proxy::llm_proxy_chat,
+            llm_proxy::llm_proxy_test,
             // Project commands
             project::pick_project_folder,
             project::scan_project,

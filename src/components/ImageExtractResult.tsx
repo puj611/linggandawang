@@ -62,6 +62,7 @@ export function ImageExtractResult({ result, onInsert, onClose }: Props) {
         </div>
         <button
           onClick={onClose}
+          aria-label="关闭图片提示词拆解"
           className="text-text-tertiary hover:text-text-secondary transition-colors"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
