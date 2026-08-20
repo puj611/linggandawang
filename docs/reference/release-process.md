@@ -55,8 +55,7 @@ npx @tauri-apps/cli signer generate -w ~/.tauri/linggan.key
 }
 ```
 
-当前仓库中这两处均为占位：pubkey 为空、endpoints 用户名未替换。**pubkey 为空时更新链路不生效**，
-应用内「检查更新」会在运行时失败并被静默捕获（console.warn），不影响其他功能。
+当前仓库中 pubkey 已填入（2026-08-20 本地生成，`dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0MTY3MjExOTdERDBBRTMKUldUakN0MlhFWElXUk9CUE1EeE5DS2J6dEJJSDY0K2ErN3RDYTcrN1ZWVzZMbEV2RDhMV3VHai8K`），endpoints 用户名仍为占位 `你的用户名`（须推送到 GitHub 后替换为实际用户名/组织名再发版）。**pubkey 为空时更新链路不生效**，应用内「检查更新」会在运行时失败并被静默捕获（console.warn），不影响其他功能。
 
 ## 二、版本发布流程
 
