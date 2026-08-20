@@ -36,7 +36,7 @@ export function ProjectBadge() {
           <span className="block text-[11px] text-text-primary font-medium truncate">
             {fingerprint.name}
           </span>
-          <span className="block text-[9px] text-text-tertiary truncate">
+          <span className="block text-xs text-text-tertiary truncate">
             {tags.join(' · ') || '已绑定项目'}
           </span>
         </span>

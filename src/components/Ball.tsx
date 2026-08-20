@@ -39,6 +39,13 @@ export function Ball() {
   useHotkey(expand, collapse);
   useEscKey(collapse);
 
+  // v5：回收起态时把 OS 窗口恢复为悬浮球默认尺寸（面板态可能被用户缩放过）
+  const resetToBallSize = useWindowStore((s) => s.resetToBallSize);
+  useEffect(() => {
+    if (!isTauri()) return;
+    void resetToBallSize();
+  }, [resetToBallSize]);
+
   const onClick = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     // 若菜单正打开，单击先关闭菜单而非展开
@@ -152,7 +159,7 @@ export function Ball() {
         tabIndex={0}
         aria-label="灵感大王悬浮球，回车或空格触发展开"
         className={`fixed group z-[9999] rounded-full flex items-center justify-center select-none ${
-          dragging ? '' : 'transition-all duration-200 hover:scale-110'
+          dragging ? '' : 'transition-transform duration-200 hover:scale-110'
         }`}
         style={{
           left: '50%',
@@ -188,7 +195,7 @@ export function Ball() {
       {/* P1.5 其他改进：右键浮动菜单 */}
       {menuOpen && (
         <div
-          className="fixed bg-surface-2 border border-border rounded-btn shadow-popover py-1 min-w-[140px] text-text-primary"
+          className="fixed bg-surface-2 border border-border-light rounded-btn shadow-popover py-1 min-w-[140px] text-text-primary animate-pop-in"
           style={{
             left: menuPos.x,
             top: menuPos.y,

@@ -20,13 +20,6 @@
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
-    "fs:default",
-    "fs:allow-read",
-    "fs:allow-read-file",
-    "fs:allow-read-dir",
-    "fs:allow-exists",
-    "fs:scope-app",
-    "fs:scope-app-recursive",
     "sql:default",
     {
       "identifier": "sql:allow-load",
@@ -45,6 +38,8 @@
       "allow": [{ "identifier": "sqlite:linggandawang.db" }]
     },
     "dialog:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

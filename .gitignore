@@ -9,6 +9,8 @@ dist-ssr/
 *.local
 *.tsbuildinfo
 *.mjs
+# 例外：MCP server 冒烟脚本需要入库
+!mcp-server/smoke-test.mjs
 
 # 环境变量和敏感文件
 .env

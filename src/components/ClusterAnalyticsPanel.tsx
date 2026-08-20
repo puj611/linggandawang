@@ -64,7 +64,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
           <select
             value={rangeKey}
             onChange={(e) => setRangeKey(e.target.value)}
-            className="bg-bg-main border border-border rounded-btn px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-brand"
+            className="bg-bg-main border border-border rounded-btn px-2 py-1 text-xs text-text-primary focus:border-brand"
           >
             {Object.entries(DATE_RANGES).map(([k, v]) => (
               <option key={k} value={k}>{v.label}</option>
@@ -85,7 +85,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
             role="tab"
             aria-selected={tab === t.k}
             onClick={() => setTab(t.k as TabKey)}
-            className={`px-3 py-2 text-[11px] border-b-2 transition-colors ${
+            className={`px-3 py-2 text-xs border-b-2 transition-colors ${
               tab === t.k
                 ? 'text-text-primary border-brand'
                 : 'text-text-secondary border-transparent hover:text-text-primary'
@@ -114,7 +114,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
               <>
                 {/* 来源分布饼图 */}
                 <div>
-                  <div className="text-[11px] text-text-secondary mb-2">路由来源分布</div>
+                  <div className="text-xs text-text-secondary mb-2">路由来源分布</div>
                   <div className="flex items-center gap-4">
                     <SourcePie keyword={sourceDist.keyword} cluster={sourceDist.cluster} fallback={sourceDist.fallback} />
                     <div className="flex-1 space-y-1.5">
@@ -128,7 +128,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
                 {/* 每日趋势 */}
                 {dailyHits.length > 0 && (
                   <div>
-                    <div className="text-[11px] text-text-secondary mb-2">每日提问趋势</div>
+                    <div className="text-xs text-text-secondary mb-2">每日提问趋势</div>
                     <div className="flex items-end justify-center gap-1 h-20 bg-bg-main rounded-btn p-2 border border-border">
                       {dailyHits.slice(-14).map((d) => (
                         <div
@@ -140,16 +140,16 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
                           <div className="w-full flex flex-col justify-end h-12">
                             {d.miss > 0 && (
                               <div
-                                className="w-full bg-[#5A5A62] transition-all"
+                                className="w-full bg-[#5A5A62] transition-[width]"
                                 style={{ height: `${(d.miss / maxDailyHit) * 100}%`, minHeight: '2px' }}
                               />
                             )}
                             <div
-                              className="w-full bg-brand rounded-t-sm transition-all"
+                              className="w-full bg-brand rounded-t-sm transition-[width]"
                               style={{ height: `${(d.hit / maxDailyHit) * 100}%`, minHeight: d.hit > 0 ? '3px' : 0 }}
                             />
                           </div>
-                          <span className="text-[9px] text-text-tertiary">{d.date.slice(5)}</span>
+                          <span className="text-xs text-text-tertiary">{d.date.slice(5)}</span>
                         </div>
                       ))}
                     </div>
@@ -162,7 +162,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
 
         {tab === 'clusters' && (
           <div className="space-y-2">
-            <div className="text-[11px] text-text-secondary mb-1">
+            <div className="text-xs text-text-secondary mb-1">
               共识别到 {clusterStats.length} 个不同词簇
             </div>
             {clusterStats.length === 0 ? (
@@ -170,7 +170,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
             ) : (
               clusterStats.slice(0, 20).map((cs) => (
                 <div key={cs.clusterId} className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center justify-between text-xs">
                     <span className="text-text-primary font-medium">{cs.clusterId}</span>
                     <span className="text-text-secondary">
                       {cs.hitCount} 次 · {formatTime(cs.lastHitAt)}
@@ -178,7 +178,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
                   </div>
                   <div className="h-2 bg-bg-main rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-brand rounded-full transition-all"
+                      className="h-full bg-brand rounded-full transition-[width]"
                       style={{ width: `${(cs.hitCount / maxClusterHit) * 100}%` }}
                     />
                   </div>
@@ -194,7 +194,7 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
               <EmptyHint />
             ) : (
               <div className="border border-border rounded-btn overflow-hidden">
-                <table className="w-full text-[10px]">
+                <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-bg-main text-text-secondary">
                       <th className="px-2 py-1.5 text-left font-normal">时间</th>
@@ -214,13 +214,13 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
                         <td className="px-2 py-1.5 text-text-secondary">
                           <div className="flex flex-wrap gap-1">
                             {r.routeSource === 'keyword' && r.matchedKeywords.map((k) => (
-                              <span key={k} className="px-1 py-0.5 bg-[#2A1F3D] text-brand rounded text-[9px]">kw:{k}</span>
+                              <span key={k} className="px-1 py-0.5 bg-[#2A1F3D] text-brand rounded text-xs">kw:{k}</span>
                             ))}
                             {r.matchedClusterForms.slice(0, 3).map((f, i) => (
-                              <span key={i} className="px-1 py-0.5 bg-[#1F2540] text-[#8B9AE8] rounded text-[9px]">{f}</span>
+                              <span key={i} className="px-1 py-0.5 bg-[#1F2540] text-[#8B9AE8] rounded text-xs">{f}</span>
                             ))}
                             {r.matchedClusterForms.length > 3 && (
-                              <span className="text-text-tertiary text-[9px]">+{r.matchedClusterForms.length - 3}</span>
+                              <span className="text-text-tertiary text-xs">+{r.matchedClusterForms.length - 3}</span>
                             )}
                           </div>
                         </td>
@@ -236,10 +236,10 @@ export function ClusterAnalyticsPanel({ onBack }: Props) {
 
       {/* 底部操作 */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-border flex-shrink-0">
-        <span className="text-[10px] text-text-tertiary">最多保留最近 {500} 条记录</span>
+        <span className="text-xs text-text-tertiary">最多保留最近 {500} 条记录</span>
         <button
           onClick={onClear}
-          className={`px-3 py-1 text-[10px] rounded-btn transition-colors ${
+          className={`px-3 py-1 text-xs rounded-btn transition-colors ${
             confirmClear
               ? 'bg-red-500 hover:bg-red-600 text-white'
               : 'border border-border text-text-secondary hover:text-text-primary'
@@ -265,16 +265,16 @@ function StatCard({
   };
   return (
     <div className="bg-bg-main border border-border rounded-btn p-2">
-      <div className="text-[9px] text-text-secondary">{label}</div>
+      <div className="text-xs text-text-secondary">{label}</div>
       <div className={`text-lg font-semibold ${colors[accent]}`}>{value}</div>
-      {sub && <div className="text-[9px] text-text-tertiary">{sub}</div>}
+      {sub && <div className="text-xs text-text-tertiary">{sub}</div>}
     </div>
   );
 }
 
 function LegendDot({ color, label, count, total }: { color: string; label: string; count: number; total: number }) {
   return (
-    <div className="flex items-center justify-between text-[11px]">
+    <div className="flex items-center justify-between text-xs">
       <div className="flex items-center gap-2">
         <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
         <span className="text-text-secondary">{label}</span>
@@ -316,23 +316,23 @@ function SourceBadge({ source, dynamic }: { source: 'keyword' | 'cluster' | 'fal
   if (source === 'llm') {
     return (
       <span className="inline-flex items-center gap-1">
-        <span className="px-1.5 py-0.5 bg-[#1F2A3D] text-[#5BA3E8] rounded text-[9px]">LLM</span>
-        {dynamic && <span className="px-1 py-0.5 bg-[#3D2F1F] text-[#ffd580] rounded text-[9px]">澄清题</span>}
+        <span className="px-1.5 py-0.5 bg-[#1F2A3D] text-[#5BA3E8] rounded text-xs">LLM</span>
+        {dynamic && <span className="px-1 py-0.5 bg-[#3D2F1F] text-[#ffd580] rounded text-xs">澄清题</span>}
       </span>
     );
   }
   if (source === 'keyword') {
-    return <span className="px-1.5 py-0.5 bg-[#2A1F3D] text-brand rounded text-[9px]">关键词</span>;
+    return <span className="px-1.5 py-0.5 bg-[#2A1F3D] text-brand rounded text-xs">关键词</span>;
   }
   if (source === 'cluster') {
     return (
       <span className="inline-flex items-center gap-1">
-        <span className="px-1.5 py-0.5 bg-[#1F2540] text-[#8B9AE8] rounded text-[9px]">词簇</span>
-        {dynamic && <span className="px-1 py-0.5 bg-[#3D2F1F] text-[#ffd580] rounded text-[9px]">澄清题</span>}
+        <span className="px-1.5 py-0.5 bg-[#1F2540] text-[#8B9AE8] rounded text-xs">词簇</span>
+        {dynamic && <span className="px-1 py-0.5 bg-[#3D2F1F] text-[#ffd580] rounded text-xs">澄清题</span>}
       </span>
     );
   }
-  return <span className="px-1.5 py-0.5 bg-[#2A2A32] text-text-tertiary rounded text-[9px]">兜底</span>;
+  return <span className="px-1.5 py-0.5 bg-[#2A2A32] text-text-tertiary rounded text-xs">兜底</span>;
 }
 
 function EmptyHint() {
@@ -344,7 +344,7 @@ function EmptyHint() {
         <div className="w-1.5 h-7 bg-current rounded-sm" />
         <div className="w-1.5 h-4 bg-current rounded-sm opacity-60" />
       </div>
-      <div className="text-[11px]">暂无数据，去问几个问题试试？</div>
+      <div className="text-xs">暂无数据，去问几个问题试试？</div>
     </div>
   );
 }

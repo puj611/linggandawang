@@ -8,6 +8,8 @@ import type { ContextRecentQA, ContextPreference } from '@/types/context';
 import type { PromptStage } from './types';
 import { STAGE_ORDER } from './types';
 import { expandToSpecs } from './EvaluationDict';
+import { TARGET_TOOL_PROFILES } from './targetToolProfiles';
+import type { TargetTool, TargetToolProfile } from './targetToolProfiles';
 import {
   FRAMEWORK_LABELS,
   CSS_LABELS,
@@ -38,6 +40,8 @@ interface GenerateInput {
   scene?: GenerateScene;
   /** 三模式系统：问题 ID → 阶段映射（PPT 问题 ID 以 'o' 开头，需要显式映射阶段） */
   questionStageMap?: Record<string, PromptStage>;
+  /** Task 7 新增：目标工具，非 generic 时 markdown 输出按对应 profile 叠加结构适配（默认 generic，行为不变） */
+  targetTool?: TargetTool;
 }
 
 /** v1.2 新增：可编辑的段落键名 */
@@ -51,10 +55,23 @@ const STAGE_TO_LABEL: Record<string, string> = {
   verify: '验证',
 };
 
+/** Task 7：toMarkdown 主要分段标题 → XML 标签名（claude-code 结构包裹用） */
+const SECTION_XML_TAGS: Array<{ pattern: RegExp; tag: string }> = [
+  { pattern: /^## 0\. 项目上下文/, tag: 'context' },
+  { pattern: /^## 1\. 要做什么/, tag: 'task' },
+  { pattern: /^## 2\. 怎么做/, tag: 'spec' },
+  { pattern: /^## 3\. 不能怎么/, tag: 'constraints' },
+  { pattern: /^## 4\. 怎么算做好了/, tag: 'acceptance_criteria' },
+];
+
+/** Task 7：尾部元数据起始行（意图标签清单分隔线 / 用户原话汇总注释） */
+const isTailMetaLine = (line: string): boolean =>
+  line === '---' || line.startsWith('<!-- 用户原话汇总');
+
 export class PromptGenerator {
   /** 从 EngineState 生成 PromptResult */
   generate(input: GenerateInput): PromptResult {
-    const { intentTags, answers, seedInput, project, scanResult, recentQA, preferences, mode, retrievedContext, scene, questionStageMap } = input;
+    const { intentTags, answers, seedInput, project, scanResult, recentQA, preferences, mode, retrievedContext, scene, questionStageMap, targetTool } = input;
     const rawQuotes = this.collectRawQuotes(answers, seedInput, recentQA, questionStageMap);
     const projectCtx = project ? this.buildProjectContext(project, scanResult) : null;
     // 三模式系统：ppt 场景下走 PPT 专属模板，不注入前端硬编码约束
@@ -72,6 +89,8 @@ export class PromptGenerator {
       intent_tags: [...intentTags],
       generated_at: new Date().toISOString(),
       project: project ?? undefined,
+      // Task 7：仅非 generic 时记录目标工具（generic/未传时不写字段，保持既有结果对象不变）
+      ...(targetTool && targetTool !== 'generic' ? { target_tool: targetTool } : {}),
     };
   }
 
@@ -91,6 +110,7 @@ export class PromptGenerator {
       retrievedContext?: Array<{ question: string; answer: string; score: number }>;
       scene?: GenerateScene;
       questionStageMap?: Record<string, PromptStage>;
+      targetTool?: TargetTool;
     },
   ): PromptResult {
     return this.generate({
@@ -104,6 +124,7 @@ export class PromptGenerator {
       retrievedContext: context?.retrievedContext,
       scene: context?.scene,
       questionStageMap: context?.questionStageMap,
+      targetTool: context?.targetTool,
     });
   }
 
@@ -194,7 +215,8 @@ export class PromptGenerator {
       }
       lines.push(`-->`);
     }
-    return lines.join('\n');
+    // Task 7：按目标工具 profile 做结构后处理（generic 时原样返回，行为不变）
+    return this.applyTargetToolProfile(result, lines, result.target_tool ?? 'generic', opt).join('\n');
   }
 
   /** 导出 .md 文件（浏览器侧用 Blob + download） */
@@ -231,6 +253,116 @@ export class PromptGenerator {
         return false;
       }
     }
+  }
+
+  // ──────── 目标工具适配（Task 7）────────
+
+  /** 按目标工具 profile 对 markdown 行做结构后处理（generic 原样返回，保障回归） */
+  private applyTargetToolProfile(result: PromptResult, lines: string[], tool: TargetTool, opt: MarkdownExportOptions): string[] {
+    if (tool === 'generic') return lines;
+    const profile = TARGET_TOOL_PROFILES[tool];
+    if (profile.useXmlTags) {
+      return this.wrapSectionsWithXmlTags(lines);
+    }
+    if (profile.useStructuredSpec) {
+      return this.restructureAsSpecSections(result, lines, opt);
+    }
+    let out = lines;
+    if (profile.includeFilePathHints) {
+      out = this.insertFilePathHints(out);
+    }
+    if (profile.includeTaskBreakdown || profile.includeStopConditions) {
+      out = this.appendTaskSections(result, out, profile, tool === 'copilot');
+    }
+    return out;
+  }
+
+  /** claude-code：主要分段用 XML 标签包裹（仅加包裹层，内容文本不变、不加说明文字） */
+  private wrapSectionsWithXmlTags(lines: string[]): string[] {
+    const out: string[] = [];
+    let openTag: string | null = null;
+    const closeOpen = () => {
+      if (openTag) {
+        out.push(`</${openTag}>`, '');
+        openTag = null;
+      }
+    };
+    for (const line of lines) {
+      // 到尾部元数据（意图标签清单/原话汇总）前先闭合
+      if (openTag && isTailMetaLine(line)) closeOpen();
+      const hit = SECTION_XML_TAGS.find((s) => s.pattern.test(line));
+      if (hit) {
+        closeOpen();
+        openTag = hit.tag;
+        out.push(`<${hit.tag}>`);
+      }
+      out.push(line);
+    }
+    closeOpen();
+    return out;
+  }
+
+  /** codex：重排为「目标/输入/输出/约束/验收标准」规格段（映射现有 segment，不丢内容） */
+  private restructureAsSpecSections(result: PromptResult, lines: string[], opt: MarkdownExportOptions): string[] {
+    const firstSectionIdx = lines.findIndex((l) => SECTION_XML_TAGS.some((s) => s.pattern.test(l)));
+    if (firstSectionIdx === -1) return lines;
+    const tailIdx = lines.findIndex(isTailMetaLine);
+    const head = lines.slice(0, firstSectionIdx);
+    const tail = tailIdx === -1 ? [] : lines.slice(tailIdx);
+
+    const quote = (q?: string): string[] => (opt.include_raw_quotes && q ? [`<!-- 原话：${q} -->`] : []);
+    const body: string[] = [];
+    body.push('## 目标', result.action.content, ...quote(result.action.raw_quote), '');
+    if (result.project_context && opt.include_project_context) {
+      body.push('## 输入', result.project_context.content, '');
+    }
+    body.push('## 输出');
+    if (opt.code_block_for_spec) {
+      body.push('```yaml', result.spec.content, '```');
+    } else {
+      body.push(result.spec.content);
+    }
+    body.push(...quote(result.spec.raw_quote), '');
+    body.push('## 约束', result.constraint.content, ...quote(result.constraint.raw_quote), '');
+    body.push('## 验收标准', result.verify.content, ...quote(result.verify.raw_quote));
+    return [...head, ...body, ...tail];
+  }
+
+  /** cursor：第一个主要分段前插入「相关文件」占位段 */
+  private insertFilePathHints(lines: string[]): string[] {
+    const out: string[] = [];
+    let inserted = false;
+    for (const line of lines) {
+      if (!inserted && SECTION_XML_TAGS.some((s) => s.pattern.test(line))) {
+        out.push('## 相关文件', '', '（在此列出相关文件路径，如 src/components/Foo.tsx）', '');
+        inserted = true;
+      }
+      out.push(line);
+    }
+    return out;
+  }
+
+  /** cursor/copilot：尾部元数据前追加「执行步骤」（基于 spec/verify 已有内容拆行，不新造内容）与「停止条件」段 */
+  private appendTaskSections(result: PromptResult, lines: string[], profile: TargetToolProfile, concise: boolean): string[] {
+    const out = [...lines];
+    let insertAt = out.findIndex(isTailMetaLine);
+    if (insertAt === -1) insertAt = out.length;
+
+    const section: string[] = [''];
+    if (profile.includeTaskBreakdown) {
+      const steps = [...result.spec.content.split('\n'), ...result.verify.content.split('\n')]
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const limited = concise ? steps.slice(0, 5) : steps;
+      section.push('## 执行步骤', '');
+      limited.forEach((s, i) => section.push(`${i + 1}. ${s}`));
+      section.push('');
+    }
+    if (profile.includeStopConditions) {
+      section.push('## 停止条件', '', '完成上述步骤并通过验证后停止', '');
+    }
+    out.splice(insertAt, 0, ...section);
+    return out;
   }
 
   // ──────── 段落构建 ────────

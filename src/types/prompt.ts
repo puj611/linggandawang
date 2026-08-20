@@ -3,6 +3,7 @@
 
 import type { IntentTag } from './intent-tag';
 import type { ProjectFingerprint } from './project';
+import type { TargetTool } from '../engine/targetToolProfiles';
 
 export interface PromptSegment {
   title: string;
@@ -20,6 +21,8 @@ export interface PromptResult {
   intent_tags: IntentTag[];
   generated_at: string;
   project?: ProjectFingerprint;
+  /** 目标工具：非 generic 时 toMarkdown 会按对应 profile 叠加结构适配 */
+  target_tool?: TargetTool;
 }
 
 export interface MarkdownExportOptions {

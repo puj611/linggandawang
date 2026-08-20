@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useFlow } from '@/hooks/useFlow';
 import { useDrag } from '@/hooks/useDrag';
 import { useResize } from '@/hooks/useResize';
+import { ResizeHandles } from './ResizeHandles';
 import { StartTemplates } from './StartTemplates';
 import { RecentPromptList } from './RecentPromptList';
 import { ScreenshotDropZone } from './ScreenshotDropZone';
@@ -21,9 +22,11 @@ import { ProjectBadge } from './ProjectBadge';
 import { ProjectOnboarding } from './ProjectOnboarding';
 import { LLMModeBadge } from './LLMModeBadge';
 import { isTauri } from '@/lib/env';
+import { EXPAND_FOCUS_EVENT } from '@/hooks/useGlobalHotkey';
 import { isVisionModel } from '@/lib/llm/types';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { questionLoader } from '@/engine/QuestionLoader';
+import { TARGET_TOOL_OPTIONS } from '@/engine/targetToolProfiles';
 import type { ScreenshotPayload } from '@/hooks/useScreenshotPaste';
 import type { FlowMode, SceneChoice } from '@/engine/types';
 
@@ -60,6 +63,9 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   // 三模式系统：场景选择从全局 appStore 读取（与 ReferenceImagePanel 等组件共享）
   const sceneChoice = useAppStore((s) => s.sceneChoice);
   const setSceneChoice = useAppStore((s) => s.setSceneChoice);
+  // Task 8：目标工具选择从全局 appStore 读取（useFlow 生成时通过 getState 消费）
+  const targetTool = useAppStore((s) => s.targetTool);
+  const setTargetTool = useAppStore((s) => s.setTargetTool);
   const [issues, setIssues] = useState<DiagnosisIssue[] | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const [extractResult, setExtractResult] = useState<ExtractedPrompt | null>(null);
@@ -95,7 +101,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   const alwaysOnTop = useWindowStore((s) => s.alwaysOnTop);
   const toggleAlwaysOnTop = useWindowStore((s) => s.toggleAlwaysOnTop);
   const { dragProps, offset } = useDrag();
-  const { resizeProps, width } = useResize();
+  const { onPointerDown: onResizePointerDown, width, height } = useResize();
   const projectPath = useProjectStore((s) => s.fingerprint?.path);
   // P3-9：视觉模型检查 —— 模型不支持视觉时禁用图片拆解按钮
   const llmConfig = useApiKeyStore((s) => s.config);
@@ -109,6 +115,15 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
     return () => {
       mountedRef.current = false;
     };
+  }, []);
+
+  // Phase 3 Task 13：全局热键（Alt+Shift+I）唤起后聚焦输入框
+  // autoFocus 覆盖常规展开路径；此事件覆盖热键路径（窗口跨应用聚焦后重新锚定 DOM 焦点）
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const focusInput = () => textareaRef.current?.focus();
+    window.addEventListener(EXPAND_FOCUS_EVENT, focusInput);
+    return () => window.removeEventListener(EXPAND_FOCUS_EVENT, focusInput);
   }, []);
 
   useEffect(() => {
@@ -218,8 +233,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
         className="window-panel flex flex-col overflow-hidden relative"
         style={{
           width: `${width}px`,
-          maxHeight: '85vh',
-          minHeight: '480px',
+          height: `${height}px`,
           transform: `translate(${offset.x}px, ${offset.y}px)`,
         }}
       >
@@ -236,7 +250,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
           <button
             onClick={toggleAlwaysOnTop}
             title={alwaysOnTop ? '取消置顶' : '窗口置顶'}
-            className={`p-2 rounded-btn transition-all ${
+            className={`p-2 rounded-btn transition-colors ${
               alwaysOnTop
                 ? 'text-brand bg-brand-soft'
                 : 'text-text-tertiary hover:text-text-secondary hover:bg-surface-2'
@@ -251,7 +265,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
           </button>
           <button
             onClick={openSettings}
-            className="p-2 rounded-btn text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-all"
+            className="p-2 rounded-btn text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors"
             aria-label="设置"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -262,7 +276,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
           {isTauri() && (
           <button
             onClick={collapse}
-            className="p-2 rounded-btn text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-all"
+            className="p-2 rounded-btn text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors"
             aria-label="收起"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -283,13 +297,15 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
             <InspireButton onSelect={(seed) => setInput(seed)} />
           </div>
           <textarea
+            ref={textareaRef}
             autoFocus
+            aria-label="输入需求描述"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="比如：我想让按钮更显眼 / 列表太挤了 / 想加个登录页"
             rows={3}
             maxLength={2000}
-            className="w-full bg-surface-2 border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder-text-tertiary resize-none focus:outline-none focus:border-brand transition-colors leading-relaxed"
+            className="w-full bg-surface-2 border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder-text-tertiary resize-none focus:border-brand transition-colors leading-relaxed"
           />
           {/* 三模式系统：场景选择（放在 FlowMode 上方） */}
           <div className="flex gap-1 mt-2 bg-surface-2 rounded-btn p-1">
@@ -304,9 +320,27 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
                 type="button"
                 onClick={() => handleSceneChange(opt.value)}
                 title={opt.hint}
-                className={`flex-1 px-2 py-1.5 text-xs rounded transition-all ${
+                className={`flex-1 px-2 py-1.5 text-xs rounded transition-colors ${
                   sceneChoice === opt.value
-                    ? 'bg-surface-1 text-text-primary shadow-sm font-medium'
+                    ? 'bg-surface-3 text-text-primary shadow-sm font-medium'
+                    : 'text-text-tertiary hover:text-text-secondary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {/* Task 8：目标工具选择（场景选择下方，决定提示词按哪个工具的结构偏好输出） */}
+          <div className="flex gap-1 mt-2 bg-surface-2 rounded-btn p-1">
+            {TARGET_TOOL_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setTargetTool(opt.value)}
+                title={opt.description}
+                className={`flex-1 px-2 py-1.5 text-xs rounded transition-colors ${
+                  targetTool === opt.value
+                    ? 'bg-surface-3 text-text-primary shadow-sm font-medium'
                     : 'text-text-tertiary hover:text-text-secondary'
                 }`}
               >
@@ -326,9 +360,9 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
                 type="button"
                 onClick={() => handleModeChange(opt.value)}
                 title={opt.hint}
-                className={`flex-1 px-2 py-1.5 text-xs rounded transition-all ${
+                className={`flex-1 px-2 py-1.5 text-xs rounded transition-colors ${
                   mode === opt.value
-                    ? 'bg-surface-1 text-text-primary shadow-sm font-medium'
+                    ? 'bg-surface-3 text-text-primary shadow-sm font-medium'
                     : 'text-text-tertiary hover:text-text-secondary'
                 }`}
               >
@@ -372,7 +406,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
               <button
                 onClick={onExtractPrompt}
                 disabled={extracting || !visionSupported || !hasApiKey}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs border border-dashed rounded-btn transition-colors ${
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs border border-border-light rounded-btn transition-colors ${
                   visionSupported && hasApiKey
                     ? 'border-border hover:border-brand hover:bg-brand/5 text-text-secondary'
                     : 'border-border text-text-tertiary cursor-not-allowed opacity-60'
@@ -434,15 +468,8 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
         <RecentPromptList />
       </div>
 
-      {/* P1.5：右下角宽度调整把手 */}
-      <div
-        {...resizeProps}
-        data-no-drag
-        className="absolute right-0 bottom-0 w-3 h-10 flex items-center justify-center hover:bg-surface-3/50 transition-colors group rounded-br-card"
-        title="拖动调整宽度"
-      >
-        <div className="w-0.5 h-4 bg-border-light rounded-full group-hover:bg-brand transition-colors" />
-      </div>
+      {/* v5：8 方向贴边缩放热区（替代旧右下角单一把手） */}
+      <ResizeHandles onPointerDown={onResizePointerDown} />
       </div>
     </div>
   );

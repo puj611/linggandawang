@@ -15,6 +15,7 @@ use commands::window;
 use commands::image;
 use commands::requirement;
 use commands::sidecar;
+use commands::updater;
 use commands::project::ProjectScanState;
 use commands::sidecar::LocalLLMState;
 
@@ -70,6 +71,8 @@ pub fn run() {
                 .add_migrations("sqlite:linggandawang.db", sqlite_migrations())
                 .build(),
         )
+        // Task 18: 自动更新——process 插件供更新安装后重启（全平台可用）
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             // Context commands
             context::save_context,
@@ -107,6 +110,9 @@ pub fn run() {
             sidecar::stop_local_llm,
             sidecar::check_local_llm_health,
             sidecar::get_local_llm_status,
+            // Updater commands（Task 18 自动更新：前端经 invoke 调用的降级封装）
+            updater::updater_check,
+            updater::updater_download_and_install,
         ])
         .manage(ProjectScanState(Mutex::new(None)))
         .manage(LocalLLMState::default())
@@ -118,6 +124,10 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Task 18: 自动更新插件（仅桌面平台；updater crate 在 mobile 目标不导出 Builder）
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
             // 注册全局热键 Alt+Shift+Space 唤起/隐藏主窗口
             const HOTKEY: &str = "Alt+Shift+Space";

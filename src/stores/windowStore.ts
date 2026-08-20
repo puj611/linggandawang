@@ -8,8 +8,10 @@ import type { WindowPosition } from '@/types/state';
 interface WindowStore {
   position: WindowPosition;
   alwaysOnTop: boolean;
-  // P1.5：悬浮窗宽度（默认 420，范围 380~600）
+  // P1.5：悬浮窗宽度（默认 400，范围 360~560）
   width: number;
+  // v5：悬浮窗高度（默认 680，范围 480~800），与 OS 窗口同步
+  height: number;
   setPosition: (pos: WindowPosition) => Promise<void>;
   loadPosition: () => Promise<void>;
   setAlwaysOnTop: (value: boolean) => Promise<void>;
@@ -17,6 +19,12 @@ interface WindowStore {
   toggleAlwaysOnTop: () => Promise<void>;
   // P1.5：设置宽度并持久化
   setWidth: (width: number) => Promise<void>;
+  // v5：设置高度并持久化
+  setHeight: (height: number) => Promise<void>;
+  // v5：把 OS 窗口尺寸同步为当前面板 width/height（面板态挂载时调用）
+  applyPanelSize: () => Promise<void>;
+  // v5：回收起态恢复 OS 窗口为悬浮球默认尺寸（Ball 挂载时调用）
+  resetToBallSize: () => Promise<void>;
 }
 
 const DEFAULT_POSITION: WindowPosition = { x: -1, y: -1, screen: 'default' };
@@ -24,6 +32,11 @@ const DEFAULT_WIDTH = 400;
 const WIDTH_PREF_KEY = 'window_width';
 export const MIN_WINDOW_WIDTH = 360;
 export const MAX_WINDOW_WIDTH = 560;
+// v5：高度常量（与 tauri.conf.json 默认 680 对齐）
+export const DEFAULT_WINDOW_HEIGHT = 680;
+export const MIN_WINDOW_HEIGHT = 480;
+export const MAX_WINDOW_HEIGHT = 800;
+const HEIGHT_PREF_KEY = 'window_height';
 
 async function getInvoke() {
   if (!isTauri()) return null;
@@ -50,6 +63,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
   alwaysOnTop: true,
   // P1.5：初始宽度，loadPosition 时会从偏好覆盖
   width: DEFAULT_WIDTH,
+  height: DEFAULT_WINDOW_HEIGHT,
   setPosition: async (pos) => {
     set({ position: pos });
     const invoke = await getInvoke();
@@ -100,6 +114,19 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
     } catch (e) {
       console.warn('[windowStore] 加载窗口宽度失败', e);
     }
+    // v5：同步加载高度偏好
+    try {
+      const raw = await invoke<string | null>('load_user_preference', { key: HEIGHT_PREF_KEY });
+      if (raw !== null && raw !== undefined) {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+          const clamped = Math.min(MAX_WINDOW_HEIGHT, Math.max(MIN_WINDOW_HEIGHT, Math.round(parsed)));
+          set({ height: clamped });
+        }
+      }
+    } catch (e) {
+      console.warn('[windowStore] 加载窗口高度失败', e);
+    }
   },
   // P1.5：设置宽度（自动 clamp），持久化到 user_preferences
   setWidth: async (width) => {
@@ -112,6 +139,42 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       } catch (e) {
         console.warn('[windowStore] 保存窗口宽度失败', e);
       }
+    }
+  },
+  // v5：设置高度（自动 clamp），持久化到 user_preferences
+  setHeight: async (height) => {
+    const clamped = Math.min(MAX_WINDOW_HEIGHT, Math.max(MIN_WINDOW_HEIGHT, Math.round(height)));
+    set({ height: clamped });
+    const invoke = await getInvoke();
+    if (invoke) {
+      try {
+        await invoke('save_user_preference', { payload: { key: HEIGHT_PREF_KEY, value: String(clamped) } });
+      } catch (e) {
+        console.warn('[windowStore] 保存窗口高度失败', e);
+      }
+    }
+  },
+  // v5：面板态挂载时把 OS 窗口同步为面板尺寸（物理边缘 == 面板边缘）
+  applyPanelSize: async () => {
+    const win = await getCurrentWindow();
+    if (!win) return;
+    const { width, height } = get();
+    try {
+      const { LogicalSize } = await import('@tauri-apps/api/window');
+      await win.setSize(new LogicalSize(width, height));
+    } catch (e) {
+      console.warn('[windowStore] 同步面板尺寸到窗口失败', e);
+    }
+  },
+  // v5：回收起态恢复悬浮球默认窗口尺寸（400×680，与 tauri.conf.json 对齐）
+  resetToBallSize: async () => {
+    const win = await getCurrentWindow();
+    if (!win) return;
+    try {
+      const { LogicalSize } = await import('@tauri-apps/api/window');
+      await win.setSize(new LogicalSize(DEFAULT_WIDTH, DEFAULT_WINDOW_HEIGHT));
+    } catch (e) {
+      console.warn('[windowStore] 恢复悬浮球窗口尺寸失败', e);
     }
   },
   setAlwaysOnTop: async (value) => {

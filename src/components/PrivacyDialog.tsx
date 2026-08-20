@@ -31,7 +31,12 @@ export function PrivacyDialog() {
       style={{ zIndex: 20000 }}
       data-no-drag
     >
-      <div className="bg-surface-1 border border-border rounded-card shadow-popover w-[440px] max-w-[90vw] overflow-hidden">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="隐私说明"
+        className="bg-surface-1 border border-border-light rounded-card shadow-popover w-[440px] max-w-[90vw] overflow-hidden overscroll-contain"
+      >
         {/* 标题栏 */}
         <div className="px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">

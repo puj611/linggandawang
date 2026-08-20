@@ -27,6 +27,9 @@ pub struct LlmProxyChatRequest {
     pub messages: Vec<ProxyMessage>,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
+    /// 业务超时（秒）：由前端按调用场景传入（如意图分析 8s、图片拆解 20s）。
+    /// 未传时回退到 120s 上限。用于服务端真正中断 reqwest，实现副作用可回收的取消。
+    pub timeout_secs: Option<u64>,
 }
 
 /// 从 keyring 读取服务商 API Key；local 模型无需 key。
@@ -136,8 +139,8 @@ pub async fn llm_proxy_chat(req: LlmProxyChatRequest) -> Result<serde_json::Valu
     }
 
     let client = reqwest::Client::builder()
-        // 本地 CPU 推理可能较慢，给足超时
-        .timeout(std::time::Duration::from_secs(120))
+        // 客户端级超时下限 5s；业务超时由 tokio::time::timeout 落地
+        .timeout(std::time::Duration::from_secs(req.timeout_secs.unwrap_or(120).max(5)))
         .build()
         .map_err(|_| "HTTP 客户端初始化失败".to_string())?;
 
@@ -148,11 +151,18 @@ pub async fn llm_proxy_chat(req: LlmProxyChatRequest) -> Result<serde_json::Valu
         req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
     }
 
-    let resp = req_builder
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("请求 LLM 失败: {}", e))?;
+    // 业务超时在此落地：届时中断 reqwest，错误可回收，不占住 tokio worker 120s
+    let timeout_secs = req.timeout_secs.unwrap_or(120).max(5);
+    let resp = match tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        req_builder.json(&body).send(),
+    )
+    .await
+    {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return Err(format!("请求 LLM 失败: {}", e)),
+        Err(_) => return Err(format!("LLM 请求超时（{}秒）", timeout_secs)),
+    };
     let status = resp.status();
     let text = resp.text().await.map_err(|_| "读取 LLM 响应失败".to_string())?;
     if !status.is_success() {

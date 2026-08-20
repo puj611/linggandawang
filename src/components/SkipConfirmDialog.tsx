@@ -25,8 +25,11 @@ export function SkipConfirmDialog() {
       onClick={onContinue}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="结束提问确认"
         onClick={(e) => e.stopPropagation()}
-        className="bg-bg-card border border-border rounded-card shadow-popover p-5 w-[320px]"
+        className="bg-bg-card border border-border-light rounded-card shadow-popover p-5 w-[320px] overscroll-contain"
       >
         <div className="text-text-primary text-sm font-medium mb-2">连续跳过 ≥ 2 题</div>
         <div className="text-text-secondary text-xs mb-4">

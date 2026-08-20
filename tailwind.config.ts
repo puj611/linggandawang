@@ -54,12 +54,12 @@ export default {
         chip: '999px',
       },
       boxShadow: {
-        window: '0 0 0 1px rgba(255,255,255,0.06), 0 16px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.35)',
-        card: '0 4px 16px rgba(0,0,0,0.25), 0 1px 2px rgba(0,0,0,0.2)',
-        'card-hover': '0 8px 24px rgba(0,0,0,0.3), 0 2px 6px rgba(0,0,0,0.2)',
-        popover: '0 12px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)',
-        ball: '0 6px 24px rgba(139,92,246,0.4)',
-        'ball-hover': '0 10px 36px rgba(139,92,246,0.55)',
+        window: '0 2px 8px rgba(0,0,0,0.55)',
+        card: '0 2px 8px rgba(0,0,0,0.4)',
+        'card-hover': '0 3px 10px rgba(0,0,0,0.45)',
+        popover: '0 2px 8px rgba(0,0,0,0.55)',
+        ball: '0 2px 10px rgba(0,0,0,0.5)',
+        'ball-hover': '0 4px 14px rgba(0,0,0,0.6)',
       },
       fontFamily: {
         sans: ['Inter', 'PingFang SC', 'HarmonyOS Sans', 'system-ui', 'sans-serif'],

@@ -1,6 +1,7 @@
 // src/engine/PreferenceLearner.ts
 // 行为学习器：从用户历史答案中挖掘偏好，提供个性化推荐
 // 用途：无 LLM 时也能根据历史行为智能预填，提升基础模式质量
+// 状态：已接入 start()/answer() 推荐链路（useFlow.computeRecommendation → engineStore.recommendations → QuestionPanel「历史推荐」角标）
 
 import type { ContextRecentQA, ContextPreference } from '@/types/context';
 

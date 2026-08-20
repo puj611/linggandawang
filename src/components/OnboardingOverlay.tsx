@@ -31,7 +31,10 @@ export function OnboardingOverlay({ onComplete }: Props) {
     >
       {/* 玻璃拟态引导卡片：参考 ExpandedCard 的暗色表面 + 品牌紫点缀 */}
       <div
-        className="bg-surface-1/95 backdrop-blur-xl border border-border rounded-card shadow-popover w-[460px] max-w-[92vw] overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="使用引导"
+        className="bg-surface-1 border border-border-light rounded-card shadow-popover animate-pop-in w-[460px] max-w-[92vw] overflow-hidden overscroll-contain"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶部条：标题 + 跳过 */}

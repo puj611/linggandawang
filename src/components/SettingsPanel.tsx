@@ -13,6 +13,7 @@ import { LLMConfigSection } from './LLMConfigSection';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { setPreference } from '@/lib/sqlite';
 import { useVectorStore } from '@/hooks/useVectorStore';
+import { useUpdater } from '@/hooks/useUpdater';
 
 type TabKey = 'general' | 'analytics';
 
@@ -24,9 +25,10 @@ export function SettingsPanel() {
   const closeSettings = useAppStore((s) => s.closeSettings);
   const ctxStore = useContextStore();
   const screenshotDiagnosis = useFeatureStore((s) => s.screenshotDiagnosis);
+  const screenshotAdvanced = useFeatureStore((s) => s.screenshotAdvanced);
   const setFeatures = useFeatureStore((s) => s.set);
   const hasApiKey = useApiKeyStore((s) => s.hasApiKey);
-  const features = { screenshotDiagnosis, set: setFeatures };
+  const features = { screenshotDiagnosis, screenshotAdvanced, set: setFeatures };
   const [tab, setTab] = useState<TabKey>('general');
   const [hotkey, setHotkeyState] = useState(getHotkey());
   const [recording, setRecording] = useState(false);
@@ -112,8 +114,11 @@ export function SettingsPanel() {
       onClick={closeSettings}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
         onClick={(e) => e.stopPropagation()}
-        className="bg-bg-card border border-border rounded-card shadow-popover flex flex-col overflow-hidden"
+        className="bg-bg-card border border-border-light rounded-card shadow-popover flex flex-col overflow-hidden overscroll-contain"
         style={{ width: tab === 'analytics' ? 560 : 400, height: tab === 'analytics' ? 600 : 'auto', maxHeight: '80vh' }}
       >
         {tab === 'general' ? (
@@ -148,7 +153,7 @@ interface GeneralProps {
   recording: boolean;
   confirmClear: boolean;
   bankReloaded: boolean;
-  features: { screenshotDiagnosis: boolean; set: (p: Partial<FeatureFlags>) => void };
+  features: { screenshotDiagnosis: boolean; screenshotAdvanced: boolean; set: (p: Partial<FeatureFlags>) => void };
   closeSettings: () => void;
   startRecordHotkey: () => void;
   onClearContext: () => void;
@@ -202,6 +207,9 @@ function GeneralSettings({
           <div className="text-[10px] text-text-secondary mt-1">
             全局热键由 Tauri 注册，Alt+Shift+Space 唤起/隐藏窗口
           </div>
+          <div className="text-[10px] text-text-secondary mt-0.5">
+            全局唤起热键：Alt+Shift+I（固定），任意应用下展开并聚焦输入
+          </div>
         </div>
         )}
 
@@ -224,6 +232,28 @@ function GeneralSettings({
           </div>
           <div className="text-[10px] text-text-secondary mt-1">
             关闭后截图按钮置灰，提问引擎插入兜底问题
+          </div>
+        </div>
+
+        {/* 高级视觉诊断开关 */}
+        <div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-text-secondary">高级视觉诊断</span>
+            <button
+              onClick={() => features.set({ screenshotAdvanced: !features.screenshotAdvanced })}
+              className={`relative w-10 h-5 rounded-full transition-colors ${
+                features.screenshotAdvanced ? 'bg-brand' : 'bg-surface-3'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                  features.screenshotAdvanced ? 'left-5' : 'left-0.5'
+                }`}
+              />
+            </button>
+          </div>
+          <div className="text-[10px] text-text-secondary mt-1">
+            检测对齐、间距与字号问题（实验性）
           </div>
         </div>
 
@@ -368,8 +398,58 @@ function GeneralSettings({
             上下文存储于 ~/.linggandawang/context.json
           </div>
         </div>
+
+        {/* 应用更新（Task 18）：仅桌面版，经 invoke 调 Rust updater 命令（降级方案） */}
+        {isTauri() && <UpdateSection />}
       </div>
     </>
+  );
+}
+
+// 应用更新组件（Task 18）：当前版本显示 + 检查更新 + 下载安装
+// 降级方案：node_modules 缺 plugin-updater JS 绑定包，经 invoke 调用
+// Rust 自定义命令（updater_check / updater_download_and_install），见 useUpdater.ts
+function UpdateSection() {
+  const { status, updateInfo, currentVersion, checkForUpdates, downloadAndInstall } = useUpdater();
+
+  return (
+    <div className="pt-3 border-t border-border">
+      <div className="text-[11px] text-text-secondary mb-1.5">应用更新</div>
+      <div className="text-[10px] text-text-tertiary mb-1.5">
+        当前版本：{currentVersion ?? '未知'}
+      </div>
+      {updateInfo ? (
+        <>
+          <div className="text-[10px] text-text-primary mb-1.5">
+            发现新版本 v{updateInfo.version}
+            {updateInfo.notes ? `：${updateInfo.notes}` : ''}
+          </div>
+          <button
+            onClick={() => void downloadAndInstall()}
+            disabled={status === 'downloading'}
+            className="ghost-btn px-3 py-1.5 text-xs w-full disabled:opacity-50"
+          >
+            {status === 'downloading' ? '下载安装中…' : '下载并重启'}
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={() => void checkForUpdates()}
+          disabled={status === 'checking'}
+          className="ghost-btn px-3 py-1.5 text-xs w-full disabled:opacity-50"
+        >
+          {status === 'checking' ? '检查中…' : status === 'up-to-date' ? '已是最新 ✓' : '检查更新'}
+        </button>
+      )}
+      {status === 'error' && (
+        <div className="text-[10px] text-semantic-error mt-1">
+          检查更新失败（签名密钥未配置或网络不可用）
+        </div>
+      )}
+      <div className="text-[10px] text-text-secondary mt-1">
+        更新包由 GitHub Releases 分发，下载后校验签名并自动重启
+      </div>
+    </div>
   );
 }
 

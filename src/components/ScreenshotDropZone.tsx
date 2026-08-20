@@ -26,7 +26,7 @@ export function ScreenshotDropZone({ onScreenshot }: Props) {
   if (!screenshotDiagnosis) {
     // DOWNGRADE: 截图诊断运行时开关关闭时置灰
     return (
-      <div className="border border-dashed border-border rounded-btn p-3 text-center opacity-50">
+      <div className="border border-border-light rounded-btn p-3 text-center opacity-50">
         <div className="text-xs text-text-secondary">
           截图诊断功能升级中，请用文字描述视觉问题
         </div>
@@ -39,8 +39,8 @@ export function ScreenshotDropZone({ onScreenshot }: Props) {
       onDrop={onDrop}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
-      className={`border-2 border-dashed rounded-btn p-3 text-center transition-colors ${
-        isDragging ? 'border-brand bg-brand/10' : 'border-border'
+      className={`border border-border-light rounded-btn p-3 text-center transition-colors ${
+        isDragging ? 'border-brand bg-brand/10' : 'hover:border-border-light'
       }`}
     >
       {preview ? (

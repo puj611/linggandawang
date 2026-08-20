@@ -1,6 +1,7 @@
 // src/components/RecentPromptList.tsx
 // 历史提示词列表：支持搜索、收藏筛选、展开收起、删除（最多 20 条）
-import { useCallback, useEffect, useState } from 'react';
+// Task 14.2：删除与清空改为二态确认（首次点击进入确认态，2.5s 内再点执行，超时/移开恢复）
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useEngineStore } from '@/stores/engineStore';
 import {
@@ -25,6 +26,73 @@ export interface RecentItem {
 const MAX_RECENT = 20;
 // 默认显示条数，点击"查看全部"后展开到 MAX_RECENT
 const DEFAULT_VISIBLE = 5;
+// Task 14.2：二态确认的确认态保持时长（超时自动恢复）
+const CONFIRM_TIMEOUT_MS = 2500;
+
+/** Task 14.2：二态确认按钮（删除/清空共用）
+ *  首次点击进入确认态（红字提示），CONFIRM_TIMEOUT_MS 内再点执行 onConfirm；
+ *  超时或鼠标移开（onMouseLeave）恢复原样。无需弹窗，交互轻量。 */
+function TwoStepConfirmButton({
+  idleLabel,
+  confirmLabel,
+  title,
+  confirmTitle,
+  idleClassName,
+  confirmClassName,
+  onConfirm,
+}: {
+  idleLabel: string;
+  confirmLabel: string;
+  title: string;
+  confirmTitle: string;
+  idleClassName: string;
+  confirmClassName: string;
+  onConfirm: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 卸载时清理定时器，避免 setState on unmounted
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const reset = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setConfirming(false);
+  };
+
+  const handleClick = () => {
+    if (confirming) {
+      reset();
+      onConfirm();
+      return;
+    }
+    setConfirming(true);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      setConfirming(false);
+    }, CONFIRM_TIMEOUT_MS);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      onMouseLeave={reset}
+      className={`whitespace-nowrap ${confirming ? confirmClassName : idleClassName}`}
+      title={confirming ? confirmTitle : title}
+      aria-label={confirming ? confirmTitle : title}
+    >
+      {confirming ? confirmLabel : idleLabel}
+    </button>
+  );
+}
 
 export async function pushRecentPrompt(md: string): Promise<void> {
   const record: Omit<PromptHistoryRecord, 'id'> = {
@@ -107,6 +175,15 @@ export function RecentPromptList() {
     [reload],
   );
 
+  // Task 14.2：清空全部 —— 数据层无批量删除命令，遍历当前已加载 items 逐条删除后刷新
+  const onClearAll = useCallback(async () => {
+    for (const it of items) {
+      await deletePromptHistory(it.id);
+    }
+    setExpanded(false);
+    reload();
+  }, [items, reload]);
+
   const onClick = (item: RecentItem) => {
     setResult({
       project_context: null,
@@ -134,16 +211,30 @@ export function RecentPromptList() {
         <span className="text-[10px] text-text-secondary uppercase tracking-wider">
           历史记录{onlyFavorite ? ' · 收藏' : ''}
         </span>
-        <button
-          type="button"
-          onClick={() => setOnlyFavorite((v) => !v)}
-          className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
-            onlyFavorite ? 'text-amber-400' : 'text-text-secondary hover:text-text-primary'
-          }`}
-          title={onlyFavorite ? '显示全部' : '只看收藏'}
-        >
-          {onlyFavorite ? '★ 收藏中' : '☆ 收藏'}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setOnlyFavorite((v) => !v)}
+            className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+              onlyFavorite ? 'text-amber-400' : 'text-text-secondary hover:text-text-primary'
+            }`}
+            title={onlyFavorite ? '显示全部' : '只看收藏'}
+          >
+            {onlyFavorite ? '★ 收藏中' : '☆ 收藏'}
+          </button>
+          {/* Task 14.2：清空全部（二态确认），仅在有已加载记录时显示 */}
+          {items.length > 0 && (
+            <TwoStepConfirmButton
+              idleLabel="清空全部"
+              confirmLabel="确认清空?"
+              title={`清空全部已加载的 ${items.length} 条历史记录`}
+              confirmTitle="再次点击确认清空全部历史记录"
+              idleClassName="text-[10px] px-1.5 py-0.5 rounded transition-colors text-text-tertiary hover:text-red-400"
+              confirmClassName="text-[10px] px-1.5 py-0.5 rounded transition-colors text-red-400"
+              onConfirm={() => void onClearAll()}
+            />
+          )}
+        </div>
       </div>
 
       {/* 搜索输入框 */}
@@ -152,7 +243,7 @@ export function RecentPromptList() {
         value={keyword}
         onChange={(e) => setKeyword(e.target.value)}
         placeholder="搜索历史提示词…"
-        className="w-full mb-1.5 px-2 py-1 text-[11px] bg-surface-2 border border-border rounded text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-border-light"
+        className="w-full mb-1.5 px-2 py-1 text-[11px] bg-surface-2 border border-border rounded text-text-primary placeholder:text-text-secondary focus:border-border-light"
       />
 
       {/* 列表 */}
@@ -197,15 +288,16 @@ export function RecentPromptList() {
               >
                 {it.favorite ? '★' : '☆'}
               </button>
-              {/* 删除按钮：hover 显示 */}
-              <button
-                type="button"
-                onClick={() => onDelete(it.id)}
-                className="shrink-0 text-[11px] leading-none px-1 text-text-secondary hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+              {/* Task 14.2：删除按钮（二态确认），hover 显示；确认态红字常显 */}
+              <TwoStepConfirmButton
+                idleLabel="×"
+                confirmLabel="确认删除?"
                 title="删除"
-              >
-                ×
-              </button>
+                confirmTitle="再次点击确认删除"
+                idleClassName="shrink-0 text-[11px] leading-none px-1 text-text-secondary hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                confirmClassName="shrink-0 text-[11px] leading-none px-1 text-red-400 opacity-100 transition-opacity"
+                onConfirm={() => void onDelete(it.id)}
+              />
             </div>
           ))}
         </div>

@@ -165,9 +165,9 @@ export function ReferenceImagePanel() {
             <polyline points="21 15 16 10 5 21" />
           </svg>
           参照图 / 情绪板
-          <span className="text-[10px] text-text-tertiary">（{headerCount}）</span>
+          <span className="text-xs text-text-tertiary">（{headerCount}）</span>
         </span>
-        <span className="text-text-tertiary text-[10px]">
+        <span className="text-text-tertiary text-xs">
           {collapsed ? '展开 ▾' : '收起 ▴'}
         </span>
       </button>
@@ -176,7 +176,7 @@ export function ReferenceImagePanel() {
         <div className="px-3 pb-3 space-y-2">
           {images.length === 0 ? (
             <div
-              className="border border-dashed border-border rounded-btn px-3 py-3 text-center text-[11px] text-text-tertiary cursor-pointer hover:border-brand hover:text-text-secondary transition-colors"
+              className="border border-border-light rounded-btn px-3 py-3 text-center text-xs text-text-tertiary cursor-pointer hover:border-brand hover:text-text-secondary transition-colors"
               onClick={() => fileInputRef.current?.click()}
               role="button"
             >
@@ -195,7 +195,7 @@ export function ReferenceImagePanel() {
                     value={img.note}
                     onChange={(e) => onNoteChange(img.id, e.target.value)}
                     placeholder="备注：如 Apple 官网极简风"
-                    className="flex-1 bg-surface-1 border border-border rounded-btn px-2 py-1.5 text-[11px] text-text-primary placeholder-text-tertiary focus:outline-none focus:border-brand transition-colors min-w-0"
+                    className="flex-1 bg-surface-1 border border-border rounded-btn px-2 py-1.5 text-xs text-text-primary placeholder-text-tertiary focus:border-brand transition-colors min-w-0"
                   />
                   <button
                     type="button"
@@ -212,7 +212,7 @@ export function ReferenceImagePanel() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full text-[11px] text-text-secondary hover:text-text-primary border border-dashed border-border rounded-btn py-1.5 transition-colors"
+                  className="w-full text-xs text-text-secondary hover:text-text-primary border border-border-light rounded-btn py-1.5 transition-colors"
                 >
                   + 添加一张
                 </button>
@@ -223,14 +223,14 @@ export function ReferenceImagePanel() {
           {/* 操作行 */}
           {images.length > 0 && (
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[10px] text-text-tertiary">
+              <span className="text-xs text-text-tertiary">
                 {images.filter((i) => i.note.trim()).length} 张已写备注
               </span>
               <button
                 type="button"
                 onClick={onAddToPrompt}
                 disabled={!hasNotes}
-                className={`px-2.5 py-1 text-[11px] rounded-btn transition-colors ${
+                className={`px-2.5 py-1 text-xs rounded-btn transition-colors ${
                   addedFlash
                     ? 'bg-semantic-success text-white'
                     : !hasNotes

@@ -8,6 +8,7 @@ pub mod llm_proxy;
 pub mod project;
 pub mod requirement;
 pub mod sidecar;
+pub mod updater;
 pub mod window;
 
 use std::path::PathBuf;

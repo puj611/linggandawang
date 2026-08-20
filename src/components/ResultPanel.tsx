@@ -4,15 +4,26 @@ import { useEngineStore } from '@/stores/engineStore';
 import { useFlow } from '@/hooks/useFlow';
 import { useDrag } from '@/hooks/useDrag';
 import { useResize } from '@/hooks/useResize';
+import { ResizeHandles } from './ResizeHandles';
 import { IntentTagChips } from './IntentTagChips';
 import { RawQuotesPanel } from './RawQuotesPanel';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { promptGenerator } from '@/engine/PromptGenerator';
 import type { SegmentKey } from '@/engine/PromptGenerator';
+import { TARGET_TOOL_PROFILES } from '@/engine/targetToolProfiles';
 
 // P0-3：加载超时阈值自适应。预期等待 = 生成提示词（含 RAG 检索 ≤2s + 生成 ≤5s 硬兜底）+ 容差。
 // 此前固定写死 12s 且文案"超过 12 秒"与实际不符，现改为统一的兜底阈值。
 const LOADING_TIMEOUT_MS = 10000;
+
+// Task 9：token 审计 —— 中英混合近似估算（字符数 / 3）
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3);
+}
+
+// Task 9：超过该阈值时徽标转为警示色并提示精简
+const TOKEN_WARNING_THRESHOLD = 2000;
 
 export function ResultPanel() {
   // v2.3：逐个 selector 精准订阅
@@ -23,7 +34,7 @@ export function ResultPanel() {
   const [copied, setCopied] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const { dragProps, offset, dragging } = useDrag();
-  const { resizeProps, width } = useResize();
+  const { onPointerDown: onResizePointerDown, width, height, resizing } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
 
   // v2.3：复制提示状态定时器引用，组件卸载时清理，避免 setState on unmounted
@@ -49,6 +60,22 @@ export function ResultPanel() {
     setLoadingTimeout(false);
     return undefined;
   }, [result, isProcessing]);
+
+  // Task 9：token 审计 —— 编辑态时 Section 实时上报 draft（null=非编辑态），徽标基于 draft 估算
+  const [editingDraft, setEditingDraft] = useState<{ key: SegmentKey; content: string } | null>(null);
+  const handleDraftChange = useCallback((key: SegmentKey, content: string | null) => {
+    setEditingDraft(content === null ? null : { key, content });
+  }, []);
+
+  // Task 9：基于最终 markdown（含目标工具结构适配）估算 token；编辑态用 draft 替换对应段落实时估算
+  const tokenCount = useMemo(() => {
+    if (!result) return 0;
+    const source = editingDraft
+      ? promptGenerator.updateSection(result, editingDraft.key, editingDraft.content)
+      : result;
+    return estimateTokens(promptGenerator.toMarkdown(source));
+  }, [result, editingDraft]);
+  const tokenOverLimit = tokenCount > TOKEN_WARNING_THRESHOLD;
 
   if (!result) {
     return (
@@ -94,6 +121,12 @@ export function ResultPanel() {
   // 三模式系统：检测 PPT 场景（约束段含"场景说明：当前为 PPT/演示文稿场景"），展示 PPT 场景提示
   const isPptScene = result.constraint.content.includes('场景说明：当前为 PPT/演示文稿场景');
 
+  // Task 14.1：复制/导出走 toMarkdown，已按 result.target_tool 做结构适配，title 注明
+  const targetToolLabel =
+    result.target_tool && result.target_tool !== 'generic'
+      ? TARGET_TOOL_PROFILES[result.target_tool].label
+      : null;
+
   const onCopy = async () => {
     const ok = await copyPrompt(result);
     if (ok) {
@@ -113,11 +146,10 @@ export function ResultPanel() {
       style={{ zIndex: 9999 }}
     >
       <div
-        className={`window-panel flex flex-col overflow-hidden relative ${dragging ? '' : 'transition-fsm'}`}
+        className={`window-panel flex flex-col overflow-hidden relative ${dragging || resizing ? '' : 'transition-fsm'}`}
         style={{
           width: `${width}px`,
-          maxHeight: '85vh',
-          minHeight: '480px',
+          height: `${height}px`,
           transform: `translate(${offset.x}px, ${offset.y}px)`,
         }}
       >
@@ -126,7 +158,18 @@ export function ResultPanel() {
           className="flex items-center justify-between px-4 py-3 border-b border-border select-none shrink-0"
           {...dragProps}
         >
-          <span className="text-text-primary text-sm font-semibold tracking-tight">你的提示词</span>
+          <div className="flex items-center gap-2">
+            <span className="text-text-primary text-sm font-semibold tracking-tight">你的提示词</span>
+            {/* Task 9：token 审计徽标（编辑态基于 draft 实时估算） */}
+            <span
+              className={`text-xs ${
+                tokenOverLimit ? 'text-semantic-warning' : 'text-text-tertiary'
+              }`}
+              title={`按中英混合近似估算（字符数 / 3）${tokenOverLimit ? '，提示词较长，建议精简' : ''}`}
+            >
+              约 {tokenCount} tokens{tokenOverLimit ? ' · 提示词较长，建议精简' : ''}
+            </span>
+          </div>
           <div className="flex items-center gap-1.5 no-drag">
             <button
               onClick={backToExpanded}
@@ -137,6 +180,7 @@ export function ResultPanel() {
             <button
               onClick={onCopy}
               className={`primary-btn px-3 py-1 text-xs ${copied ? '!bg-semantic-success' : ''}`}
+              title={`复制 Markdown 到剪贴板${targetToolLabel ? `（已按目标工具 ${targetToolLabel} 格式化）` : ''}`}
             >
               {copied ? '已复制 ✓' : '复制'}
             </button>
@@ -174,6 +218,7 @@ export function ResultPanel() {
               content={result.action.content}
               segmentKey="action"
               onEdit={updateSection}
+              onDraftChange={handleDraftChange}
             />
             <Section
               title={result.spec.title}
@@ -181,18 +226,21 @@ export function ResultPanel() {
               mono
               segmentKey="spec"
               onEdit={updateSection}
+              onDraftChange={handleDraftChange}
             />
             <Section
               title={result.constraint.title}
               content={result.constraint.content}
               segmentKey="constraint"
               onEdit={updateSection}
+              onDraftChange={handleDraftChange}
             />
             <Section
               title={result.verify.title}
               content={result.verify.content}
               segmentKey="verify"
               onEdit={updateSection}
+              onDraftChange={handleDraftChange}
             />
           </div>
 
@@ -213,14 +261,8 @@ export function ResultPanel() {
           <IntentTagChips tags={intentTags} onRemove={removeTag} />
         </div>
 
-        <div
-          {...resizeProps}
-          data-no-drag
-          className="absolute right-0 bottom-0 w-3 h-10 flex items-center justify-center hover:bg-surface-3/50 transition-colors group rounded-br-card"
-          title="拖动调整宽度"
-        >
-          <div className="w-0.5 h-4 bg-border-light rounded-full group-hover:bg-brand transition-colors" />
-        </div>
+        {/* v5：8 方向贴边缩放热区（替代旧右下角单一把手） */}
+        <ResizeHandles onPointerDown={onResizePointerDown} />
       </div>
     </div>
   );
@@ -232,12 +274,15 @@ function Section({
   mono,
   segmentKey,
   onEdit,
+  onDraftChange,
 }: {
   title: string;
   content: string;
   mono?: boolean;
   segmentKey: SegmentKey;
   onEdit: (key: SegmentKey, newContent: string) => Promise<void>;
+  /** Task 9：编辑态实时上报 draft（null=非编辑态），供顶部 token 徽标估算 */
+  onDraftChange: (key: SegmentKey, content: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
@@ -245,6 +290,11 @@ function Section({
   useEffect(() => {
     if (!editing) setDraft(content);
   }, [content, editing]);
+
+  // Task 9：编辑态时实时上报 draft 给父组件做 token 估算
+  useEffect(() => {
+    onDraftChange(segmentKey, editing ? draft : null);
+  }, [editing, draft, segmentKey, onDraftChange]);
 
   const startEdit = () => {
     setDraft(content);
@@ -302,7 +352,7 @@ function Section({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           rows={Math.min(12, Math.max(3, draft.split('\n').length + 1))}
-          className={`w-full bg-surface-1 border border-brand rounded-btn px-3 py-2 text-text-primary text-xs leading-relaxed resize-y focus:outline-none focus:border-brand-strong transition-colors ${
+          className={`w-full bg-surface-1 border border-brand rounded-btn px-3 py-2 text-text-primary text-xs leading-relaxed resize-y focus:border-brand-strong transition-colors ${
             mono ? 'font-mono' : ''
           }`}
         />

@@ -154,14 +154,16 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
     baseUrl: string,
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
+    const isLocal = this.provider === 'local';
+    // 本地推理超时更长（CPU 推理较慢），云端保持 30s
+    const timeoutMs = isLocal ? 120000 : 30000;
     // 密钥 Rust 代理注入：Tauri 模式下请求走 Rust 代理，key 由 Rust 从 keyring 注入，
     // 前端不接触明文 key；SSRF（含 DNS 重绑定）由 Rust 侧校验。
     if (isTauri()) {
-      return this.chatViaProxy(request, baseUrl);
+      return this.chatViaProxy(request, baseUrl, signal, timeoutMs);
     }
     validateBaseUrl(baseUrl);
     const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
-    const isLocal = this.provider === 'local';
     const body = {
       model: isLocal ? (request.model || 'local') : (request.model || 'gpt-4o-mini'),
       messages: request.messages,
@@ -169,9 +171,6 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
       max_tokens: request.max_tokens,
       stream: false,
     };
-
-    // 本地推理超时更长（CPU 推理较慢），云端保持 30s
-    const timeoutMs = isLocal ? 120000 : 30000;
 
     // r6修复：传入外层 signal，让 withRetry 在外层 abort 时立即抛出，避免重试已 abort 的请求
     return withRetry(async () => {
@@ -236,11 +235,19 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
 
   /** 通过 Rust 代理发起非流式 chat：key 由 Rust 注入，前端不持有明文】
    *  仅 Tauri 模式使用；浏览器模式走直连（chat 内降级） */
-  private async chatViaProxy(request: LLMRequest, baseUrl: string): Promise<LLMResponse> {
+  private async chatViaProxy(
+    request: LLMRequest,
+    baseUrl: string,
+    signal?: AbortSignal,
+    timeoutMs = 30000,
+  ): Promise<LLMResponse> {
     // Rust 侧为最终校验，前端前置校验仅用于快速失败
     validateBaseUrl(baseUrl);
     const { invoke } = await import('@tauri-apps/api/core');
-    const data = await invoke<{
+    // Tauri invoke 不支持 AbortSignal 取消，故用 signal 竞速包装：
+    // - 调用方（意图分析 8s/图片拆解 20s 等）超时 → 本 Promise 立即 reject，调用方降级不阻塞
+    // - 同时把业务超时传给 Rust，服务端真正中断 reqwest（副作用可回收，不占住 120s）
+    const doInvoke = invoke<{
       choices?: { message?: { content?: string } }[];
       model?: string;
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
@@ -252,8 +259,23 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
         messages: request.messages,
         temperature: request.temperature,
         max_tokens: request.max_tokens,
+        timeout_secs: Math.max(5, Math.round(timeoutMs / 1000)),
       },
     });
+    const data = await (signal
+      ? Promise.race([
+          doInvoke,
+          new Promise<never>((_, reject) => {
+            if (signal.aborted) {
+              reject(new Error('LLM 请求被调用方取消'));
+              return;
+            }
+            signal.addEventListener('abort', () => reject(new Error('LLM 请求被调用方取消')), {
+              once: true,
+            });
+          }),
+        ])
+      : doInvoke);
     return {
       content: data.choices?.[0]?.message?.content ?? '',
       model: data.model ?? request.model ?? '',

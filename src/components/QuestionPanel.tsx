@@ -5,6 +5,7 @@ import { useEngineStore } from '@/stores/engineStore';
 import { useFlow } from '@/hooks/useFlow';
 import { useDrag } from '@/hooks/useDrag';
 import { useResize } from '@/hooks/useResize';
+import { ResizeHandles } from './ResizeHandles';
 import { IntentTagChips } from './IntentTagChips';
 import { SkipConfirmDialog } from './SkipConfirmDialog';
 import { STAGE_LABEL } from '@/engine/types';
@@ -26,12 +27,14 @@ export function QuestionPanel() {
   const intentTags = useEngineStore((s) => s.intentTags);
   const consecutiveSkips = useEngineStore((s) => s.consecutiveSkips);
   const canUndo = useEngineStore((s) => s.canUndo);
+  // Task 11：历史推荐选项（questionId → 推荐选项 value 数组），用于「历史推荐」角标
+  const recommendations = useEngineStore((s) => s.recommendations);
   const { answer, skip, goBack } = useFlow();
   const [customInput, setCustomInput] = useState('');
   const [answering, setAnswering] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const { dragProps, offset, dragging } = useDrag();
-  const { resizeProps, width } = useResize();
+  const { onPointerDown: onResizePointerDown, width, height, resizing } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
 
   // P0-3：加载超时检测：currentQuestion 为空超过预期等待（10s）时显示重试按钮，避免永久 loading
@@ -89,6 +92,8 @@ export function QuestionPanel() {
   }
 
   const stageIdx = STAGES.indexOf(currentQuestion.stage);
+  // Task 11：当前题的历史推荐选项 value 列表（无记录时为空数组，不渲染角标）
+  const currentRecs = recommendations[currentQuestion.id] ?? [];
 
   const handleOption = async (value: string, label: string, tags: string[]) => {
     if (answering) return;
@@ -140,11 +145,10 @@ export function QuestionPanel() {
       style={{ zIndex: 9999 }}
     >
       <div
-        className={`window-panel flex flex-col overflow-hidden relative ${dragging ? '' : 'transition-fsm'}`}
+        className={`window-panel flex flex-col overflow-hidden relative ${dragging || resizing ? '' : 'transition-fsm'}`}
         style={{
           width: `${width}px`,
-          maxHeight: '85vh',
-          minHeight: '420px',
+          height: `${height}px`,
           transform: `translate(${offset.x}px, ${offset.y}px)`,
         }}
       >
@@ -230,16 +234,26 @@ export function QuestionPanel() {
 
             {/* 选项 */}
             <div className="w-full flex flex-col gap-2">
-              {currentQuestion.options.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => handleOption(opt.value, opt.label, opt.tags)}
-                  disabled={answering}
-                  className="option-card"
-                >
-                  {opt.label}
-                </button>
-              ))}
+              {currentQuestion.options.map((opt) => {
+                // Task 11：历史推荐项 → 右侧角标 + border-brand 弱化高亮（不占用 selected 态样式）
+                const isRecommended = currentRecs.includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleOption(opt.value, opt.label, opt.tags)}
+                    disabled={answering}
+                    aria-label={isRecommended ? `${opt.label}（历史推荐）` : undefined}
+                    className={`option-card flex items-center justify-between gap-2 ${isRecommended ? 'border-brand' : ''}`}
+                  >
+                    <span className="min-w-0">{opt.label}</span>
+                    {isRecommended && (
+                      <span className="shrink-0 text-[10px] text-brand bg-brand-soft px-1 rounded whitespace-nowrap">
+                        历史推荐
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* 自定义输入 */}
@@ -249,7 +263,11 @@ export function QuestionPanel() {
                   value={customInput}
                   onChange={(e) => setCustomInput(e.target.value)}
                   placeholder={currentQuestion.placeholder ?? '或者用你自己的话说...'}
-                  className="flex-1 bg-surface-2 border border-border rounded-btn px-3 py-2 text-sm text-text-primary placeholder-text-tertiary focus:outline-none focus:border-brand transition-colors"
+                  aria-label="自定义回答"
+                  maxLength={2000}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="flex-1 bg-surface-2 border border-border rounded-btn px-3 py-2 text-sm text-text-primary placeholder-text-tertiary focus:border-brand transition-colors"
                 />
                 <button
                   type="submit"
@@ -278,15 +296,8 @@ export function QuestionPanel() {
 
         {consecutiveSkips >= 2 && <SkipConfirmDialog />}
 
-        {/* 右下角宽度调整把手 */}
-        <div
-          {...resizeProps}
-          data-no-drag
-          className="absolute right-0 bottom-0 w-3 h-10 flex items-center justify-center hover:bg-surface-3/50 transition-colors group rounded-br-card"
-          title="拖动调整宽度"
-        >
-          <div className="w-0.5 h-4 bg-border-light rounded-full group-hover:bg-brand transition-colors" />
-        </div>
+        {/* v5：8 方向贴边缩放热区（替代旧右下角单一把手） */}
+        <ResizeHandles onPointerDown={onResizePointerDown} />
       </div>
     </div>
   );

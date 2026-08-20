@@ -18,6 +18,8 @@ interface EngineStore {
   startedAt: string | null;
   isProcessing: boolean;
   canUndo: boolean;
+  /** Task 11：历史推荐选项（questionId → 推荐选项 value 数组），由 PreferenceLearner 基于 recent_qa + preferences 计算 */
+  recommendations: Record<string, string[]>;
   setStage: (s: StageName) => void;
   setCurrentQuestion: (q: Question | null) => void;
   addAsked: (id: string) => void;
@@ -34,6 +36,8 @@ interface EngineStore {
   setResult: (r: PromptResult | null) => void;
   setCanUndo: (v: boolean) => void;
   setIsProcessing: (v: boolean) => void;
+  /** Task 11：按 questionId 合并写入推荐选项（与 recordAnswer 的 Record 写法保持一致） */
+  setRecommendations: (questionId: string, values: string[]) => void;
   reset: () => void;
 }
 
@@ -49,6 +53,7 @@ export const useEngineStore = create<EngineStore>((set) => ({
   startedAt: null,
   isProcessing: false,
   canUndo: false,
+  recommendations: {},
   setStage: (s) => set({ stage: s }),
   setCurrentQuestion: (q) => set({ currentQuestion: q }),
   addAsked: (id) => set((st) => ({ askedIds: [...st.askedIds, id] })),
@@ -71,6 +76,8 @@ export const useEngineStore = create<EngineStore>((set) => ({
   setResult: (r) => set({ result: r }),
   setCanUndo: (v) => set({ canUndo: v }),
   setIsProcessing: (v) => set({ isProcessing: v }),
+  setRecommendations: (questionId, values) =>
+    set((st) => ({ recommendations: { ...st.recommendations, [questionId]: values } })),
   reset: () =>
     set({
       stage: 'IDLE',
@@ -84,5 +91,6 @@ export const useEngineStore = create<EngineStore>((set) => ({
       startedAt: null,
       isProcessing: false,
       canUndo: false,
+      recommendations: {},
     }),
 }));

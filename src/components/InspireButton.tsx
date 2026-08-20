@@ -70,7 +70,7 @@ export function InspireButton({ onSelect }: Props) {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-50 window-panel p-3 max-h-72 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 window-panel p-3 max-h-72 overflow-y-auto animate-pop-in">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs text-text-secondary font-medium">
               {sceneChoice === 'auto' ? '全部场景种子' : `${SCENE_LABELS[sceneChoice]}种子`}

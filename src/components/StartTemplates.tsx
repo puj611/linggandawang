@@ -16,7 +16,7 @@ export function StartTemplates({ onPick }: Props) {
   const [hovered, setHovered] = useState<string | null>(null);
   return (
     <div className="px-5 py-2 animate-fade-in">
-      <div className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2 font-medium">快速起点</div>
+      <div className="text-xs text-text-tertiary uppercase tracking-wider mb-2 font-medium">快速起点</div>
       <div className="flex flex-col gap-1.5">
         {TEMPLATES.map((t, i) => (
           <button

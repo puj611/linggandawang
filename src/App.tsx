@@ -15,6 +15,8 @@ import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { PrivacyDialog } from '@/components/PrivacyDialog';
 import { OnboardingOverlay } from '@/components/OnboardingOverlay';
 import { getPreference, setPreference } from '@/lib/sqlite';
+import { useVectorStore } from '@/hooks/useVectorStore';
+import { useGlobalHotkey } from '@/hooks/useGlobalHotkey';
 import type { ScreenshotPayload } from '@/hooks/useScreenshotPaste';
 
 // 首次引导持久化键：值为 '1' 表示已看过引导
@@ -34,6 +36,13 @@ export default function App() {
   const [droppedImage, setDroppedImage] = useState<ScreenshotPayload | null>(null);
   // 首次使用引导遮罩可见性：null=未决定，true=显示，false=隐藏
   const [onboardingVisible, setOnboardingVisible] = useState<boolean | null>(null);
+  // Task 10（C2）：全局初始化 RAG 向量存储——不打开设置面板也自动恢复/增量索引
+  // hook 内部为模块级单例（与 SettingsPanel 双挂载共享同一初始化 Promise，不重复执行），
+  // 返回值无需使用；初始化异步后台进行，失败仅 console.warn 不影响首屏
+  useVectorStore();
+
+  // Phase 3 Task 13：全局热键 Alt+Shift+I —— 任意应用下置顶展开并聚焦输入
+  useGlobalHotkey();
 
   useEffect(() => {
     (async () => {

@@ -16,11 +16,17 @@ import { pushRecentPrompt } from '@/components/RecentPromptList';
 import type { PromptResult } from '@/types/prompt';
 import type { Answer } from '@/types/state';
 import type { IntentTag } from '@/types/intent-tag';
-import type { ContextPreference } from '@/types/context';
+import type { ContextPreference, ContextRecentQA } from '@/types/context';
 import { useAnalyticsStore } from '@/stores/analyticsStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useRequirementStore } from '@/stores/requirementStore';
 import { extractCompletedTopics } from '@/engine/RequirementSyncer';
+import {
+  extractPreferencesFromQA,
+  buildProfile,
+  recommendAnswers,
+  recommendFromPreferences,
+} from '@/engine/PreferenceLearner';
 import { v4 as uuidv4 } from 'uuid';
 import { analyzeIntent } from '@/engine/LLMIntentAnalyzer';
 import { evaluateFollowup, generateFollowupQuestion } from '@/engine/SmartFollowup';
@@ -41,6 +47,11 @@ let followupTriggeredThisSession = false;
 // P1-5 Bug 修复：start 调用序列号，用于取消过期的 LLM 分析后置 setState
 // 每次 start 进入递增，await 后检查是否仍最新，否则 return
 let startSeq = 0;
+
+// B2 修复：动态追问外层兜底预算。
+// generateFollowupQuestion 内部按 provider 有 8s/本地更长超时；此处再加一道
+// 护栏，专门兜住 keyring/适配器初始化等非 adapter.chat 的挂起点，避免答题无限期阻塞。
+const FOLLOWUP_BUDGET_MS = 15000;
 
 function getEngine(): QuestionEngine {
   if (!engineInstance) {
@@ -96,6 +107,48 @@ function extractPreferencesFromEngine(engine: QuestionEngine): ContextPreference
   return prefs;
 }
 
+/** Task 11（C1 接线）：基于历史行为为指定问题计算推荐选项（同步轻量，无 IO、无需 await）
+ *  数据源（均来自 contextStore，对应 PreferenceLearner 的两条推荐链路）：
+ *  ① recent_qa 同题历史答案 → extractPreferencesFromQA + buildProfile + recommendAnswers
+ *     （同题一致性 ≥ 60% 才推荐；历史 answer 存的是选项 label 或自定义文本，需解析回 option.value）
+ *  ② preferences 稳定偏好 → recommendFromPreferences，按 "key:value" 匹配选项 tags（如 "场景: 修UI"）
+ *  返回推荐选项的 value 数组（空数组 = 无推荐）；新用户两源皆空时短路返回，避免无谓的 store 写入 */
+function computeRecommendation(
+  question: Question,
+  recentQA: ContextRecentQA[],
+  prefs: ContextPreference[],
+): string[] {
+  if (recentQA.length === 0 && prefs.length === 0) return [];
+
+  const values = new Set<string>();
+
+  // ① QA 历史画像推荐：questionId 直接匹配历史答题记录
+  const qaEntries = extractPreferencesFromQA(recentQA);
+  const recAnswer = recommendAnswers(buildProfile(qaEntries), [question.id]).get(question.id);
+  if (recAnswer) {
+    for (const opt of question.options) {
+      if (opt.value === recAnswer || opt.label === recAnswer) values.add(opt.value);
+    }
+  }
+
+  // ② 稳定偏好推荐：minCount=1（contextStore.appendPreferences 对同 key 去重，
+  //    每个key仅存最新一条、count 恒为 1，默认 minCount=2 永不命中）
+  const prefRecs = recommendFromPreferences(prefs, 1);
+  if (prefRecs.size > 0) {
+    for (const opt of question.options) {
+      // 选项 tags 为 "label: value" 格式，与偏好 key/value 做去空格归一化后比较
+      const normalizedTags = opt.tags.map((t) => t.replace(/\s+/g, ''));
+      for (const [key, val] of prefRecs) {
+        if (normalizedTags.includes(`${key}:${val}`.replace(/\s+/g, ''))) {
+          values.add(opt.value);
+        }
+      }
+    }
+  }
+
+  return [...values];
+}
+
 export function useFlow() {
   const appState = useAppStore((s) => s.state);
   const transition = useAppStore((s) => s.transition);
@@ -124,6 +177,7 @@ export function useFlow() {
     setResult,
     reset: resetEngineStore,
     setCanUndo,
+    setRecommendations,
   } = useEngineStore(
     useShallow((s) => ({
       setStage: s.setStage,
@@ -138,6 +192,7 @@ export function useFlow() {
       setResult: s.setResult,
       reset: s.reset,
       setCanUndo: s.setCanUndo,
+      setRecommendations: s.setRecommendations,
     })),
   );
 
@@ -211,6 +266,14 @@ export function useFlow() {
         if (firstQuestion) {
           setCurrentQuestion(firstQuestion);
           addAsked(firstQuestion.id);
+          // Task 11（C1 接线）：PreferenceLearner 基于历史 QA + 偏好为首题计算推荐选项
+          // 同步轻量无需 await；无历史（新用户）或无命中时不写入，避免无谓渲染
+          const firstRecs = computeRecommendation(
+            firstQuestion,
+            getRecentQAWithPending(),
+            ctxStore.getPreferences(),
+          );
+          if (firstRecs.length > 0) setRecommendations(firstQuestion.id, firstRecs);
         } else {
           // engine.start 返回 null（首题缺失），回退到 expanded 避免卡在 loading
           console.error('[useFlow] engine.start 返回 null，首题缺失，回退到 expanded');
@@ -277,6 +340,13 @@ export function useFlow() {
               setCurrentQuestion(question);
               addAsked(question.id);
               setStage(engine.getStage());
+              // Task 11：换题后为新首题重新计算推荐选项（此前只算了规则路由的首题）
+              const replacedRecs = computeRecommendation(
+                question,
+                getRecentQAWithPending(),
+                ctxStore.getPreferences(),
+              );
+              if (replacedRecs.length > 0) setRecommendations(question.id, replacedRecs);
             }
           } catch (e) {
             console.warn('[useFlow] LLM 意图分析失败，保持规则路由', e);
@@ -284,7 +354,7 @@ export function useFlow() {
         })();
       }
     },
-    [resetEngineStore, setSeedInput, setStage, setCurrentQuestion, addAsked, addIntentTag, transition, projectFingerprint, ctxStore, completedTopics],
+    [resetEngineStore, setSeedInput, setStage, setCurrentQuestion, addAsked, addIntentTag, setRecommendations, transition, projectFingerprint, ctxStore, completedTopics],
   );
 
   /** 提交答案
@@ -304,7 +374,17 @@ export function useFlow() {
       for (const t of result.extractedTags) addIntentTag(t);
       setStage(engine.getStage());
       setCurrentQuestion(result.nextQuestion);
-      if (result.nextQuestion) addAsked(result.nextQuestion.id);
+      if (result.nextQuestion) {
+        addAsked(result.nextQuestion.id);
+        // Task 11（C1 接线）：切换到下一题时基于历史 QA + 偏好计算推荐选项
+        // （含本会话 pending 答案，goBack 后重答同一题的记录也计入频率统计）
+        const nextRecs = computeRecommendation(
+          result.nextQuestion,
+          getRecentQAWithPending(),
+          ctxStore.getPreferences(),
+        );
+        if (nextRecs.length > 0) setRecommendations(result.nextQuestion.id, nextRecs);
+      }
 
       // P2-1：仅当有明确 answeredId 时写 recent_qa，避免 'unknown' 污染上下文
       if (lastKey) {
@@ -338,20 +418,32 @@ export function useFlow() {
           });
 
           if (decision) {
-            // 异步调 LLM 生成追问题（8s 超时降级）
-            const followup = await generateFollowupQuestion(decision);
+            // B6 会话代际防护：记录本次 start 的序号。await 期间若发生 restart
+            // （startSeq 已递增），旧会话的追问结果一律作废——既不能插入新会话，
+            // 也不能触发旧会话的 finishAndGenerate，防止跨会话污染。
+            const sessionSeq = startSeq;
+            // B2 修复：外层再包一层 withTimeoutSafe 兜底。
+            // generateFollowupQuestion 内部的 8s 超时只覆盖 adapter.chat，若 keyring/
+            // 适配器初始化本身挂起，会被这里的预算兜住，答题绝不无限期阻塞。
+            // 超时 → ok=false，followup=null，继续走完成/下一步逻辑。
+            const followupResult = await withTimeoutSafe<{ question: Question; reason: string } | null>(
+              generateFollowupQuestion(decision),
+              FOLLOWUP_BUDGET_MS,
+              'generateFollowup',
+              null,
+            );
+            // B6：代际校验，过期直接丢弃
+            if (sessionSeq !== startSeq) return;
+            const followup = followupResult.value;
             // #region debug-point answer.followup (H5)
             reportDebug({ point: 'answer.followup.afterAwait', phase: 'info', hypothesisId: 'H5', data: { mounted: mountedRef.current, hasFollowup: !!followup, isComplete: result.isComplete, hasNext: !!result.nextQuestion } });
             // #endregion debug-point answer.followup (H5)
-            // v2.3：8s 等待期间组件可能卸载，卸载后不再 setState（防止内存泄漏/React 警告）
-            if (!mountedRef.current) {
-              // #region debug-point answer.followup (H5)
-              reportDebug({ point: 'answer.followup.earlyReturn', phase: 'info', hypothesisId: 'H5', data: { reason: 'mountedRef false', isComplete: result.isComplete } });
-              // #endregion debug-point answer.followup (H5)
-              return;
-            }
+            // B3 修复：移除 mountedRef 早期 return。setCurrentQuestion/addAsked/setStage
+            // 均为 zustand store 动作，卸载后调用安全（非 React setState）。
+            // 原实现若在此 return，会在「末题 + 卸载」时跳过下方完成判定，导致用户已答完
+            // 却永不生成结果。现在正常向下执行：有追问则入队展示，无则走完成链路。
             if (followup) {
-              // 插入追问题，覆盖原本的 nextQuestion
+              // 插入追问题，覆盖原本的 nextQuestion（store 写入，卸载后下次展开仍生效）
               engine.insertFollowup(followup.question);
               setCurrentQuestion(followup.question);
               addAsked(followup.question.id);
@@ -363,7 +455,7 @@ export function useFlow() {
                 question_text: followup.question.text,
               });
               setCanUndo(engine.canUndo());
-              return; // 不继续 finishAndGenerate
+              return; // 展示追问题，不继续 finishAndGenerate
             }
           }
         }
@@ -379,7 +471,7 @@ export function useFlow() {
         setCanUndo(engine.canUndo());
       }
     },
-    [setStage, setCurrentQuestion, addAsked, addIntentTag, recordAnswer, ctxStore, setCanUndo],
+    [setStage, setCurrentQuestion, addAsked, addIntentTag, recordAnswer, setRecommendations, ctxStore, setCanUndo],
   );
 
   /** 跳过当前题
@@ -502,6 +594,8 @@ export function useFlow() {
           // 三模式系统：传入场景类型 + 问题阶段映射
           scene: engine.getScene(),
           questionStageMap: engine.getQuestionStageMap(),
+          // Task 8：注入用户选择的目标工具（getState 读取，避免订阅导致重渲染）
+          targetTool: useAppStore.getState().targetTool,
         });
         reportDebug({ point: 'promptGenerator.generate.end', phase: 'end', hypothesisId: 'H4' });
         // #endregion debug-point promptGenerator.generate (H4)
@@ -632,7 +726,7 @@ export function useFlow() {
           engine.getAnswers(),
           engine.getSeedInput(),
           projectFingerprint,
-          { scanResult: fullScanResult, recentQA, preferences, scene: engine.getScene(), questionStageMap: engine.getQuestionStageMap() },
+          { scanResult: fullScanResult, recentQA, preferences, scene: engine.getScene(), questionStageMap: engine.getQuestionStageMap(), targetTool: useAppStore.getState().targetTool },
         );
         setResult(prompt);
         await ctxStore.setIntentTags(remaining);
@@ -670,6 +764,8 @@ export function useFlow() {
             // 三模式系统：传入场景类型 + 问题阶段映射
             scene: engine.getScene(),
             questionStageMap: engine.getQuestionStageMap(),
+            // Task 8：注入用户选择的目标工具（getState 读取，避免订阅导致重渲染）
+            targetTool: useAppStore.getState().targetTool,
           });
           setResult(prompt);
           await ctxStore.setIntentTags(engine.getIntentTags());

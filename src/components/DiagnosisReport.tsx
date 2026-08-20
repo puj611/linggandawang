@@ -27,7 +27,7 @@ const ISSUE_TYPE_LABEL: Record<DiagnosisIssue['type'], string> = {
 export function DiagnosisReport({ issues, onInsertToSpec }: Props) {
   if (issues.length === 0) {
     return (
-      <div className="text-[11px] text-text-secondary p-2">
+      <div className="text-xs text-text-secondary p-2">
         未发现明显视觉问题
       </div>
     );
@@ -51,19 +51,19 @@ export function DiagnosisReport({ issues, onInsertToSpec }: Props) {
   return (
     <div className="bg-bg-main border border-border rounded-btn p-3 mt-2">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-text-secondary uppercase tracking-wider">
+        <span className="text-xs text-text-secondary uppercase tracking-wider">
           视觉问题清单（{issues.length} 项）
         </span>
         <button
           onClick={onInsertAll}
-          className="text-[10px] px-2 py-0.5 rounded-btn bg-brand hover:bg-brand-hover text-white transition-colors"
+          className="text-xs px-2 py-0.5 rounded-btn bg-brand hover:bg-brand-hover text-white transition-colors"
         >
           插入到规格段
         </button>
       </div>
       <div className="space-y-1.5">
         {issues.map((iss, i) => (
-          <div key={i} className="text-[11px]">
+          <div key={i} className="text-xs">
             <div className="flex items-center gap-1.5">
               <span
                 className={`inline-block w-1.5 h-1.5 rounded-full ${

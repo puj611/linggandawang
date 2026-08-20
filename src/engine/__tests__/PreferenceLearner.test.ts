@@ -103,6 +103,26 @@ describe('PreferenceLearner', () => {
       const recs = recommendAnswers(profile, ['s-001']);
       expect(recs.has('s-001')).toBe(false); // 50% < 60%
     });
+
+    it('空偏好（新用户）不产生任何推荐', () => {
+      const profile = buildProfile([]); // 无历史 → 空画像
+      const recs = recommendAnswers(profile, ['s-001', 's-002']);
+      expect(recs.size).toBe(0);
+    });
+
+    it('多题同时命中时返回多条推荐', () => {
+      const entries = [
+        ...Array.from({ length: 3 }, () => ({ questionId: 's-001', optionId: 'a', timestamp: '' })),
+        ...Array.from({ length: 3 }, () => ({ questionId: 's-002', optionId: 'x', timestamp: '' })),
+        { questionId: 's-002', optionId: 'y', timestamp: '' }, // s-002 一致性 3/4 = 75% ≥ 60%
+      ];
+      const profile = buildProfile(entries);
+      const recs = recommendAnswers(profile, ['s-001', 's-002', 's-003']);
+      expect(recs.size).toBe(2);
+      expect(recs.get('s-001')).toBe('a');
+      expect(recs.get('s-002')).toBe('x');
+      expect(recs.has('s-003')).toBe(false);
+    });
   });
 
   describe('recommendFromPreferences', () => {
@@ -116,6 +136,21 @@ describe('PreferenceLearner', () => {
       const recs = recommendFromPreferences(prefs, 2);
       expect(recs.get('风格')).toBe('极简'); // 2次 >= minCount=2
       expect(recs.has('圆角')).toBe(false); // 1次 < minCount=2
+    });
+
+    it('空偏好数组不产生推荐', () => {
+      expect(recommendFromPreferences([]).size).toBe(0);
+    });
+
+    it('minCount=1 时单条偏好也推荐（contextStore 同 key 去重后 count 恒为 1）', () => {
+      const prefs: ContextPreference[] = [
+        { key: '场景', value: '修UI', confirmed_at: '' },
+        { key: '主题', value: '科技感', confirmed_at: '' },
+      ];
+      const recs = recommendFromPreferences(prefs, 1);
+      expect(recs.size).toBe(2);
+      expect(recs.get('场景')).toBe('修UI');
+      expect(recs.get('主题')).toBe('科技感');
     });
   });
 });

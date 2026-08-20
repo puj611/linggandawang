@@ -199,40 +199,57 @@ export function getVectorStoreStats(): {
   };
 }
 
+// 批量插入每批行数（每行 5 个绑定参数，40 行 = 200 参数，远低于 SQLite 默认 999 上限）
+const PERSIST_BATCH_ROWS = 40;
+
 /**
  * 持久化向量存储到 SQLite（Tauri）或 localStorage（浏览器降级）
- * 仅存储元数据，不含向量（向量在恢复时重新生成）
+ * P1：连同向量本体一起持久化（vector_json），恢复时直接复用免重嵌入
+ * P2：SQLite 写入改为拼接 VALUES 的批量 INSERT（每批 40 行），替代逐条 INSERT 的 N+1 次调用
  */
 export async function persistVectorStore(): Promise<void> {
   try {
-    const data = vectorStore.map((e) => ({
-      id: e.id,
-      text: e.text,
-      metadata: e.metadata,
-    }));
-
     if (isTauri()) {
       // SQLite 持久化
       const { executeSql } = await import('@/lib/sqlite');
-      // 创建表（如果不存在）
+      // 创建表（如果不存在，结构与迁移 0005 一致）
       await executeSql(`
         CREATE TABLE IF NOT EXISTS vector_store (
           id TEXT PRIMARY KEY,
           text TEXT NOT NULL,
           metadata_json TEXT NOT NULL,
+          vector_json TEXT,
           created_at TEXT NOT NULL
         )
       `);
-      // 清空旧数据并插入新数据
+      const now = new Date().toISOString();
+      // 全删后批量插入（每批单条语句原子写入，200 条最多 5 次调用，替代原 200 次）
       await executeSql('DELETE FROM vector_store');
-      for (const item of data) {
+      for (let i = 0; i < vectorStore.length; i += PERSIST_BATCH_ROWS) {
+        const chunk = vectorStore.slice(i, i + PERSIST_BATCH_ROWS);
+        const placeholders = chunk.map(() => '(?, ?, ?, ?, ?)').join(', ');
+        const params: unknown[] = [];
+        for (const item of chunk) {
+          params.push(
+            item.id,
+            item.text,
+            JSON.stringify(item.metadata),
+            JSON.stringify(Array.from(item.embedding)),
+            now,
+          );
+        }
         await executeSql(
-          'INSERT INTO vector_store (id, text, metadata_json, created_at) VALUES ($1, $2, $3, $4)',
-          [item.id, item.text, JSON.stringify(item.metadata), new Date().toISOString()]
+          `INSERT INTO vector_store (id, text, metadata_json, vector_json, created_at) VALUES ${placeholders}`,
+          params,
         );
       }
     } else {
-      // 浏览器降级：localStorage
+      // 浏览器降级：localStorage（仅元数据，与现有行为一致）
+      const data = vectorStore.map((e) => ({
+        id: e.id,
+        text: e.text,
+        metadata: e.metadata,
+      }));
       localStorage.setItem('linggan_vector_store', JSON.stringify(data));
     }
   } catch (e) {
@@ -240,30 +257,40 @@ export async function persistVectorStore(): Promise<void> {
   }
 }
 
+// 恢复时分批处理的条数（每批 10 条让出主线程，避免冷启动大量条目卡顿）
+const RESTORE_BATCH_SIZE = 10;
+
 /**
  * 从 SQLite（Tauri）或 localStorage（浏览器降级）恢复向量存储
- * 需要重新嵌入文本生成向量
+ * P1：优先复用持久化的向量本体（vector_json），仅旧数据（vector 为空/非法）才回退重嵌入
+ * 分批恢复（每批 10 条 setTimeout(0) 让出主线程），避免大量条目冷启动卡顿
  */
 export async function restoreVectorStore(): Promise<void> {
   try {
-    let data: Array<{ id: string; text: string; metadata: VectorEntry['metadata'] }> = [];
+    let data: Array<{
+      id: string;
+      text: string;
+      metadata: VectorEntry['metadata'];
+      vectorJson?: string | null;
+    }> = [];
 
     if (isTauri()) {
       // SQLite 恢复
       const { getDb } = await import('@/lib/sqlite');
       const db = await getDb();
       if (db) {
-        const rows = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<Array<{ id: string; text: string; metadata_json: string }>>(
-          'SELECT id, text, metadata_json FROM vector_store ORDER BY created_at'
+        const rows = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<Array<{ id: string; text: string; metadata_json: string; vector_json: string | null }>>(
+          'SELECT id, text, metadata_json, vector_json FROM vector_store ORDER BY created_at'
         );
-        data = rows.map((r: { id: string; text: string; metadata_json: string }) => ({
+        data = rows.map((r) => ({
           id: r.id,
           text: r.text,
           metadata: JSON.parse(r.metadata_json),
+          vectorJson: r.vector_json,
         }));
       }
     } else {
-      // 浏览器降级：localStorage
+      // 浏览器降级：localStorage（旧格式，无向量，恢复时重嵌入）
       const raw = localStorage.getItem('linggan_vector_store');
       if (raw) {
         data = JSON.parse(raw);
@@ -272,15 +299,41 @@ export async function restoreVectorStore(): Promise<void> {
 
     if (data.length === 0) return;
 
-    // 重新嵌入（模型已缓存时很快）
-    for (const item of data) {
-      const embedding = await embed(item.text);
-      vectorStore.push({
-        id: item.id,
-        text: item.text,
-        embedding,
-        metadata: item.metadata,
-      });
+    for (let i = 0; i < data.length; i += RESTORE_BATCH_SIZE) {
+      const chunk = data.slice(i, i + RESTORE_BATCH_SIZE);
+      for (const item of chunk) {
+        // P1：优先复用持久化向量，跳过 embed 调用
+        let embedding: Float32Array | null = null;
+        if (item.vectorJson) {
+          try {
+            const arr = JSON.parse(item.vectorJson) as number[];
+            if (Array.isArray(arr) && arr.length === EMBEDDING_DIM) {
+              embedding = new Float32Array(arr);
+            }
+          } catch {
+            // 向量解析失败，回退重嵌入
+          }
+        }
+        if (!embedding) {
+          // 旧数据（无持久化向量）回退：重新嵌入
+          embedding = await embed(item.text);
+        }
+        vectorStore.push({
+          id: item.id,
+          text: item.text,
+          embedding,
+          metadata: item.metadata,
+        });
+      }
+      // 让出主线程（后续还有批次时）
+      if (i + RESTORE_BATCH_SIZE < data.length) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+
+    // 恢复条数超限时裁剪（与 indexQA 的 MAX_ENTRIES 语义一致）
+    if (vectorStore.length > MAX_ENTRIES) {
+      vectorStore = vectorStore.slice(-MAX_ENTRIES);
     }
   } catch (e) {
     console.warn('[vectorStore] restore 失败', e);

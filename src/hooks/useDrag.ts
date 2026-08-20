@@ -4,6 +4,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { isTauri } from '@/lib/env';
 import { useWindowStore } from '@/stores/windowStore';
+import { isResizing } from '@/hooks/useResize';
 
 let _LogicalPosition: typeof import('@tauri-apps/api/window').LogicalPosition | null = null;
 let _getCurrentWindow: typeof import('@tauri-apps/api/window').getCurrentWindow | null = null;
@@ -127,6 +128,9 @@ export function useDrag() {
 
   const onPointerDown = useCallback(async (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    // v5 互斥状态机：缩放会话进行中（或残留 stale 会话）绝对禁止 Drag，
+    // 修复"横向极限缩放变成窗口拖动"的底层 Bug
+    if (isResizing()) return;
     if (shouldIgnoreDragTarget(e.target, e.currentTarget)) return;
 
     e.preventDefault();

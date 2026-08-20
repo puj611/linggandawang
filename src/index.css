@@ -10,6 +10,10 @@ body,
   padding: 0;
 }
 
+html {
+  color-scheme: dark;
+}
+
 body {
   font-family: var(--font-sans);
   background: transparent;
@@ -35,7 +39,13 @@ button {
   outline: none;
   background: none;
   color: inherit;
-  transition: all 150ms var(--ease-out);
+  transition:
+    color 150ms var(--ease-out),
+    background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out),
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out);
 }
 
 button:active {
@@ -130,12 +140,11 @@ textarea::placeholder {
   .primary-btn {
     @apply bg-brand text-white rounded-btn font-medium text-sm;
     padding: 8px 16px;
-    box-shadow: 0 2px 8px var(--color-brand-glow);
-    transition: all 150ms var(--ease-out);
+    box-shadow: none;
+    transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out), transform 150ms var(--ease-out);
   }
   .primary-btn:hover {
     @apply bg-brand-hover;
-    box-shadow: 0 4px 16px var(--color-brand-glow);
     transform: translateY(-1px);
   }
   .primary-btn:active {
@@ -183,12 +192,18 @@ textarea::placeholder {
     -webkit-app-region: no-drag;
   }
   .window-panel {
-    background: rgba(10, 10, 15, 0.98);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    /* v4 硬核规格：纯实色 + 零模糊 + 零发光，边缘锐利 */
+    background-color: #121214;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
-    box-shadow: var(--shadow-window);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+  }
+  .animate-pop-in {
+    animation: popIn 150ms var(--ease-out) forwards;
+    transform-origin: top right;
   }
   .text-balance {
     text-wrap: balance;
@@ -207,6 +222,11 @@ textarea::placeholder {
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes slideUp {

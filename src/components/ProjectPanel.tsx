@@ -142,7 +142,10 @@ export function ProjectPanel({ onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-[380px] max-h-[500px] bg-bg-card border border-border rounded-card shadow-popover flex flex-col overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="项目管理"
+        className="w-[380px] max-h-[500px] bg-bg-card border border-border-light rounded-card shadow-popover flex flex-col overflow-hidden overscroll-contain"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}

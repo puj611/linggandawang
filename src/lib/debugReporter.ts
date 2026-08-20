@@ -1,5 +1,6 @@
 // src/lib/debugReporter.ts
 // 调试会话专用：通过 HTTP 上报到 TRAE-debugger Debug Server
+// 仅开发模式生效（import.meta.env.DEV）：生产构建中 reportDebug 为 no-op，不发出任何网络请求
 // 会话结束后会与本文件一起清理
 // #region debug-instrumentation
 const DEBUG_URL = 'http://127.0.0.1:7777/event';
@@ -19,8 +20,10 @@ export interface DebugEvent {
   error?: string;
 }
 
-/** 上报调试事件（fire-and-forget，失败静默，绝不影响业务） */
+/** 上报调试事件（fire-and-forget，失败静默，绝不影响业务）
+ *  仅开发模式生效：生产构建中直接 no-op，杜绝调试数据外发（安全 S1） */
 export function reportDebug(ev: DebugEvent): void {
+  if (!import.meta.env.DEV) return; // 生产模式短路，不构造 payload、不发起任何网络请求
   const payload = {
     session_id: DEBUG_SESSION,
     run_id: runId,

@@ -155,7 +155,7 @@ export function ImageExtractResult({ result, onInsert, onClose }: Props) {
               <span>完整提示词（英文）</span>
             </button>
             {showFull && (
-              <div className="mt-2 p-2 bg-surface-2 rounded text-text-secondary font-mono text-[11px] leading-relaxed break-all">
+              <div className="mt-2 p-2 bg-surface-2 rounded text-text-secondary font-mono text-xs leading-relaxed break-all">
                 {result.fullPrompt}
               </div>
             )}

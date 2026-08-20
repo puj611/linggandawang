@@ -107,7 +107,10 @@ export function ProjectScanDashboard({ onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-[480px] max-h-[560px] bg-bg-card border border-border rounded-card shadow-popover flex flex-col overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="项目扫描仪表盘"
+        className="w-[480px] max-h-[560px] bg-bg-card border border-border-light rounded-card shadow-popover flex flex-col overflow-hidden overscroll-contain"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}

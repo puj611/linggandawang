@@ -54,22 +54,22 @@ export function ProjectOnboarding() {
         </svg>
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] text-text-primary font-medium">绑定你的项目</div>
-        <div className="text-[10px] text-text-secondary mt-0.5 leading-relaxed">
+        <div className="text-xs text-text-primary font-medium">绑定你的项目</div>
+        <div className="text-xs text-text-secondary mt-0.5 leading-relaxed">
           让提示词懂你的技术栈、目录约定和代码风格，比通用优化器精准一个量级。
         </div>
         <div className="flex items-center gap-2 mt-2">
           <button
             onClick={handlePick}
             disabled={scanning}
-            className="px-2.5 py-1 text-[10px] rounded-btn bg-brand-soft text-brand hover:bg-brand/20 transition-colors disabled:opacity-50 font-medium"
+            className="px-2.5 py-1 text-xs rounded-btn bg-brand-soft text-brand hover:bg-brand/20 transition-colors disabled:opacity-50 font-medium"
           >
             {scanning ? '扫描中…' : '选择项目文件夹'}
           </button>
           <button
             onClick={handleDemo}
             disabled={scanning}
-            className="px-2.5 py-1 text-[10px] rounded-btn text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50"
+            className="px-2.5 py-1 text-xs rounded-btn text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50"
           >
             先看看演示
           </button>

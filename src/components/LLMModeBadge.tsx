@@ -84,7 +84,7 @@ export function LLMModeBadge() {
       {/* 主徽章 */}
       <button
         onClick={() => setShowDetail(!showDetail)}
-        className={`flex items-center gap-1.5 px-2 py-0.5 text-[9px] rounded-full border transition-colors ${config.bg} ${config.color} ${config.border} hover:opacity-80`}
+        className={`flex items-center gap-1.5 px-2 py-0.5 text-xs rounded-full border transition-colors ${config.bg} ${config.color} ${config.border} hover:opacity-80`}
       >
         <span className={`w-1.5 h-1.5 rounded-full ${
           degraded ? 'bg-[#e2b93d] animate-pulse' :
@@ -98,8 +98,8 @@ export function LLMModeBadge() {
 
       {/* 展开详情 */}
       {showDetail && (
-        <div className="absolute top-full left-0 mt-1 w-56 bg-bg-card border border-border rounded-card shadow-popover z-[100] p-3 space-y-2">
-          <div className="text-[10px] text-text-secondary font-medium">当前模式</div>
+        <div className="absolute top-full left-0 mt-1 w-56 bg-bg-card border border-border-light rounded-card shadow-popover z-[100] p-3 space-y-2 animate-pop-in">
+          <div className="text-xs text-text-secondary font-medium">当前模式</div>
 
           {/* 三档模式说明 */}
           <div className="space-y-1.5">
@@ -128,7 +128,7 @@ export function LLMModeBadge() {
 
           {/* 降级通知 */}
           {degraded && statusMsg && (
-            <div className="px-2 py-1.5 rounded bg-[#e2b93d]/10 border border-[#e2b93d]/20 text-[9px] text-[#e2b93d] leading-relaxed">
+            <div className="px-2 py-1.5 rounded bg-[#e2b93d]/10 border border-[#e2b93d]/20 text-xs text-[#e2b93d] leading-relaxed">
               {statusMsg.text}
               {countdown !== null && countdown > 0 && (
                 <span className="block mt-0.5 text-text-tertiary">{countdown} 分钟后自动重试</span>
@@ -141,14 +141,14 @@ export function LLMModeBadge() {
             {degraded && (
               <button
                 onClick={() => { resetAvailability(); setShowDetail(false); }}
-                className="flex-1 px-2 py-1 text-[9px] rounded-btn bg-brand-soft text-brand hover:bg-brand/20 transition-colors"
+                className="flex-1 px-2 py-1 text-xs rounded-btn bg-brand-soft text-brand hover:bg-brand/20 transition-colors"
               >
                 立即重试
               </button>
             )}
             <button
               onClick={() => setShowDetail(false)}
-              className="px-2 py-1 text-[9px] rounded-btn border border-border text-text-secondary hover:text-text-primary transition-colors"
+              className="px-2 py-1 text-xs rounded-btn border border-border text-text-secondary hover:text-text-primary transition-colors"
             >
               关闭
             </button>
@@ -174,7 +174,7 @@ function ModeRow({ active, label, desc, color, onClick }: {
     >
       <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${active ? color : 'bg-surface-3'}`} />
       <div className="min-w-0">
-        <div className={`text-[9px] ${active ? 'text-text-primary font-medium' : 'text-text-tertiary'}`}>{label}</div>
+        <div className={`text-xs ${active ? 'text-text-primary font-medium' : 'text-text-tertiary'}`}>{label}</div>
         <div className="text-[8px] text-text-tertiary leading-snug">{desc}</div>
       </div>
     </button>
