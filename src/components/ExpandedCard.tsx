@@ -226,7 +226,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center"
+      className="fixed inset-0 flex items-center justify-center p-2.5"
       style={{ zIndex: 9999 }}
     >
       <div
@@ -234,6 +234,8 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
         style={{
           width: `${width}px`,
           height: `${height}px`,
+          maxWidth: '100%',
+          maxHeight: '100%',
           transform: `translate(${offset.x}px, ${offset.y}px)`,
         }}
       >

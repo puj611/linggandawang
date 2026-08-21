@@ -15,6 +15,7 @@ import {
   MAX_WINDOW_WIDTH,
   MIN_WINDOW_HEIGHT,
   MAX_WINDOW_HEIGHT,
+  WINDOW_SIZE_OVERHEAD,
 } from '@/stores/windowStore';
 
 /** 缩放方向：8 个边缘/角落 */
@@ -98,13 +99,15 @@ export function useResize() {
     void applyPanelSize();
   }, [applyPanelSize]);
 
-  /** Tauri：把 clamp 后的宽高应用到 OS 窗口；n/w 边缘同时平移窗口保持对角固定 */
+  /** Tauri：把 clamp 后的宽高应用到 OS 窗口（含安全边距补偿）；n/w 边缘同时平移窗口保持对角固定 */
   const applyToWindow = useCallback(async (w: number, h: number, edge: ResizeEdge) => {
     if (!applyInFlight.current) {
       applyInFlight.current = true;
       try {
         const appWindow = _getCurrentWindow!();
-        await appWindow.setSize(new _LogicalSize!(w, h));
+        await appWindow.setSize(
+          new _LogicalSize!(w + WINDOW_SIZE_OVERHEAD, h + WINDOW_SIZE_OVERHEAD),
+        );
         const { dx, dy } = computeAnchorOffset(edge, startRef.current.w, startRef.current.h, w, h);
         if (dx !== 0 || dy !== 0) {
           await appWindow.setPosition(

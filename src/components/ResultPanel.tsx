@@ -80,12 +80,12 @@ export function ResultPanel() {
   if (!result) {
     return (
       <div
-        className="fixed inset-0 flex items-center justify-center"
+        className="fixed inset-0 flex items-center justify-center p-2.5"
         style={{ zIndex: 9999 }}
       >
         <div
           className="window-panel p-6 text-text-secondary flex flex-col items-center justify-center gap-3"
-          style={{ width: `${width}px`, minHeight: '200px' }}
+          style={{ width: `${width}px`, minHeight: '200px', maxWidth: '100%', maxHeight: '100%' }}
         >
           {loadingTimeout ? (
             <>
@@ -142,7 +142,7 @@ export function ResultPanel() {
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center"
+      className="fixed inset-0 flex items-center justify-center p-2.5"
       style={{ zIndex: 9999 }}
     >
       <div
@@ -150,6 +150,8 @@ export function ResultPanel() {
         style={{
           width: `${width}px`,
           height: `${height}px`,
+          maxWidth: '100%',
+          maxHeight: '100%',
           transform: `translate(${offset.x}px, ${offset.y}px)`,
         }}
       >

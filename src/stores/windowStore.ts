@@ -38,6 +38,12 @@ export const MIN_WINDOW_HEIGHT = 480;
 export const MAX_WINDOW_HEIGHT = 800;
 const HEIGHT_PREF_KEY = 'window_height';
 
+// 布局三层结构：OS 窗口尺寸 = 面板尺寸 + 四周安全边距×2
+// Layer1 窗口(overflow hidden 兜底) → Layer2 安全区(padding) → Layer3 面板卡片(圆角12)
+// 面板不贴窗口物理边缘：解决"太方"无呼吸感 + DPI 舍入导致的边缘按钮热区裁剪
+export const SAFETY_PADDING = 10;
+export const WINDOW_SIZE_OVERHEAD = SAFETY_PADDING * 2;
+
 async function getInvoke() {
   if (!isTauri()) return null;
   try {
@@ -154,14 +160,17 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       }
     }
   },
-  // v5：面板态挂载时把 OS 窗口同步为面板尺寸（物理边缘 == 面板边缘）
+  // v5：面板态挂载时把 OS 窗口同步为面板尺寸+安全边距（窗口边缘 != 面板边缘，
+  // 中间 10px 透明呼吸区，防止 DPI 舍入裁剪边缘按钮热区）
   applyPanelSize: async () => {
     const win = await getCurrentWindow();
     if (!win) return;
     const { width, height } = get();
     try {
       const { LogicalSize } = await import('@tauri-apps/api/window');
-      await win.setSize(new LogicalSize(width, height));
+      await win.setSize(
+        new LogicalSize(width + WINDOW_SIZE_OVERHEAD, height + WINDOW_SIZE_OVERHEAD),
+      );
     } catch (e) {
       console.warn('[windowStore] 同步面板尺寸到窗口失败', e);
     }
