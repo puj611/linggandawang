@@ -66,6 +66,15 @@ fn is_private_ip(ip: IpAddr) -> bool {
                 || (v4.octets()[0] == 203 && v4.octets()[1] == 0 && v4.octets()[2] == 113)
         }
         IpAddr::V6(v6) => {
+            // 审查 P1 修复：IPv4-mapped（::ffff:a.b.c.d）必须还原成 IPv4 再判——
+            // Rust std 的 is_loopback() 只认 ::1，::ffff:127.0.0.1 会漏过导致 SSRF 绕过
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_private_ip(IpAddr::V4(v4));
+            }
+            // NAT64 段 64:ff9b::/96 可映射任意 IPv4（含内网），直接拒绝
+            if v6.segments()[0] == 0x64 && v6.segments()[1] == 0xff9b {
+                return true;
+            }
             v6.is_loopback()
                 || v6.is_unique_local()
                 || v6.is_unicast_link_local()
@@ -111,8 +120,30 @@ async fn validate_ssrf(base_url: &str) -> Result<(), String> {
 }
 
 /// 脱敏错误文本，避免 LLM 端点回显的 key 泄露到日志/UI
+/// 审查 P7 修复：除 Bearer 前缀外，裸 key（sk-xxx 等）形态也一并遮蔽。
+/// 手工扫描实现（不引入 regex 依赖）：匹配 sk- 开头 + ≥20 位字母数字。
 fn sanitize(text: &str) -> String {
-    text.replace("Bearer ", "")
+    let without_bearer = text.replace("Bearer ", "");
+    let bytes = without_bearer.as_bytes();
+    let mut out = String::with_capacity(without_bearer.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b's' && i + 1 < bytes.len() && bytes[i + 1] == b'k' && i + 2 < bytes.len() && bytes[i + 2] == b'-' {
+            // 统计 sk- 后连续字母数字长度
+            let mut j = i + 3;
+            while j < bytes.len() && (bytes[j] as char).is_ascii_alphanumeric() {
+                j += 1;
+            }
+            if j - (i + 3) >= 20 {
+                out.push_str("sk-***");
+                i = j;
+                continue;
+            }
+        }
+        out.push(without_bearer[i..].chars().next().unwrap());
+        i += without_bearer[i..].chars().next().unwrap().len_utf8();
+    }
+    out
 }
 
 #[tauri::command]
@@ -249,6 +280,46 @@ mod tests {
     fn public_ipv6_allowed() {
         let ip = Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111); // 1.1.1.1 IPv6
         assert!(!is_private_ip(IpAddr::V6(ip)));
+    }
+
+    #[test]
+    fn ipv4_mapped_ipv6_rejected() {
+        // 审查 P1：IPv4-mapped IPv6 曾绕过 is_private_ip（is_loopback 只认 ::1）
+        let cases = [
+            "::ffff:127.0.0.1",  // 回环映射
+            "::ffff:10.0.0.1",   // A 类私有映射
+            "::ffff:192.168.1.1", // C 类私有映射
+            "::ffff:169.254.1.1", // 链路本地映射（云元数据）
+        ];
+        for c in cases {
+            let ip: IpAddr = c.parse().unwrap();
+            assert!(is_private_ip(ip), "应拒绝 IPv4-mapped 内网地址: {}", c);
+        }
+        // 公网映射仍放行
+        let ip: IpAddr = "::ffff:8.8.8.8".parse().unwrap();
+        assert!(!is_private_ip(ip));
+    }
+
+    #[test]
+    fn nat64_rejected() {
+        // 审查 P1：NAT64 64:ff9b::/96 可映射任意 IPv4（含内网），整体拒绝
+        let ip: IpAddr = "64:ff9b::7f00:1".parse().unwrap(); // 127.0.0.1
+        assert!(is_private_ip(ip), "应拒绝 NAT64 映射的回环地址");
+        let ip2: IpAddr = "64:ff9b::a00:1".parse().unwrap(); // 10.0.0.1
+        assert!(is_private_ip(ip2), "应拒绝 NAT64 映射的私有地址");
+    }
+
+    #[test]
+    fn sanitize_masks_bare_and_bearer_keys() {
+        // 审查 P7：Bearer 前缀与裸 sk- key 均须遮蔽
+        let key = "sk-abcdefghijklmnopqrstuvwxyz123456";
+        assert_eq!(
+            sanitize(&format!("invalid api key: {}", key)),
+            "invalid api key: sk-***"
+        );
+        assert_eq!(sanitize("Bearer abc123"), "abc123");
+        // 短 sk-（非 key 形态）不误伤
+        assert_eq!(sanitize("task-scheduler-xx sk-short"), "task-scheduler-xx sk-short");
     }
 
     #[test]

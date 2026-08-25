@@ -85,3 +85,6 @@ cd src-tauri && cargo check
 4. **AbortController 外部 signal 联动**：LLMAdapter 的 chat/chatStream/testConnection 通过 `addEventListener('abort', ...)` 联动内部 controller
 5. **CSP connect-src `https:`**：为支持自定义 LLM baseUrl 保留，SSRF 防护由 validateBaseUrl 负责
 6. **fs:allow-remove 已移除**：前端不直接使用 fs remove，如需要删除文件通过 Tauri 命令
+7. **Rust IPv6 内网判断必须先 `to_ipv4_mapped()` 还原**（2026-08-21 审查 P1）：`::ffff:127.0.0.1` 的 `is_loopback()` 返回 false（std 只认 `::1`），漏判即 SSRF 绕过；NAT64 `64:ff9b::/96` 同理需整体拒绝，见 llm_proxy.rs `is_private_ip`
+8. **tauri-plugin-sql 的 execute 每条独立提交，无跨语句事务**（2026-08-21 审查 P2）：需要原子性时用 staging 表 + `DROP/RENAME`，不要 DELETE+INSERT 裸奔；本例见 vectorStore.ts `persistVectorStore`
+9. **MCP stdio server 双红线**（2026-08-21 审查 P3）：stdout 只允许写协议消息（日志重定向 stderr），且必须限制单行长度防超大 payload OOM，见 mcp-server/index.ts

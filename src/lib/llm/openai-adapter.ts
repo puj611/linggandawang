@@ -262,20 +262,27 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
         timeout_secs: Math.max(5, Math.round(timeoutMs / 1000)),
       },
     });
-    const data = await (signal
-      ? Promise.race([
-          doInvoke,
-          new Promise<never>((_, reject) => {
-            if (signal.aborted) {
-              reject(new Error('LLM 请求被调用方取消'));
-              return;
-            }
-            signal.addEventListener('abort', () => reject(new Error('LLM 请求被调用方取消')), {
-              once: true,
-            });
-          }),
-        ])
-      : doInvoke);
+    if (!signal) {
+      const data = await doInvoke;
+      return {
+        content: data.choices?.[0]?.message?.content ?? '',
+        model: data.model ?? request.model ?? '',
+        usage: data.usage,
+      };
+    }
+    // 审查 P8 修复：race 结束后移除残留 abort 监听器（once:true 仅在触发后自移除，
+    // 正常完成时监听器仍挂在 signal 上）。持有同一函数引用才能 remove 生效。
+    let cleanupAbortListener!: () => void;
+    const cancelPromise = new Promise<never>((_, reject) => {
+      const onAbort = () => reject(new Error('LLM 请求被调用方取消'));
+      cleanupAbortListener = () => signal.removeEventListener('abort', onAbort);
+      if (signal.aborted) {
+        reject(new Error('LLM 请求被调用方取消'));
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    const data = await Promise.race([doInvoke, cancelPromise]).finally(cleanupAbortListener);
     return {
       content: data.choices?.[0]?.message?.content ?? '',
       model: data.model ?? request.model ?? '',

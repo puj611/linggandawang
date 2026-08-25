@@ -140,6 +140,11 @@ export class PromptGenerator {
     return next;
   }
 
+  /** HTML 注释内转义：审查 P6 修复——用户原话含 `-->` 会提前闭合注释，破坏导出 .md 结构 */
+  private escapeComment(text: string): string {
+    return text.replace(/-->/g, '--\\>');
+  }
+
   /** 转 Markdown 全文 */
   toMarkdown(result: PromptResult, options: Partial<MarkdownExportOptions> = {}): string {
     const opt: MarkdownExportOptions = {
@@ -170,7 +175,7 @@ export class PromptGenerator {
     lines.push(result.action.content);
     if (opt.include_raw_quotes && result.action.raw_quote) {
       lines.push('');
-      lines.push(`<!-- 原话：${result.action.raw_quote} -->`);
+      lines.push(`<!-- 原话：${this.escapeComment(result.action.raw_quote)} -->`);
     }
     lines.push('');
     lines.push(`## 2. 怎么做（规格段）`);
@@ -211,7 +216,7 @@ export class PromptGenerator {
       lines.push('');
       lines.push(`<!-- 用户原话汇总：`);
       for (const r of result.raw_quotes) {
-        lines.push(`  - ${r}`);
+        lines.push(`  - ${this.escapeComment(r)}`);
       }
       lines.push(`-->`);
     }

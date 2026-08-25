@@ -28,9 +28,20 @@ function redirectConsoleToStderr(): void {
   });
 }
 
+/** 单行 payload 上限：审查 P3 修复——防恶意客户端超大行 OOM 本地进程 */
+const MAX_LINE_LENGTH = 1_000_000; // 1MB
+
 async function processLine(line: string): Promise<void> {
   const trimmed = line.trim();
   if (!trimmed) return;
+  if (trimmed.length > MAX_LINE_LENGTH) {
+    respond({
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32700, message: 'Parse error: line exceeds 1MB limit' },
+    });
+    return;
+  }
   let msg: unknown;
   try {
     msg = JSON.parse(trimmed);

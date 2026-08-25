@@ -210,7 +210,7 @@ const PERSIST_BATCH_ROWS = 40;
 export async function persistVectorStore(): Promise<void> {
   try {
     if (isTauri()) {
-      // SQLite 持久化
+      // SQLite 持久化（审查 P2 修复：staging 表原子替换，杜绝 DELETE 后 INSERT 失败导致数据丢失）
       const { executeSql } = await import('@/lib/sqlite');
       // 创建表（如果不存在，结构与迁移 0005 一致）
       await executeSql(`
@@ -223,8 +223,17 @@ export async function persistVectorStore(): Promise<void> {
         )
       `);
       const now = new Date().toISOString();
-      // 全删后批量插入（每批单条语句原子写入，200 条最多 5 次调用，替代原 200 次）
-      await executeSql('DELETE FROM vector_store');
+      // 1) 全量写入 staging 表：任一批失败直接抛出，原表完好无损
+      await executeSql('DROP TABLE IF EXISTS vector_store_staging');
+      await executeSql(`
+        CREATE TABLE vector_store_staging (
+          id TEXT PRIMARY KEY,
+          text TEXT NOT NULL,
+          metadata_json TEXT NOT NULL,
+          vector_json TEXT,
+          created_at TEXT NOT NULL
+        )
+      `);
       for (let i = 0; i < vectorStore.length; i += PERSIST_BATCH_ROWS) {
         const chunk = vectorStore.slice(i, i + PERSIST_BATCH_ROWS);
         const placeholders = chunk.map(() => '(?, ?, ?, ?, ?)').join(', ');
@@ -239,10 +248,13 @@ export async function persistVectorStore(): Promise<void> {
           );
         }
         await executeSql(
-          `INSERT INTO vector_store (id, text, metadata_json, vector_json, created_at) VALUES ${placeholders}`,
+          `INSERT INTO vector_store_staging (id, text, metadata_json, vector_json, created_at) VALUES ${placeholders}`,
           params,
         );
       }
+      // 2) staging 写满后原子换名：DROP 旧表 + RENAME，期间任何失败 staging 重建即可，原表仍可用
+      await executeSql('DROP TABLE IF EXISTS vector_store');
+      await executeSql('ALTER TABLE vector_store_staging RENAME TO vector_store');
     } else {
       // 浏览器降级：localStorage（仅元数据，与现有行为一致）
       const data = vectorStore.map((e) => ({
@@ -276,9 +288,21 @@ export async function restoreVectorStore(): Promise<void> {
 
     if (isTauri()) {
       // SQLite 恢复
-      const { getDb } = await import('@/lib/sqlite');
+      const { getDb, executeSql } = await import('@/lib/sqlite');
       const db = await getDb();
       if (db) {
+        // 审查 P2 补救：上次进程死在 DROP-RENAME 之间（staging 已写满、原表已删）时换名恢复
+        try {
+          const tbls = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<Array<{ name: string }>>(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('vector_store', 'vector_store_staging')",
+          );
+          const names = new Set(tbls.map((t) => t.name));
+          if (!names.has('vector_store') && names.has('vector_store_staging')) {
+            await executeSql('ALTER TABLE vector_store_staging RENAME TO vector_store');
+          }
+        } catch {
+          // 补救失败则走下方正常 SELECT（可能抛 no such table，由外层 catch 兜底）
+        }
         const rows = await (db as { select: <T>(sql: string, params?: unknown[]) => Promise<T> }).select<Array<{ id: string; text: string; metadata_json: string; vector_json: string | null }>>(
           'SELECT id, text, metadata_json, vector_json FROM vector_store ORDER BY created_at'
         );
