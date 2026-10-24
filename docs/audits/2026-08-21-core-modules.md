@@ -64,7 +64,7 @@
 
 ### P4【中】[E] updater endpoint 仍是占位符
 
-- 位置：src-tauri/tauri.conf.json:61 `"https://github.com/你的用户名/linggandawang/..."`
+- 位置：src-tauri/tauri.conf.json:61 `"https://github.com/puj611/linggandawang/..."`
 - 影响：打 tag 发版后所有客户端 check() 404 → 更新链路静默失败，v0.1.0 用户收不到更新（含安全补丁）。
 - 修复建议（成本：低）：推送 GitHub 前替换真实用户名。本迭代必办。
 

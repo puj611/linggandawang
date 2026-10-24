@@ -2,6 +2,35 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.9.0] - 2026-10-24 - P0 发布链止血 + 依赖声明 + 版本治理
+
+### 发布链止血（R01）
+- **updater endpoints 真实仓库化**：`src-tauri/tauri.conf.json` 的 `plugins.updater.endpoints` 由占位 `你的用户名` 改为 `puj611`（`https://github.com/puj611/linggandawang/releases/latest/download/latest.json`）；`.github/workflows/release.yml` 注释中的同名占位同步替换，`docs/audits/2026-08-21-core-modules.md` 引用的一处同步更新，代码与配置文件中 `你的用户名` 零命中。
+- **签名密钥重新生成**：旧私钥本机已丢失（从未发版、无存量用户，替换无副作用）；2026-10-24 以空密码重新生成密钥对至本机 `~/.tauri/linggan.key`，新公钥（`~/.tauri/linggan.key.pub` 文件原始内容，即 minisign 公钥两行明文的 base64，原样填入不再二次编码）整体替换 `tauri.conf.json` 的 `plugins.updater.pubkey`（指纹 sha256 前 16 位 `9be6a4d21b83538b`）。
+- **release-process.md 更新**：第一节第 3 小节 jsonc 示例 endpoints 改为真实 URL、pubkey 说明同步；状态段改写为「endpoints 已配置为 puj611/linggandawang（2026-10-24）；pubkey 于 2026-10-24 重新生成并替换」，并记录新公钥指纹。
+
+### 构建可复现（R02）
+- **@xenova/transformers@2.17.2 正式声明**：`src/lib/vectorStore.ts` 动态导入的本地嵌入模型依赖此前未进入 package.json / package-lock.json（CI 靠 `--no-save` 绕过），现正式声明到 dependencies，`npm ci` 干净环境可复现构建。
+- **release.yml 删除 --no-save 绕过**：移除「Install undeclared runtime dependency (@xenova/transformers)」步骤及其上方 TODO 注释块，CI 依赖安装回归纯 `npm ci`。
+
+### 版本治理（R03）
+- **三处版本号统一 0.9.0**：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 的 version 由 0.1.0 统一升级为 0.9.0（CHANGELOG 现有最高条目 0.8.0，顺延编号；现有条目不重编号）。
+- **CHANGELOG 去重与日期修正**：`[0.5.0] - 2026-07-15 - M13 最终冻结` 独有内容以「复赛最终冻结（M13，2026-07-15 补录）」并入存活的 `[0.5.0] - 2026-08-05` 条目后删除重复条目；`[0.6.0] - 2026-07-15 - P0 代码体检整改` 以「代码体检整改（2026-07-15 补录）」并入 `[0.6.0] - 2026-08-15` 条目后删除；`[0.7.0]` / `[0.8.0]` 日期由 2026-07-15 修正为 2026-08-20（git commit c928fa6 实证）。
+- **新增 check-version 脚本**：`scripts/check-version.mjs`（零依赖 Node ESM，仅用 node:fs / node:path / node:url）比对 package.json / tauri.conf.json / Cargo.toml / CHANGELOG 首个条目四处版本号；package.json 新增 `check:version` 脚本；.gitignore 增加 `!scripts/check-version.mjs` 例外（原有 `*.mjs` 规则会漏掉该脚本）。
+
+### 累积修复
+- **三层布局结构修复**（2026-08-21，commit 5906af8）：面板贴边无呼吸感与边缘按钮热区裁剪问题，涉及窗口配置（tauri.conf.json）与 ExpandedCard / QuestionPanel / ResultPanel / useResize / windowStore。
+- **安全审查修复**（2026-08-25，commit cac0941）：SSRF IPv4-mapped IPv6 绕过修复（Rust llm_proxy DNS 校验补强 + openai-adapter 归一化）、持久化原子性、MCP 行长度限制、脱敏增强。
+
+### 验证
+- npm run lint：0 error（39 warnings，退出码 0）
+- npx tsc --noEmit：0 错误（@xenova/transformers 与手写声明 src/types/xenova-transformers.d.ts 无冲突）
+- npm test（vitest run）：373/373 通过（24 个测试文件；本机沙箱下默认多 worker 模式偶发临时缓存 EPERM，单 worker 模式稳定通过）
+- npm run build：成功（266 modules，transformers vendor chunk 823.20 kB）
+- node scripts/check-version.mjs：退出码 0（`OK: version 0.9.0 consistent across 4 locations`）
+- npm ls @xenova/transformers：已声明 2.17.2
+- 代码与配置文件检索 `你的用户名`：零命中（CHANGELOG 本条目的历史性描述除外）
+
 ## [0.6.0] - 2026-08-15 - 密钥 Rust 代理 + SQL 权限细化 + SSRF 归一化 + a11y
 
 ### 安全加固
@@ -22,6 +51,30 @@
 - tsc -b：0 错误
 - vitest run：330/330 通过
 - vite build：成功
+
+### 代码体检整改（2026-07-15 补录）
+
+#### P0-1: ESLint 工具链补齐
+- **安装 ESLint**：eslint + @typescript-eslint/parser + @typescript-eslint/eslint-plugin + eslint-plugin-react-hooks + eslint-plugin-react-refresh
+- **eslint.config.js**：flat config 格式，配置 TypeScript + React Hooks + 命名导入规则
+- **lint 脚本更新**：`eslint src/` 替代旧的 `eslint . --ext ts,tsx`
+- **修复 QuestionPanel hooks 错误**：useState 在条件返回后调用（React Hooks 规则违反），移至组件顶部
+
+#### P0-2: 单元测试补齐
+- **seedRouter 测试**（29 用例）：detectNegation / detectScene / matchAdjectiveClusters / aggregateTagScores / routeSeedWithClusters
+- **RequirementSyncer 测试**（16 用例）：decomposeLocal / updateSubtaskStatus / getNextSubtask / getProgress
+- **测试总数**：167 → 212（+45）
+
+#### P1 清理
+- **删除 17 个 .bak 备份文件**（src/components/ / src/engine/ / src-tauri/ / docs/）
+- **删除 seedRouter 死代码**：`topTagScores` 函数（exported but never called）
+- **修复 build-release.ps1**：硬编码绝对路径 → `$PSScriptRoot` 相对路径
+- **新增 LICENSE**：MIT 全文 + copyright 2026
+
+#### 验证
+- tsc --noEmit：0 错误
+- vitest run：212/212 通过
+- npm run lint：通过（30 warnings，0 errors）
 
 ## [0.5.2] - 2026-08-15 - 安全授权 + 竞态/事务 + Ball 键盘化
 
@@ -79,6 +132,30 @@
 - vitest run：328/328 通过（新增 `applyLLMAnalysis` 4 个 + 本地超时 1 个测试）
 - vite build：成功
 
+### 复赛最终冻结（M13，2026-07-15 补录）
+
+#### 性能测试（T13.1）
+- **cargo check**：2.2s（< 10s ✓）
+- **tsc --noEmit**：3.3s（< 10s ✓）
+- **vitest run**：4.0s，167/167 通过（< 10s ✓）
+- **vite build**：1.5s，394KB JS / 34KB CSS（< 10s ✓）
+
+#### 安全审计（T13.2）
+- **硬编码密钥扫描**：无生产代码泄露（仅测试 fixture 中的 mock key）
+- **XSS 防护**：无 eval / innerHTML / dangerouslySetInnerHTML
+- **路径遍历防护**：canonicalize() 解析符号链接 + starts_with() 白名单校验
+- **敏感文件跳过**：.env / .pem / .key / id_rsa 等 30+ 种敏感文件名/扩展名黑名单
+- **SSRF 防护**：IPv4/IPv6 内网地址归一化拒绝 + HTTP 仅允许 localhost
+- **API Key 脱敏**：sanitizeErrorText 正则脱敏 sk-* 和 Bearer Token
+- **CSP 收紧**：Content-Security-Policy 限制 script-src / connect-src
+
+#### 最终冻结（T13.3）
+- TypeScript 编译：0 错误
+- 单元测试：167/167 通过
+- 生产构建：成功（394KB JS / 34KB CSS，gzip 后 127KB / 7KB）
+- 问题库：45 条（perceive 9 / name 10 / spec 12 / execute 7 / verify 7）
+- 复赛交付就绪
+
 ## [0.3.0] - 2026-07-15 - M11 需求同步器
 
 ### 新功能（需求同步器）
@@ -128,55 +205,7 @@
 - vitest run：167/167 通过
 - vite build：成功（394KB JS / 34KB CSS）
 
-## [0.5.0] - 2026-07-15 - M13 最终冻结
-
-### 性能测试（T13.1）
-- **cargo check**：2.2s（< 10s ✓）
-- **tsc --noEmit**：3.3s（< 10s ✓）
-- **vitest run**：4.0s，167/167 通过（< 10s ✓）
-- **vite build**：1.5s，394KB JS / 34KB CSS（< 10s ✓）
-
-### 安全审计（T13.2）
-- **硬编码密钥扫描**：无生产代码泄露（仅测试 fixture 中的 mock key）
-- **XSS 防护**：无 eval / innerHTML / dangerouslySetInnerHTML
-- **路径遍历防护**：canonicalize() 解析符号链接 + starts_with() 白名单校验
-- **敏感文件跳过**：.env / .pem / .key / id_rsa 等 30+ 种敏感文件名/扩展名黑名单
-- **SSRF 防护**：IPv4/IPv6 内网地址归一化拒绝 + HTTP 仅允许 localhost
-- **API Key 脱敏**：sanitizeErrorText 正则脱敏 sk-* 和 Bearer Token
-- **CSP 收紧**：Content-Security-Policy 限制 script-src / connect-src
-
-### 最终冻结（T13.3）
-- TypeScript 编译：0 错误
-- 单元测试：167/167 通过
-- 生产构建：成功（394KB JS / 34KB CSS，gzip 后 127KB / 7KB）
-- 问题库：45 条（perceive 9 / name 10 / spec 12 / execute 7 / verify 7）
-- 复赛交付就绪
-
-## [0.6.0] - 2026-07-15 - P0 代码体检整改
-
-### P0-1: ESLint 工具链补齐
-- **安装 ESLint**：eslint + @typescript-eslint/parser + @typescript-eslint/eslint-plugin + eslint-plugin-react-hooks + eslint-plugin-react-refresh
-- **eslint.config.js**：flat config 格式，配置 TypeScript + React Hooks + 命名导入规则
-- **lint 脚本更新**：`eslint src/` 替代旧的 `eslint . --ext ts,tsx`
-- **修复 QuestionPanel hooks 错误**：useState 在条件返回后调用（React Hooks 规则违反），移至组件顶部
-
-### P0-2: 单元测试补齐
-- **seedRouter 测试**（29 用例）：detectNegation / detectScene / matchAdjectiveClusters / aggregateTagScores / routeSeedWithClusters
-- **RequirementSyncer 测试**（16 用例）：decomposeLocal / updateSubtaskStatus / getNextSubtask / getProgress
-- **测试总数**：167 → 212（+45）
-
-### P1 清理
-- **删除 17 个 .bak 备份文件**（src/components/ / src/engine/ / src-tauri/ / docs/）
-- **删除 seedRouter 死代码**：`topTagScores` 函数（exported but never called）
-- **修复 build-release.ps1**：硬编码绝对路径 → `$PSScriptRoot` 相对路径
-- **新增 LICENSE**：MIT 全文 + copyright 2026
-
-### 验证
-- tsc --noEmit：0 错误
-- vitest run：212/212 通过
-- npm run lint：通过（30 warnings，0 errors）
-
-## [0.7.0] - 2026-07-15 - 智能化升级：RAG+向量检索
+## [0.7.0] - 2026-08-20 - 智能化升级：RAG+向量检索
 
 ### RAG-Lite 向量存储（方案 F）
 - **@xenova/transformers 集成**：本地嵌入模型 all-MiniLM-L6-v2（~90MB，CPU 可跑）
@@ -202,7 +231,7 @@
 - vitest run：217/217 通过
 - 新增 vectorStore 测试 5 用例（cosineSimilarity 边界）
 
-## [0.8.0] - 2026-07-15 - 智能化升级：规则模板库 + 行为学习
+## [0.8.0] - 2026-08-20 - 智能化升级：规则模板库 + 行为学习
 
 ### 规则模板库（方案 B）
 - **TemplateRetriever**（`src/engine/TemplateRetriever.ts`）：10 套预置场景模板

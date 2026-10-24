@@ -53,12 +53,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # TODO(@xenova): @xenova/transformers 被 src/lib/vectorStore.ts 动态导入，
-      # 但尚未声明进 package.json / package-lock.json；vite build 会解析该导入，
-      # 缺失时直接失败。待依赖正式入库（npm install @xenova/transformers）后删除本步骤。
-      - name: Install undeclared runtime dependency (@xenova/transformers)
-        run: npm install @xenova/transformers@2.17.2 --no-save
-
       # tauri.conf.json 的 beforeBuildCommand 为空，必须显式构建前端产物
       - name: Build frontend
         run: npm run build
@@ -68,7 +62,7 @@ jobs:
       # - tauri-action@v0 没有 includeUpdater 输入；其 uploadUpdaterJson（默认 true）会在
       #   检测到签名产物时自动生成并上传 latest.json 到 release assets，
       #   对应 tauri.conf.json 中 endpoints 的
-      #   https://github.com/<你的用户名>/linggandawang/releases/latest/download/latest.json
+      #   https://github.com/puj611/linggandawang/releases/latest/download/latest.json
       # - 签名密钥（一次性生成，本机执行）：
       #     npx @tauri-apps/cli signer generate -w ~/.tauri/linggan.key
       #   私钥文件内容（或路径）→ 仓库 Secret TAURI_SIGNING_PRIVATE_KEY；

@@ -45,17 +45,19 @@ npx @tauri-apps/cli signer generate -w ~/.tauri/linggan.key
 "plugins": {
   "updater": {
     "endpoints": [
-      // 替换「你的用户名」为 GitHub 用户名/组织名
-      "https://github.com/你的用户名/linggandawang/releases/latest/download/latest.json"
+      // GitHub 用户名/组织名：puj611（仓库 puj611/linggandawang）
+      "https://github.com/puj611/linggandawang/releases/latest/download/latest.json"
     ],
     "dialog": false,
-    // 替换为 ~/.tauri/linggan.key.pub 的完整内容（不能是文件路径）
-    "pubkey": ""
+    // 2026-10-24 重新生成的公钥：~/.tauri/linggan.key.pub 文件的原始内容（原样使用，不再二次编码；
+    // 该内容即 minisign 公钥两行明文的 base64，tauri-plugin-updater 会先 base64 解码再交给 minisign 解析；
+    // 指纹 sha256 前 16 位：9be6a4d21b83538b；不能是文件路径）
+    "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFGMDA3QTgwMEZGQkMyRjIKUldUeXd2c1BnSG9BcjJRVktGeDZVVlNlNmlNWFVadTljcmZhbjV2elp4a2FOR0tteHpKREp2cFUK"
   }
 }
 ```
 
-当前仓库中 pubkey 已填入（2026-08-20 本地生成，`dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0MTY3MjExOTdERDBBRTMKUldUakN0MlhFWElXUk9CUE1EeE5DS2J6dEJJSDY0K2ErN3RDYTcrN1ZWVzZMbEV2RDhMV3VHai8K`），endpoints 用户名仍为占位 `你的用户名`（须推送到 GitHub 后替换为实际用户名/组织名再发版）。**pubkey 为空时更新链路不生效**，应用内「检查更新」会在运行时失败并被静默捕获（console.warn），不影响其他功能。
+当前仓库中 endpoints 已配置为 `https://github.com/puj611/linggandawang/releases/latest/download/latest.json`（2026-10-24）；pubkey 于 2026-10-24 重新生成并替换（旧私钥本机已丢失，因从未发版、无存量用户，替换无副作用），新公钥为 `~/.tauri/linggan.key.pub` 文件原始内容（minisign 公钥两行明文的 base64，原样填入、不再二次编码），指纹（sha256 前 16 位）为 `9be6a4d21b83538b`，私钥位于本机 `~/.tauri/linggan.key`（空密码，仅存本机）。发版前须将私钥配置为仓库 Secret `TAURI_SIGNING_PRIVATE_KEY`，否则打 tag 时构建会失败（预期门禁）。**pubkey 为空时更新链路不生效**，应用内「检查更新」会在运行时失败并被静默捕获（console.warn），不影响其他功能。
 
 ## 二、版本发布流程
 
