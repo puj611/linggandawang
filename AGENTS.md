@@ -88,3 +88,6 @@ cd src-tauri && cargo check
 7. **Rust IPv6 内网判断必须先 `to_ipv4_mapped()` 还原**（2026-08-21 审查 P1）：`::ffff:127.0.0.1` 的 `is_loopback()` 返回 false（std 只认 `::1`），漏判即 SSRF 绕过；NAT64 `64:ff9b::/96` 同理需整体拒绝，见 llm_proxy.rs `is_private_ip`
 8. **tauri-plugin-sql 的 execute 每条独立提交，无跨语句事务**（2026-08-21 审查 P2）：需要原子性时用 staging 表 + `DROP/RENAME`，不要 DELETE+INSERT 裸奔；本例见 vectorStore.ts `persistVectorStore`
 9. **MCP stdio server 双红线**（2026-08-21 审查 P3）：stdout 只允许写协议消息（日志重定向 stderr），且必须限制单行长度防超大 payload OOM，见 mcp-server/index.ts
+10. **Tauri updater pubkey 是「.pub 文件原始内容、原样使用」**（2026-10-24 P0 踩坑）：`tauri signer generate` 产出的 `.pub` 文件内容本身就是 minisign 公钥两行明文的 base64；`tauri-plugin-updater` 的 `verify_signature` 先 base64 解码配置值再交 `minisign PublicKey::decode` 解析两行明文。对 `.pub` 内容再做一次 base64（双重编码）会导致更新验签运行时失败。私钥文件内容同样原样配置到 `TAURI_SIGNING_PRIVATE_KEY`
+11. **版本一致性守门**（2026-10-24 起）：package.json / src-tauri/tauri.conf.json / src-tauri/Cargo.toml / CHANGELOG 首条条目四处版本号必须一致，`npm run check:version`（scripts/check-version.mjs）校验，不一致 exit 1；发版前必跑
+12. **本机 WorkBuddy 沙箱下 vitest 默认多 worker 偶发 EPERM**（2026-10-24 实测）：TEMP 模块缓存并发写入被沙箱 broker 拦截，测试全过但退出码 1；用 `npx vitest run --pool=forks --poolOptions.forks.singleFork=true` 稳定通过；CI 干净环境不受影响，勿因此改 test 脚本
