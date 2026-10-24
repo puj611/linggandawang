@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { AppState } from '@/types/state';
 import type { SceneChoice } from '@/engine/types';
 import type { TargetTool } from '@/engine/targetToolProfiles';
+import type { PromptResult } from '@/types/prompt';
 
 // 三模式系统：localStorage 持久化用户选择的场景
 const SCENE_STORAGE_KEY = 'linggan_scene_choice';
@@ -36,6 +37,11 @@ type LLMModeOverride = 'cloud' | 'local' | 'basic' | null;
 interface AppStore {
   state: AppState;
   settingsOpen: boolean;
+  /** R04：前后对比面板开合（ComparePanel 挂载开关） */
+  compareOpen: boolean;
+  /** R04：对比 A/B 槽位（存于全局 store，面板卸载后不丢态，保障「载入 A→关面板→再生成→开面板→载入 B」链路） */
+  compareLeft: PromptResult | null;
+  compareRight: PromptResult | null;
   skipConfirmOpen: boolean;
   /** 三模式系统：全局共享的场景选择（ExpandedCard 写入，ReferenceImagePanel 等读取） */
   sceneChoice: SceneChoice;
@@ -50,6 +56,13 @@ interface AppStore {
   backToExpanded: () => void;
   openSettings: () => void;
   closeSettings: () => void;
+  /** R04：打开/关闭前后对比面板 */
+  openCompare: () => void;
+  closeCompare: () => void;
+  /** R04：写入对比槽位（result 为 null 表示清空该槽） */
+  setCompareSlot: (slot: 'left' | 'right', result: PromptResult | null) => void;
+  /** R04：交换 A/B 槽位 */
+  swapCompareSlots: () => void;
   openSkipConfirm: () => void;
   closeSkipConfirm: () => void;
   /** 三模式系统：设置场景选择并持久化到 localStorage */
@@ -63,6 +76,9 @@ interface AppStore {
 export const useAppStore = create<AppStore>((set, get) => ({
   state: 'ball',
   settingsOpen: false,
+  compareOpen: false,
+  compareLeft: null,
+  compareRight: null,
   skipConfirmOpen: false,
   sceneChoice: loadStoredSceneChoice(),
   targetTool: loadStoredTargetTool(),
@@ -74,10 +90,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     else set({ state: 'ball' });
   },
   expand: () => set({ state: 'expanded' }),
-  collapse: () => set({ state: 'ball', settingsOpen: false, skipConfirmOpen: false }),
-  backToExpanded: () => set({ state: 'expanded', settingsOpen: false, skipConfirmOpen: false }),
+  collapse: () => set({ state: 'ball', settingsOpen: false, compareOpen: false, skipConfirmOpen: false }),
+  backToExpanded: () => set({ state: 'expanded', settingsOpen: false, compareOpen: false, skipConfirmOpen: false }),
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false }),
+  openCompare: () => set({ compareOpen: true }),
+  closeCompare: () => set({ compareOpen: false }),
+  // 注意：关闭面板（closeCompare）/收起（collapse）/返回（backToExpanded）均不清空槽位——
+  // 槽位是跨面板生命周期保留的对比数据，仅用户点槽位 × 时清空
+  setCompareSlot: (slot, result) =>
+    set(slot === 'left' ? { compareLeft: result } : { compareRight: result }),
+  swapCompareSlots: () => set((st) => ({ compareLeft: st.compareRight, compareRight: st.compareLeft })),
   openSkipConfirm: () => set({ skipConfirmOpen: true }),
   closeSkipConfirm: () => set({ skipConfirmOpen: false }),
   setSceneChoice: (s) => {

@@ -58,6 +58,12 @@ fn sqlite_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0005_create_vector_store.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "create_comparison_runs",
+            sql: include_str!("../migrations/0006_create_comparison_runs.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

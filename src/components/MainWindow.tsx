@@ -6,6 +6,7 @@ import { ExpandedCard } from './ExpandedCard';
 import { QuestionPanel } from './QuestionPanel';
 import { ResultPanel } from './ResultPanel';
 import { SettingsPanel } from './SettingsPanel';
+import { ComparePanel } from './ComparePanel';
 import { useEscKey } from '@/hooks/useHotkey';
 import type { ScreenshotPayload } from '@/hooks/useScreenshotPaste';
 
@@ -17,6 +18,7 @@ interface MainWindowProps {
 export function MainWindow({ droppedImage, onImageConsumed }: MainWindowProps) {
   const state = useAppStore((s) => s.state);
   const settingsOpen = useAppStore((s) => s.settingsOpen);
+  const compareOpen = useAppStore((s) => s.compareOpen);
   const collapse = useAppStore((s) => s.collapse);
 
   // ESC 任意状态回收起态
@@ -31,6 +33,7 @@ export function MainWindow({ droppedImage, onImageConsumed }: MainWindowProps) {
       {state === 'question' && <QuestionPanel />}
       {state === 'result' && <ResultPanel />}
       {settingsOpen && <SettingsPanel />}
+      {compareOpen && <ComparePanel />}
     </>
   );
 }

@@ -36,6 +36,8 @@ export function ResultPanel() {
   const { dragProps, offset, dragging } = useDrag();
   const { onPointerDown: onResizePointerDown, width, height, resizing } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
+  // R04：打开前后对比面板（最小入口，仅新增一个按钮）
+  const openCompare = useAppStore((s) => s.openCompare);
 
   // v2.3：复制提示状态定时器引用，组件卸载时清理，避免 setState on unmounted
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -191,6 +193,13 @@ export function ResultPanel() {
               className="ghost-btn px-3 py-1 text-xs text-text-primary"
             >
               导出 .md
+            </button>
+            <button
+              onClick={openCompare}
+              className="ghost-btn px-3 py-1 text-xs"
+              title="打开前后对比面板：将当前结果与另一次生成并排对比并留档"
+            >
+              对比
             </button>
             <button
               onClick={restart}
