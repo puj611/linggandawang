@@ -54,15 +54,39 @@
 ## 4.2 当前状态快照
 
 - **分支**：`main`
-- **最近提交**：`f77e6af` feat(compare): R04 前后对比测试 MVP（2026-10-24 下午）；`48146a3` docs: 交接文档 + 踩坑；`cbd277d` feat(release): P0 发布链止血 0.9.0
-- **工作区状态**：干净（P0 三件套 + R04 均已提交；仅剩根目录杂物 `nul)` 未处理，待用户确认）
-- **整体进度**：P0 阶段「可靠性与可测试性」进行中：R01–R04 已完成闭环并提交（R04 经 QA 两轮独立验证，含 1 个 P1 阻断缺陷修复）；R05 变量模板 / R06 导出导入 / R07 质量门待排期。旧计划文档（`docs/后续开发计划/`、`docs/长期推进计划.md`）已被路线图取代（标记工作见 4.6 待确认问题）。
-- **最后更新时间**：2026-10-24 18:40 (GMT+8)
-- **本轮任务简述**：完成 R04 前后对比测试 MVP（对比引擎 + 双栏面板 + SQLite/localStorage 留档 + 迁移 0006），QA 两轮独立验证（Round 1 抓出槽位丢失 P1，Round 2 确认闭环），已提交 `f77e6af`。
+- **最近提交**：`7a6b557` docs(agents): 坑点 13（tauri-action 缺 tauri 脚本）；`7d46faf` fix(build): 补 `tauri` 脚本；`35f8714` docs(handoff)；`f77e6af` feat(compare): R04
+- **工作区状态**：干净，`main` 与 `origin/main` 完全同步；标签 `v0.9.0` 已推送（指向 `7d46faf`）；仅剩根目录杂物 `nul)` 待用户确认
+- **整体进度**：P0 阶段：R01–R04 已完成并提交；**首次发布演练已跑通**——三平台构建全绿（run 40095231948），产物已上传到 **draft release**，待用户核对后决定是否 Publish。R05 变量模板 / R06 导出导入 / R07 质量门待排期。
+- **最后更新时间**：2026-10-24 21:05 (GMT+8)
+- **本轮任务简述**：配置 GitHub Secret + 推送 main/标签完成首次发布演练；首次构建因 `tauri` 脚本缺失三平台同败，修复后第二次构建三平台全绿。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
+
+### 发布演练轮（2026-10-24 晚）— v0.9.0 首次三平台构建
+
+**任务目标与用户决策**：配置 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`（用户手动在仓库网页完成；密钥经本机剪贴板传递，全程未进入对话/文件）；推送 main 与发布标签，跑通首次完整发布演练；用户明确授权打标签。
+
+**实际完成内容**：
+- Secret 配置完成（用户操作，列表显示已更新）；`main` 推送 `cac0941..7a6b557`；标签 `v0.9.0` 推送并 force 更新到修复提交 `7d46faf`
+- **首次构建失败 → 定位并修复真实缺陷**：tauri-action 默认执行 `npm run tauri build`，而 `package.json` 缺 `tauri` 脚本 → 三平台同步报 `Missing script: tauri`（exit 1）。修复：新增 `"tauri": "tauri"`（commit `7d46faf`），本地 `npm run tauri -- --version` 验证 tauri-cli 2.11.3
+- **第二次构建三平台全绿**（run 40095231948，约 13 分钟）：windows-latest / ubuntu-latest / macos-latest 均 success，产物上传到 **draft release**
+- `AGENTS.md` 新增坑点 13（tauri 脚本缺失导致发布失败）
+
+**关键决策及理由**：
+- 标签用 `v0.9.0` 而非 `v0.9.0-rc.1`：`release.yml` 的 `tagName: v__VERSION__` 使发布标签取自版本号，推 rc 标签仍会生成名为 v0.9.0 的 release，徒增混乱；`releaseDraft: true` 已保证草稿不公开，草稿阶段本身即演练。
+- 网络多次 502：改用「探测 + 自动重试」后台任务（每 30s 检测，恢复即自动 push main + force tag），避免人工反复尝试；实测第 10 次探测恢复。
+
+**验证方式与结果**：
+- 三平台 job 全 success；CI（main 推送）同时通过（422 测试 + cargo check）
+- 匿名 API 无法列出 draft（`/releases` 与 `/releases/tags/v0.9.0` 均 404，GitHub 权限设计），草稿产物需登录网页核对
+- 待核对清单：Windows `*-setup.exe`、macOS `.dmg`+`.app.tar.gz`、Linux `.deb`+`.AppImage`，各自 `.sig`，以及 `latest.json`
+
+**遗留问题**：
+- 草稿 release 是否 Publish 由用户决定；发布后 `releases/latest/download/latest.json` 才生效
+- **更新链路本次无法验证**：此前从未发版，不存在旧版本客户端；需等下一个版本（0.9.1+）才能真实验证「旧版检测到更新」
+- `nul)` 杂物仍未删（待用户确认）
 
 ### R04 轮（2026-10-24 下午）— 前后对比测试 MVP
 
@@ -135,8 +159,8 @@
 ### P0（阻塞/尽快）
 | 事项 | 相关文件/模块 | 备注 |
 |---|---|---|
-| 配置 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY` | 仓库 Settings → Secrets（用户手动） | 私钥在本机 `C:\Users\puj\.tauri\linggan.key`，内容**切勿外传**；配置前打 tag 构建会按预期失败 |
-| 打 `v0.9.0-rc.1` 预发布标签跑发布演练 | git tag + push | 需先完成 Secret 配置；演练后人工审核 draft release 产物四平台 + latest.json |
+| 核对 draft release 产物并决定是否 Publish | GitHub Releases（需登录网页） | 三平台构建已全绿（run 40095231948）；核对四类安装包 + 各自 `.sig` + `latest.json` 后决定是否发布；**Publish 后 `latest.json` 才对外生效** |
+| 发布后用 0.9.0 客户端验证自动更新 | 下一版本 0.9.1 | 本次无存量旧版本客户端，更新链路只能等下一版真实验证 |
 | R05 变量模板 MVP | `src/engine/TemplateRetriever.ts` 扩展、新增 `TemplateComposer.ts`、`src/components/TemplateLibrary.tsx` | 仅 `{{ }}` 语法 + 插入按钮 |
 | R06 数据导出与导入 | 新增 `src/lib/dataExport.ts`、`src/components/settings/DataPanel.tsx` | 导出绝不含 API Key；导入先备份 |
 | R07 质量门 | `.github/workflows/ci.yml`、`vitest.config.ts`、`package.json` | lint + cargo test + 覆盖率（总体 ≥75%/engine ≥85%）+ Windows job + 集成测试 + **RTL 组件测试基建（@testing-library/react，R04 轮教训）**；check-version.mjs 入 CI |
@@ -183,15 +207,17 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 7. **Rust IPv6 内网判断必须先 `to_ipv4_mapped()`**：`::ffff:127.0.0.1` 的 `is_loopback()` 返回 false，漏判即 SSRF 绕过。
 8. **tauri-plugin-sql execute 无跨语句事务**：需原子性时用 staging 表 + DROP/RENAME。
 9. **MCP stdio server**：stdout 只写协议消息，日志重定向 stderr，限制单行长度。
+10. **tauri-action 默认执行 `npm run tauri build`**（2026-10-24 首次发布演练实测）：`package.json` 缺 `tauri` 脚本时三平台同步报 `Missing script: tauri` 并 exit 1。已补 `"tauri": "tauri"`；发布前用 `npm run tauri -- --version` 自检。
+11. **终端到 github.com 的通道不稳定**（2026-10-24 实测）：同一代理端口会间歇性 502（api.github.com / gh-proxy 正常）。发布类推送建议带「探测 + 重试」脚本，勿反复手工试。
 
 ---
 
 ## 4.6 给下一个 Agent 的提示
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
-2. **当前最该做的一件事**：R01–R04 已提交（`cbd277d` / `48146a3` / `f77e6af`）；下一张卡建议 **R05 变量模板 MVP**（与 R04 同属可测试性链，路线图节奏）或 **R07 质量门**（含 RTL 组件测试基建与覆盖率门槛，G2 发版门要求）。每次一张卡。
+2. **当前最该做的一件事**：三平台构建已全绿（run 40095231948），请登录 GitHub 核对 **draft release** 产物（四类安装包 + 各自 `.sig` + `latest.json`），确认无误后 Publish 或保留草稿；随后按路线图推进 **R05 变量模板** 或 **R07 质量门**（含 RTL 组件测试基建与覆盖率门槛，G2 发版门要求）。每次一张卡。
 3. **需向用户确认的悬而未决问题**：
-   - GitHub Secret 配置由用户手动完成后，是否授权打 `v0.9.0-rc.1` 预发布标签演练？
+   - draft release 是否 Publish？（发布后 `releases/latest/download/latest.json` 才对外生效）
    - 是否将 `docs/后续开发计划/PRD-后续开发.md`、`docs/长期推进计划.md` 标记为「历史文档（已被 2026-10-24 路线图取代）」并在文件头加指向行？
    - 根目录 `nul)` 垃圾文件是否删除？
    - CSP huggingface.co 拦截问题是否单独开任务卡修复？
