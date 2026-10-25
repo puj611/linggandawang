@@ -25,6 +25,8 @@ interface WindowStore {
   applyPanelSize: () => Promise<void>;
   // v5：回收起态恢复 OS 窗口为悬浮球默认尺寸（Ball 挂载时调用）
   resetToBallSize: () => Promise<void>;
+  // 冒烟反馈：最小化到任务栏（与「收起成球」互补的另一种轻态）
+  minimize: () => Promise<void>;
 }
 
 const DEFAULT_POSITION: WindowPosition = { x: -1, y: -1, screen: 'default' };
@@ -184,6 +186,15 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       await win.setSize(new LogicalSize(DEFAULT_WIDTH, DEFAULT_WINDOW_HEIGHT));
     } catch (e) {
       console.warn('[windowStore] 恢复悬浮球窗口尺寸失败', e);
+    }
+  },
+  minimize: async () => {
+    const win = await getCurrentWindow();
+    if (!win) return;
+    try {
+      await win.minimize();
+    } catch (e) {
+      console.warn('[windowStore] minimize failed', e);
     }
   },
   setAlwaysOnTop: async (value) => {

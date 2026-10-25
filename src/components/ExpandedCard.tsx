@@ -100,6 +100,7 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
   const screenshotAdvanced = useFeatureStore((s) => s.screenshotAdvanced);
   const alwaysOnTop = useWindowStore((s) => s.alwaysOnTop);
   const toggleAlwaysOnTop = useWindowStore((s) => s.toggleAlwaysOnTop);
+  const minimizeWindow = useWindowStore((s) => s.minimize);
   const { dragProps, offset } = useDrag();
   const { onPointerDown: onResizePointerDown, width, height } = useResize();
   const projectPath = useProjectStore((s) => s.fingerprint?.path);
@@ -275,6 +276,18 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
           </button>
+          {isTauri() && (
+          <button
+            onClick={minimizeWindow}
+            className="p-2 rounded-btn text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors"
+            aria-label="最小化"
+            title="最小化到任务栏"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+          )}
           {isTauri() && (
           <button
             onClick={collapse}

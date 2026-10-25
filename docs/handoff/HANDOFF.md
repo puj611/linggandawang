@@ -57,12 +57,29 @@
 - **最近提交**：本轮 handoff 提交（见 4.3 最新一轮）；`3dd6f7e` fix(release): productName 改 ASCII + macOS 补 app bundle（内容等同本地 9aa2f6c，经 Git Data API 推送，GitHub 序列化差异见坑点 13）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；标签 `v0.9.0` 指向 `3dd6f7e`；仅剩未跟踪工具目录 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）
 - **整体进度**：P0 发布链闭环——**v0.9.0 已正式发布**（run 40162757301 三平台全绿 + Publish 生效，`releases/latest` 匿名可查，`latest.json` 更新器端点已对外可用）。R05 变量模板 / R06 导出导入 / R07 质量门待排期；CSP 任务卡已开（见 4.4）。
-- **最后更新时间**：2026-10-25 13:00 (GMT+8)
-- **本轮任务简述**：核对 draft release 发现三问题（缺 latest.json / 缺 macOS 更新包 / 资产名 `_` 开头）→ 定性为 GitHub 剥离中文资产名 + macOS 缺 updater target → 修复重建 v0.9.0 并正式 Publish。
+- **最后更新时间**：2026-10-25 13:25 (GMT+8)
+- **本轮任务简述**：装机冒烟全通过后，按用户反馈补最小化按钮（随 0.9.1 发）；确认工具选择持久化（Task 8）已实现并实证生效。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
+
+### 冒烟反馈小卡轮（2026-10-25 下午）— 最小化按钮 + 工具选择持久化确认
+
+**任务目标与用户决策**：装机冒烟后用户反馈「没有最小化按键」，并问「需要按工具区分吗」。用户确认「可以，开始任务」后实施。
+
+**实际完成内容**：
+- **卡 A 最小化按钮**（随 0.9.1 发）：`windowStore.ts` 新增 `minimize` action（`getCurrentWindow().minimize()`，try/catch 静默降级）；`ExpandedCard.tsx` 头部在「收起」左侧新增最小化按钮（`isTauri()` 门控，aria-label="最小化"，title="最小化到任务栏"）。`core:window:allow-minimize` 权限核实已预置于 capabilities，无需改动。头部语义自此完整：收起=变球｜最小化=进任务栏｜✕（即收起图标）在右上角。**注意：头部 ✕ 图标实为「收起」**——用户混淆的根源，本次靠 title 与新增按钮缓解
+- **卡 B 记住工具选择**：核实为 **Task 8 已实现**（`appStore.ts` `loadStoredTargetTool`/`setTargetTool` 读写 localStorage `linggan_target_tool`，带类型守卫），无需开发；已在运行中的 0.9.0 实例实证：选 Codex → 收起成球 → 重新展开仍保持 Codex
+- 质量门全绿：tsc exit 0、eslint（改动文件）0 告警、vitest 422/422、build 2.86s、check-version exit 0
+
+**关键决策及理由**：
+- 不做「关闭」按钮改动、不加二次确认：增量铁律，本轮只解决最小化缺失。
+- 卡 B 转为实证验证而非重复开发：先查代码再动手，避免重复造轮子。
+
+**验证方式与结果**：见上；新按钮的实机视觉验证并入 0.9.1 冒烟（本机不跑 tauri dev 双实例，避免 R04 轮并行实例事故重演）。
+
+**遗留问题**：无新增；0.9.1 主线仍为 CSP 修复 + R07 质量门 + OTA 实测。
 
 ### v0.9.0 正式发布轮（2026-10-25 中午）— 发布产物核对、修复重建与 Publish
 
