@@ -79,7 +79,7 @@
 
 **验证**：新增回归用例 4 条（备份失败中止且数据原样 / 两导不翻倍 / 值级密钥剔除 / created_at 保留）；tsc/lint/build/510 测试/覆盖率门全绿；CI 结果见 4.2。
 
-**遗留**（未修，见审查报告 #4 批次）：依赖迁移评估（本迭代）、分层决策①修订 AGENTS 描述 vs ②hooks 封装（待用户拍板）、模板删除确认/列表缓存（backlog）；AGENTS 坑点 17-19 沉淀待用户确认后写入。
+**遗留**（未修，见审查报告 #4 批次）：依赖迁移评估（本迭代）、分层决策①修订 AGENTS 描述 vs ②hooks 封装（待用户拍板）、模板删除确认/列表缓存（backlog）；AGENTS 坑点 17-19 已确认写入（同日沉淀轮）。
 
 ### P0 收官轮（2026-10-25 晚）— 0.9.1 发版 + OTA 实测 + R05 + R06 + 覆盖率 ratchet
 
@@ -343,6 +343,6 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 ## 4.6 给下一个 Agent 的提示
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
-2. **当前状态**：**P0 路线图任务全部完成**（R01–R07 + 0.9.1 已发布 + CSP 修复 + 冒烟反馈小卡）。0.9.1 已是存量版本；下一个自然节点是 0.9.2 发版时用 0.9.1 客户端做 OTA 全链路实测（本机网络阻断做不了）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
-3. **悬而未决问题**：无阻塞决策。可选项：更新失败文案区分网络/密钥（P3 小卡）；`.mimosa/`、`.video_agent/` 是否入 .gitignore。
+2. **当前状态**：**P0 路线图任务全部完成**（R01–R07 + 0.9.1 已发布 + CSP 修复 + 冒烟反馈小卡 + 大审查及立即修复批）。0.9.1 已是存量版本；下一个自然节点是 0.9.2 发版时用 0.9.1 客户端做 OTA 全链路实测（本机网络阻断做不了），**0.9.2 建议主卡=依赖迁移**（@xenova/transformers → @huggingface/transformers v3，消 protobufjs critical CVE，见审查报告 #1）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
+3. **悬而未决问题**：两项待拍板——① 分层规则二选一：修订 AGENTS 承认「UI 可调只读类 lib」vs 新 hooks 封装（审查报告 #6）；② 大审查报告原样 vs 补 4.6 的更新失败文案小卡。坑点 17-19 沉淀已确认写入 ✅（2026-10-25）。可选项：`.mimosa/`、`.video_agent/` 是否入 .gitignore。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
