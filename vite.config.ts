@@ -43,14 +43,15 @@ export default defineConfig({
       exclude: ['src/types/**', 'src/test/**', 'src/**/*.d.ts'],
       reporter: ['text', 'lcov'],
       thresholds: {
-        // R07 首期门槛 = 实测基线设防（锁住不回退），路线图 75% 目标由后续版本逐步 ratchet：
+        // R07 门槛 = 实测基线设防（锁住不回退），路线图 75% 目标由后续版本逐步 ratchet：
         // 每次新增测试后手动上调对应数字。engine 已达路线图 G2 要求的 85%。
+        // 2026-10-25 第一轮 ratchet：R05/R06 补测后 lib 45→57、hooks 2→5、components 0.5→6
         // 注意：vitest 对象式门槛中 glob 键做分区统计，必须覆盖全部 include 目录
         'src/engine/**': { lines: 84 },
-        'src/lib/**': { lines: 45 },
-        'src/stores/**': { lines: 35 },
-        'src/hooks/**': { lines: 2 },
-        'src/components/**': { lines: 0.5 },
+        'src/lib/**': { lines: 57 },
+        'src/stores/**': { lines: 36 },
+        'src/hooks/**': { lines: 5 },
+        'src/components/**': { lines: 6 },
         'src/data/**': { lines: 0 },
       },
     },
