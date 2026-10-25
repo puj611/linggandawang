@@ -16,7 +16,7 @@ vi.mock('@/lib/sqlite', () => {
   const db = {
     execute: async (sql: string, params: unknown[] = []) => {
       state.executed.push({ sql, params });
-      if (/INSERT OR REPLACE INTO templates/i.test(sql)) {
+      if (/INSERT INTO templates/i.test(sql)) {
         const row = {
           id: params[0],
           name: params[1],
@@ -26,8 +26,12 @@ vi.mock('@/lib/sqlite', () => {
           updated_at: params[5],
         };
         const idx = state.rows.findIndex((r) => r.id === row.id);
-        if (idx >= 0) state.rows[idx] = row;
-        else state.rows.push(row);
+        if (idx >= 0) {
+          // ON CONFLICT(id) DO UPDATE 语义：覆盖除 created_at 外的字段
+          state.rows[idx] = { ...state.rows[idx], ...row, created_at: state.rows[idx].created_at };
+        } else {
+          state.rows.push(row);
+        }
         return {};
       }
       if (/DELETE FROM templates/i.test(sql)) {
@@ -123,10 +127,13 @@ describe('templateStore（SQLite 路径）', () => {
     vi.restoreAllMocks();
   });
 
-  it('保存走 INSERT OR REPLACE 参数化；列表走 SELECT 排序；删除按 rowsAffected 判定', async () => {
+  it('保存走参数化 UPSERT；列表走 SELECT 排序；删除按 rowsAffected 判定', async () => {
     const id = await saveTemplate({ name: '模板A', body: '{{x}}', tags: '["UI"]' });
-    const insert = state.executed.find((e) => /INSERT OR REPLACE INTO templates/i.test(e.sql));
+    const insert = state.executed.find((e) => /INSERT INTO templates/i.test(e.sql));
     expect(insert).toBeDefined();
+    // UPSERT 保留 created_at：SQL 必须含 ON CONFLICT 更新子句且不含 created_at
+    expect(insert?.sql).toContain('ON CONFLICT(id) DO UPDATE');
+    expect(insert?.sql.match(/SET [^)]*/)?.[0]).not.toContain('created_at');
     // 全部值经参数传递（$1..$6），不拼接
     expect(insert?.params[0]).toBe(id);
     expect(insert?.params[1]).toBe('模板A');
@@ -146,10 +153,12 @@ describe('templateStore（SQLite 路径）', () => {
     expect(ok2).toBe(false);
   });
 
-  it('同 id 保存走 REPLACE 覆盖', async () => {
+  it('同 id 更新覆盖其余字段但保留 created_at（与 localStorage 路径对齐）', async () => {
     const id = await saveTemplate({ name: 'v1', body: 'a', tags: '[]' });
+    const originalCreatedAt = state.rows[0].created_at;
     await saveTemplate({ id, name: 'v2', body: 'b', tags: '[]' });
     expect(state.rows).toHaveLength(1);
     expect(state.rows[0].name).toBe('v2');
+    expect(state.rows[0].created_at).toBe(originalCreatedAt);
   });
 });

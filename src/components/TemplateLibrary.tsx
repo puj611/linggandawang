@@ -2,8 +2,7 @@
 // 用户变量模板库（R05）：列表 + 填参复用 + 删除；TemplateSaveDialog 供结果页存模板。
 // 分层：UI 只调 lib/templateStore（IO）与 engine/TemplateComposer（纯逻辑），
 // 组装好的文本经 onUse 回传给宿主（ExpandedCard 注入主输入框）。
-import { useEffect, useRef, useState } from 'react';
-import {
+import { useEffect, useRef, useState } from 'react';import {
   parseTemplateVariables,
   inferVariableType,
   composePrompt,
@@ -245,6 +244,16 @@ export function TemplateSaveDialog({ initialBody, defaultName = '未命名模板
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  // 保存成功后延迟关闭的定时器：ref 跟踪 + 卸载清理，防止卸载后触发 onClose
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const previewVars = parseTemplateVariables(body);
 
@@ -276,8 +285,11 @@ export function TemplateSaveDialog({ initialBody, defaultName = '未命名模板
       const tpl = buildUserTemplate({ name, body, tags });
       await saveTemplate({ name: tpl.name, body: tpl.body, tags: JSON.stringify(tpl.tags) });
       setSaved(true);
-      // 保存成功后短暂停留再关闭，给用户确认反馈
-      setTimeout(() => onClose(), 500);
+      // 保存成功后短暂停留再关闭，给用户确认反馈（定时器经 ref 跟踪，卸载即清理）
+      closeTimerRef.current = setTimeout(() => {
+        closeTimerRef.current = null;
+        onClose();
+      }, 500);
     } catch (e) {
       console.warn('[TemplateSaveDialog] 保存模板失败', e);
     } finally {

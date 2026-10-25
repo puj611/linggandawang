@@ -101,9 +101,10 @@ export async function saveTemplate(input: TemplateInput & { id?: string }): Prom
     return id;
   }
   await ensureSchema(db);
-  // SQLite 路径：INSERT OR REPLACE（同 id 覆盖；created_at 以传入为准，更新时组件层先读原行）
+  // 同 id 覆盖其余字段但保留原 created_at（与 localStorage 路径语义对齐，
+  // INSERT OR REPLACE 会整行替换导致创建时间被重置）
   await db.execute(
-    'INSERT OR REPLACE INTO templates (id, name, body, tags, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)',
+    'INSERT INTO templates (id, name, body, tags, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT(id) DO UPDATE SET name = excluded.name, body = excluded.body, tags = excluded.tags, updated_at = excluded.updated_at',
     [row.id, row.name, row.body, row.tags, row.created_at, row.updated_at],
   );
   return id;

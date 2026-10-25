@@ -49,6 +49,16 @@ function looksSecret(key: string): boolean {
   return SECRET_KEY_PATTERN.test(key);
 }
 
+/** 常见密钥值形状（防纵深：偏好值里出现密钥样式字符串也剔除，键名过滤之外的兜底） */
+const SECRET_VALUE_PATTERN = new RegExp(
+  ['sk-[A-Za-z0-9]{10,}', 'ghp_[A-Za-z0-9]{20,}', 'AKIA[0-9A-Z]{12,}'].join('|'),
+);
+
+/** 键名或值任一命中密钥形状即视为敏感，导出/导入双向剔除 */
+function looksSensitive(pref: { key: string; value: string }): boolean {
+  return looksSecret(pref.key) || SECRET_VALUE_PATTERN.test(pref.value);
+}
+
 /** 导出当前全部本地数据（绝不含密钥） */
 export async function exportData(): Promise<ExportBundle> {
   const db = (await getDb()) as SqliteDb | null;
@@ -72,8 +82,8 @@ export async function exportData(): Promise<ExportBundle> {
       }
     }
   }
-  // 防御性剔除疑似密钥键（密钥本就不在，此处兜底）
-  preferences = preferences.filter((p) => !looksSecret(p.key));
+  // 防御性剔除：键名或值命中密钥形状即不外发（密钥本就不在，此处兜底）
+  preferences = preferences.filter((p) => !looksSensitive(p));
 
   return {
     schemaVersion: DATA_EXPORT_SCHEMA_VERSION,
@@ -123,15 +133,16 @@ export function parseImportBundle(text: string): ExportBundle {
   return parsed;
 }
 
-/** 导入前自动备份当前数据（保留最近一份），返回备份包 */
-async function backupCurrent(): Promise<ExportBundle> {
+/** 导入前自动备份当前数据（保留最近一份）。返回落盘成败——overwrite 依赖它做 fail-closed */
+async function backupCurrent(): Promise<{ ok: boolean; bundle: ExportBundle }> {
   const bundle = await exportData();
   try {
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(bundle));
+    return { ok: true, bundle };
   } catch (e) {
     console.warn('[dataExport] 备份写入 localStorage 失败（可能配额满）', e);
+    return { ok: false, bundle };
   }
-  return bundle;
 }
 
 /** 读取最近一次导入前备份（无则 null） */
@@ -166,8 +177,8 @@ async function clearAll(db: SqliteDb | null): Promise<void> {
 
 /**
  * 导入数据包。
- * merge：历史追加、模板按 id 不存在才写、偏好同名覆盖（恢复设置语义）
- * overwrite：先清空当前数据再全量写入（导入前自动备份到 localStorage）
+ * merge：历史按 (title, created_at) 去重后追加、模板按 id 不存在才写、偏好同名覆盖（恢复设置语义）
+ * overwrite：先自动备份当前数据（备份落盘失败则中止，防止清空后不可回退），再清空全量写入
  */
 export async function importData(
   bundle: ExportBundle,
@@ -176,21 +187,39 @@ export async function importData(
   if (!isExportBundle(bundle)) {
     throw new Error('导入失败：数据包结构校验未通过');
   }
-  await backupCurrent();
+  const backup = await backupCurrent();
+  if (mode === 'overwrite' && !backup.ok) {
+    // fail-closed：覆盖导入会清空现有数据，备份没落盘就不允许继续
+    throw new Error(
+      '覆盖导入已中止：自动备份写入失败（本地存储空间不足）。请先「导出数据」留存文件后再试',
+    );
+  }
   const db = (await getDb()) as SqliteDb | null;
   if (mode === 'overwrite') {
     await clearAll(db);
   }
 
+  // merge 幂等：按 (title, created_at) 跳过已存在的历史，重复导入同一文件不翻倍
+  const existingHistoryKeys =
+    mode === 'merge'
+      ? new Set(
+          (await listPromptHistory(Number.MAX_SAFE_INTEGER)).map(
+            (r) => `${r.title}|${r.created_at}`,
+          ),
+        )
+      : null;
+
   let historyInserted = 0;
   for (const rec of bundle.data.promptHistory) {
     if (typeof rec?.title !== 'string' || typeof rec?.markdown !== 'string') continue;
+    const createdAt = typeof rec.created_at === 'string' ? rec.created_at : new Date().toISOString();
+    if (existingHistoryKeys && existingHistoryKeys.has(`${rec.title}|${createdAt}`)) continue;
     await insertPromptHistory({
       title: rec.title,
       markdown: rec.markdown,
       tags: Array.isArray(rec.tags) ? rec.tags.filter((t): t is string => typeof t === 'string') : [],
       seed_input: typeof rec.seed_input === 'string' ? rec.seed_input : '',
-      created_at: typeof rec.created_at === 'string' ? rec.created_at : new Date().toISOString(),
+      created_at: createdAt,
       updated_at: typeof rec.updated_at === 'string' ? rec.updated_at : new Date().toISOString(),
       favorite: rec.favorite === true,
     });
@@ -199,7 +228,7 @@ export async function importData(
 
   let preferencesWritten = 0;
   for (const p of bundle.data.preferences) {
-    if (looksSecret(p.key)) continue; // 疑似密钥键拒收
+    if (looksSensitive(p)) continue; // 键名或值命中密钥形状拒收
     try {
       const parsed: unknown = JSON.parse(p.value);
       await setPreference(p.key, parsed);

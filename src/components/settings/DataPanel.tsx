@@ -25,6 +25,7 @@ function readFileText(file: File): Promise<string> {
 
 export function DataPanel() {
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [importPhase, setImportPhase] = useState<ImportPhase>('idle');
   // 待确认导入（选完文件、选好策略后需用户二次确认）
   const [pendingText, setPendingText] = useState('');
@@ -59,6 +60,8 @@ export function DataPanel() {
   };
 
   const onConfirmImport = async () => {
+    if (importing) return; // 防重入：导入进行中忽略再次点击
+    setImporting(true);
     try {
       const bundle = parseImportBundle(pendingText);
       const r = await importData(bundle, pendingMode);
@@ -67,6 +70,8 @@ export function DataPanel() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setImportPhase('error');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -134,18 +139,19 @@ export function DataPanel() {
               覆盖（清空后还原，导入前自动备份）
             </label>
           </div>
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={reset} className="ghost-btn px-3 py-1 text-xs">
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={() => void onConfirmImport()}
-              className="primary-btn px-3 py-1 text-xs"
-            >
-              开始导入
-            </button>
-          </div>
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={reset} disabled={importing} className="ghost-btn px-3 py-1 text-xs disabled:opacity-50">
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={() => void onConfirmImport()}
+            disabled={importing}
+            className="primary-btn px-3 py-1 text-xs disabled:opacity-50"
+          >
+            {importing ? '导入中…' : '开始导入'}
+          </button>
+        </div>
         </div>
       )}
 
