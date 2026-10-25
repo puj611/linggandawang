@@ -1,6 +1,6 @@
 {
  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
- "productName": "灵感大王",
+ "productName": "LingGanDaWang",
  "version": "0.9.0",
  "identifier": "com.linggandawang.app",
  "build": {

@@ -13,9 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS：universal 二进制同时覆盖 Apple Silicon 与 Intel，产物 dmg
+          # macOS：universal 二进制同时覆盖 Apple Silicon 与 Intel；app 为
+          # updater-enabled target（生成 .app.tar.gz 更新器产物），dmg 供用户安装
           - platform: macos-latest
-            args: '--target universal-apple-darwin --bundles dmg'
+            args: '--target universal-apple-darwin --bundles app,dmg'
           # Linux：deb + AppImage（覆盖 tauri.conf.json 默认 targets）
           - platform: ubuntu-latest
             args: '--bundles deb,appimage'
