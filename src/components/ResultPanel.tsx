@@ -12,6 +12,7 @@ import { useAppStore } from '@/stores/appStore';
 import { promptGenerator } from '@/engine/PromptGenerator';
 import type { SegmentKey } from '@/engine/PromptGenerator';
 import { TARGET_TOOL_PROFILES } from '@/engine/targetToolProfiles';
+import { TemplateSaveDialog } from './TemplateLibrary';
 
 // P0-3：加载超时阈值自适应。预期等待 = 生成提示词（含 RAG 检索 ≤2s + 生成 ≤5s 硬兜底）+ 容差。
 // 此前固定写死 12s 且文案"超过 12 秒"与实际不符，现改为统一的兜底阈值。
@@ -33,6 +34,8 @@ export function ResultPanel() {
   const { copyPrompt, exportPrompt, restart, removeTag, updateSection } = useFlow();
   const [copied, setCopied] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
+  // R05：存为模板对话框
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const { dragProps, offset, dragging } = useDrag();
   const { onPointerDown: onResizePointerDown, width, height, resizing } = useResize();
   const backToExpanded = useAppStore((s) => s.backToExpanded);
@@ -202,6 +205,13 @@ export function ResultPanel() {
               对比
             </button>
             <button
+              onClick={() => setSaveDialogOpen(true)}
+              className="ghost-btn px-3 py-1 text-xs"
+              title="保存为带 {{变量}} 的模板，下次填参复用"
+            >
+              存为模板
+            </button>
+            <button
               onClick={restart}
               className="ghost-btn px-3 py-1 text-xs"
             >
@@ -275,6 +285,15 @@ export function ResultPanel() {
         {/* v5：8 方向贴边缩放热区（替代旧右下角单一把手） */}
         <ResizeHandles onPointerDown={onResizePointerDown} />
       </div>
+
+      {/* R05：存为模板对话框（正文取当前结果的 Markdown，含目标工具结构适配） */}
+      {saveDialogOpen && result && (
+        <TemplateSaveDialog
+          initialBody={promptGenerator.toMarkdown(result)}
+          defaultName={result.action.content.slice(0, 20) || '未命名模板'}
+          onClose={() => setSaveDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }

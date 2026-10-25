@@ -7,6 +7,7 @@ import { useDrag } from '@/hooks/useDrag';
 import { useResize } from '@/hooks/useResize';
 import { ResizeHandles } from './ResizeHandles';
 import { StartTemplates } from './StartTemplates';
+import { TemplateLibrary } from './TemplateLibrary';
 import { RecentPromptList } from './RecentPromptList';
 import { ScreenshotDropZone } from './ScreenshotDropZone';
 import { DiagnosisReport, type DiagnosisIssue } from './DiagnosisReport';
@@ -478,6 +479,9 @@ export function ExpandedCard({ droppedImage, onImageConsumed }: Props) {
 
         {/* 起点模板 */}
         <StartTemplates onPick={onTemplate} />
+
+        {/* R05：用户变量模板（填充结果进主输入框，用户确认后再生成） */}
+        <TemplateLibrary onUse={setInput} />
 
         {/* 最近提示词 */}
         <RecentPromptList />
