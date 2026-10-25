@@ -10,6 +10,7 @@ import { getHotkey, setHotkey } from '@/hooks/useHotkey';
 import { isTauri } from '@/lib/env';
 import { ClusterAnalyticsPanel } from './ClusterAnalyticsPanel';
 import { LLMConfigSection } from './LLMConfigSection';
+import { DataPanel } from './settings/DataPanel';
 import { useApiKeyStore } from '@/stores/apiKeyStore';
 import { setPreference } from '@/lib/sqlite';
 import { useVectorStore } from '@/hooks/useVectorStore';
@@ -398,6 +399,9 @@ function GeneralSettings({
             上下文存储于 ~/.linggandawang/context.json
           </div>
         </div>
+
+        {/* R06 数据管理：导出/导入（绝不含密钥，导入前自动备份） */}
+        <DataPanel />
 
         {/* 应用更新（Task 18）：仅桌面版，经 invoke 调 Rust updater 命令（降级方案） */}
         {isTauri() && <UpdateSection />}
