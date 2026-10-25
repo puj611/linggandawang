@@ -2,6 +2,26 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.9.1] - 2026-10-25 - 最小化按钮 + CSP 修复 + R07 质量门
+
+### 新增
+- **面板头部最小化按钮**（用户冒烟反馈）：窗口控制语义补全为「收起=变悬浮球｜最小化=进任务栏」；`windowStore` 新增 `minimize` action（Tauri `win.minimize()`，失败静默降级），`ExpandedCard` 头部「收起」左侧插入按钮；`core:window:allow-minimize` 权限此前已预置。
+- **R07 质量门**：RTL 组件测试基建（@testing-library/react 16 + jest-dom + user-event + coverage-v8），首批组件测试（ui 三件套 + StartTemplates，13 例）；分层覆盖率门槛入 `npm run test:coverage`（engine 84 / lib 45 / stores 35 / hooks 2 / components 0.5，不达标 exit 1）；CI 增强——Linux job 补 check-version / lint / coverage / cargo test，新增 `check-windows` job（主用户平台跑 tsc + vitest）；测试总数 422 → 463。
+
+### 修复
+- **CSP 放行嵌入模型下载**（RAG 修复）：`connect-src` 精确追加 `https://huggingface.co`（transformers.js 默认模型源）与 `https://cas-bridge.xethub.hf.co`（模型文件 302 跳转 CDN）；Tauri 客户端内 RAG 向量库首建不再被 CSP 拦截（浏览器模式不受影响）。产物级验证：本地 tauri build 后对 release 二进制 grep 实证新 CSP 注入生效。注意 Tauri dev 模式无 CSP，生产 CSP 只能产物级验证（AGENTS 坑点 16）。
+
+### 发布链（补记，随 v0.9.0 重建发布已生效）
+- **productName 改 ASCII（LingGanDaWang）**：GitHub 会剥离 release 资产名中的非 ASCII 字符，中文产品名导致资产名变 `_0.9.0_*` 开头、且 tauri-action 拼 latest.json 时本地原名与远端净化名不匹配，三平台均报 `Signature not found for the updater JSON` 放弃上传（自动更新全平台失效）；窗口标题与界面仍为中文（AGENTS 坑点 14）。
+- **macOS 补 app bundle**：release.yml `--bundles dmg` → `app,dmg`，dmg 非 updater-enabled target，缺 `.app.tar.gz` 更新器产物。
+
+### 验证
+- vitest：463/463 通过（31 文件），覆盖率门槛 exit 0
+- npx tsc --noEmit：0 错误；npm run lint：0 error（39 warnings 为既有遗留，新文件 0 告警）
+- npm run build：成功；node scripts/check-version.mjs：退出码 0
+- cargo check / cargo test：ok（llm_proxy SSRF 防护等单测全过）
+- CI（main 9662d78）：check + check-windows 双 job success
+
 ## [0.9.0] - 2026-10-24 - P0 发布链止血 + 依赖声明 + 版本治理
 
 ### 发布链止血（R01）
