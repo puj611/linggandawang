@@ -57,12 +57,32 @@
 - **最近提交**：本轮 handoff 提交（见 4.3 最新一轮）；`3dd6f7e` fix(release): productName 改 ASCII + macOS 补 app bundle（内容等同本地 9aa2f6c，经 Git Data API 推送，GitHub 序列化差异见坑点 13）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；标签 `v0.9.0` 指向 `3dd6f7e`；仅剩未跟踪工具目录 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）
 - **整体进度**：P0 发布链闭环——**v0.9.0 已正式发布**（run 40162757301 三平台全绿 + Publish 生效，`releases/latest` 匿名可查，`latest.json` 更新器端点已对外可用）。R05 变量模板 / R06 导出导入 / R07 质量门待排期；CSP 任务卡已开（见 4.4）。
-- **最后更新时间**：2026-10-25 13:25 (GMT+8)
-- **本轮任务简述**：装机冒烟全通过后，按用户反馈补最小化按钮（随 0.9.1 发）；确认工具选择持久化（Task 8）已实现并实证生效。
+- **最后更新时间**：2026-10-25 17:55 (GMT+8)
+- **本轮任务简述**：CSP 修复卡完成——connect-src 放行 huggingface.co + cas-bridge CDN（产物二进制 grep 实证注入生效）；dev 模式无 CSP 是重要新坑（已记 AGENTS 坑点 16）。0.9.1 攒卡进度：最小化按钮 ✅ + CSP 修复 ✅，剩 R07 质量门。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
+
+### CSP 修复轮（2026-10-25 傍晚）— RAG 嵌入模型下载放行
+
+**任务目标与用户决策**：执行 backlog P0 的 CSP 修复任务卡（用户「开始」指令）。此前 vectorStore 运行时下载嵌入模型会被 Tauri CSP connect-src 拦截，Tauri 客户端内 RAG 向量库首建失败。
+
+**实际完成内容**：
+- `tauri.conf.json` connect-src 精确追加 `https://huggingface.co`（transformers.js 默认 remoteHost，源码实证）与 `https://cas-bridge.xethub.hf.co`（HF 模型文件 302 跳转的 CDN 域，预置放行）；未用 `https:` 通配，SSRF 防护边界不变
+- **验证方式演进（本轮最重要教训）**：先走 dev 实例 UI 路径（设置→高级功能→RAG 区），发现两件事：① 空历史时 RAG「就绪」是空库降级态，模型不会加载（`ensureInit`/`reindex` 在 `recentQA.length===0` 时跳过 `indexQABatch`）；② **dev 模式 Vite 返回的 HTML 完全没有 CSP**（Tauri 仅在构建时向产物注入，dev 需配 `devCsp` 才有）——dev 实例根本测不了生产 CSP，UI 路径就此放弃
+- **改为产物级验证**：本地 `npx tauri build`（带签名）→ 对 `target/release/linggandawang.exe` 二进制 grep，**明文提取到完整新 CSP**（含两个新域名）——证明注入链路端到端生效；transformers 默认域名 + CSP 语法静态校验 PASS + 二进制嵌入 = 证据链闭合
+- 顺带实证：新最小化按钮在 dev 实例头部正常渲染（多轮观察确认）
+
+**关键决策及理由**：
+- cas-bridge 域名预置放行而非等实测失败：HF 的 resolve URL 302 到 Xet CDN 是当前已知行为，等 0.9.1 真实用户流量反馈再收窄；若后续出现 `cdn-lfs.huggingface.co` 等其他跳转域，按 0.9.2 迭代补
+- 不在 dev 加 `devCsp`：增量铁律，且 devCsp 与生产 CSP 漂移反而制造假阴性
+
+**验证方式与结果**：CSP 语法静态校验 PASS；vitest 422/422；tsc exit 0；build 2.66s；check-version exit 0；产物二进制含新 CSP（grep 实证）。
+
+**遗留问题**：
+- 运行时最终确认归属 0.9.1 真实使用：Tauri 客户端内产生历史 QA → 自动建索引 → 模型下载成功且 RAG 区显示「已索引 N 条」；若出现新 CDN 域名被拦，追加域名发 0.9.2
+- 本次 `tauri build` 产物（`target/release/bundle/nsis/LingGanDaWang_0.9.0_x64-setup.exe`，本地未签名验证用）未安装，仅作二进制检查；0.9.1 走正式 CI 构建
 
 ### 冒烟反馈小卡轮（2026-10-25 下午）— 最小化按钮 + 工具选择持久化确认
 
@@ -206,8 +226,7 @@
 | R05 变量模板 MVP | `src/engine/TemplateRetriever.ts` 扩展、新增 `TemplateComposer.ts`、`src/components/TemplateLibrary.tsx` | 仅 `{{ }}` 语法 + 插入按钮 |
 | R06 数据导出与导入 | 新增 `src/lib/dataExport.ts`、`src/components/settings/DataPanel.tsx` | 导出绝不含 API Key；导入先备份 |
 | R07 质量门 | `.github/workflows/ci.yml`、`vitest.config.ts`、`package.json` | lint + cargo test + 覆盖率（总体 ≥75%/engine ≥85%）+ Windows job + 集成测试 + **RTL 组件测试基建（@testing-library/react，R04 轮教训）**；check-version.mjs 入 CI |
-| **CSP 修复任务卡**（2026-10-25 开卡） | `src-tauri/tauri.conf.json` `app.security.csp` 的 connect-src | 现状：vectorStore 运行时下载嵌入模型（Xenova/all-MiniLM-L6-v2，~90MB）会被 CSP 拦截，Tauri 客户端内 RAG 向量库首建失败（浏览器模式不受影响）。修法：connect-src 精确加入 `https://huggingface.co`（如仍被拦，按实测补 CDN 域名如 `https://cas-bridge.xethub.hf.co`，**勿用 `https:` 通配**）；验收：Tauri 客户端内触发向量库首建成功；顺带回归 validateBaseUrl SSRF 防护不受影响 |
-| 0.9.1 发布时验证自动更新链路 | release 流程 | v0.9.0 已含完整 latest.json + 三平台更新器产物；用 0.9.0 客户端实测「检测更新 → 验签 → OTA」（首个存量版本） |
+| 0.9.1 发布时验证自动更新链路 + CSP 运行时确认 | release 流程 | v0.9.0 已含完整 latest.json + 三平台更新器产物；用 0.9.0 客户端实测「检测更新 → 验签 → OTA」；CSP 已修（产物级验证），运行时确认看真实模型下载 |
 
 ### P1（v0.10.x，2027 Q1）
 R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发｜R12 三档状态可见性。
