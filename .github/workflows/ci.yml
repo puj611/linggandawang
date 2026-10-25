@@ -34,12 +34,46 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # R07 质量门：版本一致性（四处版本号必须一致，不一致 exit 1）
+      - name: Version consistency check
+        run: npm run check:version
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Typecheck (tsc)
+        run: npx tsc --noEmit
+
+      # R07 质量门：覆盖率门槛在 vite.config.ts test.coverage.thresholds（分层设防）
+      - name: Unit tests + coverage gates (vitest)
+        run: npm run test:coverage
+
+      - name: Rust check (cargo check)
+        working-directory: src-tauri
+        run: cargo check
+
+      # R07 质量门：Rust 单测（5 个）纳入 CI
+      - name: Rust tests (cargo test)
+        working-directory: src-tauri
+        run: cargo test
+
+  # R07 质量门：Windows job——主用户平台，跑 tsc + vitest（jsdom 测试与路径分隔符问题在此暴露）
+  check-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
       - name: Typecheck (tsc)
         run: npx tsc --noEmit
 
       - name: Unit tests (vitest)
         run: npm test
-
-      - name: Rust check (cargo check)
-        working-directory: src-tauri
-        run: cargo check
