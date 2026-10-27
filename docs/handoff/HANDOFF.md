@@ -59,7 +59,7 @@
 - **分支**：`main`，HEAD `267cf7a`，**已推送并与 `origin/main` 同步（0/0）**；github.com:443 于 2026-10-27 19:2x 恢复可达，`git push` 直推成功（c6661fe..267cf7a），无需 Git Data API
 - **最近提交**：`95a417a` feat(rag): 迁移 @huggingface/transformers v4 并修通 RAG WASM 运行时（14 文件，+1399/−1087）；标签 `v0.9.0` / `v0.9.1` 齐全
 - **工作区状态**：本轮 0.9.2 改动已提交（commit 见 `git log -1`）；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
-- **整体进度**：P0 路线图全清（R01–R07 + 0.9.0/0.9.1 已发布 + CSP 修复 + 大审查修复批）。**0.9.2 主卡已完成并提交**：依赖迁移 + RAG 运行时首次真正跑通 + 异步 wasm 死重剔除（两张卡合并）。未 bump 版本、未发版，按用户决策留待统一发版轮
+- **整体进度**：P0 路线图全清（R01–R07 + 0.9.0/0.9.1 已发布 + CSP 修复 + 大审查修复批）。**0.9.2 主卡已完成、提交并推送**：依赖迁移 + RAG 运行时首次真正跑通 + 异步 wasm 死重剔除（两张卡合并）+ 分层规则校准（大审查 #6 关闭）。**CI 双平台全绿**（`check` ubuntu + `check-windows`，commit `267cf7a`）。未 bump 版本、未发版，按用户决策留待统一发版轮
 - **最后更新时间**：2026-10-27 19:30 (GMT+8)
 - **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。④ 分层规则按代码实测校准（大审查 #6 关闭）。510/510 全绿。
 
@@ -126,6 +126,7 @@
 - **端到端实跑**（Playwright + 从 tauri.conf.json 读出的**生产 CSP** + 拦截 huggingface.co 用本地缓存回放模型）：`{"dim":384,"l2":1.000000292803836,"head":[-0.03567689,0.02067922,0.00470460]}`；WASM 只请求 `/ort/ort-wasm-simd-threaded.{mjs,wasm}`；**CDN 请求 0、asyncify 请求 0**。探针产物与真实 dist 的 `transformers.web` chunk、两个 ort 文件 **sha256 逐一相同**，证明测的是同一份生产代码
 - **真实 dist 冒烟**：加载 `dist/index.html`（同生产 CSP）→ title=`灵感大王`、root innerHTML 6034 字符、**REQUEST_FAILURES=[]**
 - **两个对照实验**：① 去掉 `'wasm-unsafe-eval'` → `WebAssembly.instantiate` 被 CSP 拦、嵌入失败（证明该指令必需，非过度授权）；② 删掉 25.6MB asyncify wasm → 嵌入照常成功（证明是死重）
+- **CI 实证**（2026-10-27 推送后）：commit `267cf7a` 触发 CI，`check`（ubuntu-latest）+ `check-windows` 双 job 均 **success**。这实证了「本机 esbuild 沙箱问题不影响 CI」的推断——两个 runner 都跑了 `npm run build`/tsc/vitest 且全绿
 
 **关键决策及理由**：
 - 选 v4 不选 v3：实测 `3.7.3` 的 sharp@0.34 仍带 2 high（libvips/libheif/librsvg CVE），只有 `4.3.1` 做到 `--omit=dev` 零漏洞
@@ -285,7 +286,7 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 13. **github.com:443 阻断时用 Git Data API 推送**（2026-10-25 实测）：blob → tree → commit → PATCH refs，blob/tree sha 与本地逐一比对；token 取自 git credential manager（`git credential fill`，勿回显）。GitHub API 序列化剥 commit 消息尾换行 → 远端 sha 与本地不同属预期，用 `git hash-object -t commit` 按远端字节重建 + `git update-ref` 对齐，勿 force push。
 14. **Mimosa pre-commit 钩子 fail-closed**（2026-10-25 实测，详见 AGENTS.md 坑点 15）：测试夹具中 `sk-test-` 密钥字面量（含字符串拼接写法）会被判「硬编码凭据」拦截 commit；用 `[a,b].join('-')` 构造可过，行为不变。
 15. **RAG 嵌入的 WASM 运行时长期缺失**（2026-10-27 发现，详见 AGENTS.md 坑点 20）：0.9.1 及以前 `dist/assets` 里没有任何 .wasm，onnxruntime 只能从 cdn.jsdelivr.net 取，而 CSP 既无该域也无 `'wasm-unsafe-eval'` → **打包版里 RAG 嵌入从未跑通过**。坑点 16 当时把「dev 无 CSP 只能产物级验证」记为环境限制，实际掩盖了这条真缺陷。教训：**「产物级验证」要通过，必须真的在浏览器里执行到那条代码路径**（本轮用 Playwright + 生产 CSP + 本地模型回放才暴露），只看二进制里有没有 CSP 明文是不够的。
-16. **esbuild 在沙箱工作区（D: 盘）内必然失败**（2026-10-27 实测，详见 AGENTS.md 坑点 21）：`npm run build` 报 `remove ...\Temp\esbuild-<hash>: Access is denied.`。表面像「文件 >1MB 就失败」，五组对照证明变量是 **esbuild 可执行文件所在的盘**：C: 盘 6/6 OK，D: 盘 6/6 FAIL，同二进制同哈希。`sourcemap=false` 绕不掉。规避：构建前 `$env:TEMP=$PWD\.tmp-build`。**勿为此改 test 脚本或 vite 配置**——那是误伤，与坑点 12 同源。
+16. **esbuild 在沙箱工作区（D: 盘）内必然失败**（2026-10-27 实测，详见 AGENTS.md 坑点 21）：`npm run build` 报 `remove ...\Temp\esbuild-<hash>: Access is denied.`。表面像「文件 >1MB 就失败」，五组对照证明变量是 **esbuild 可执行文件所在的盘**：C: 盘 6/6 OK，D: 盘 6/6 FAIL，同二进制同哈希。`sourcemap=false` 绕不掉。规避：构建前 `$env:TEMP=$PWD\.tmp-build`。**勿为此改 test 脚本或 vite 配置**——那是误伤，与坑点 12 同源。CI 侧已实测不受影响（267cf7a 双 job 全绿）。
 17. **多 Agent 并行会互相踩工作区**（2026-10-27 实测事故，详见 AGENTS.md 坑点 22）：多个 agent 共享同一工作区/node_modules/dist/临时目录，且互不可见 transcript。本轮真实事故：越界删除他人 `.tmp-build/`（判断依据用了 `-First 10` 截断输出）、误把他人 `vite.config.ts` 改动当成「第三方写入」、并发 `npm run build` 互相覆盖 `dist/`。对策已入全局规则 R1 §3 + R7 §6.2。
 
 ---
