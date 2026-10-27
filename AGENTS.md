@@ -44,10 +44,12 @@
 
 ### 分层约束
 
-- **UI 层**（components）→ 可调用 hooks/stores，**不直接调用 engine/lib**
-- **编排层**（hooks）→ 调用 engine + stores，是业务逻辑的入口
-- **引擎层**（engine）→ 纯业务逻辑，**不依赖 Tauri API / React**，可独立测试
-- **基础设施层**（lib）→ LLM adapter、SQLite 封装，**不依赖 engine/stores**
+> 本节按 2026-10-27 代码实测校准（大审查 #6 收口）。原则：**规则描述现状，不描述愿望**——写一条全库违反的规则，只会让人习惯性忽略规则。实测基线：33 个组件中 13 个直连 `@/lib`、10 个直连 `@/engine`、10 个用 `@/hooks`；`src/lib` → engine/stores 的依赖为 **0 处**（该方向干净，是真约束）。
+
+- **UI 层**（components）→ 可调用 hooks / stores / **lib 与 engine**（含单步读写）；**跨组件编排与多步业务流程必须走 hooks**，不要在组件里攒状态机。判断标准是「是否跨组件协调」，不是「是否读文件」
+- **编排层**（hooks）→ 调用 engine + stores + lib，是业务逻辑的入口
+- **引擎层**（engine）→ 纯业务逻辑，**不依赖 React**，可独立测试。对 Tauri API 的访问只允许经 `isTauri()` 门控的**动态** `import()`（现状唯一例：`QuestionLoader.ts` 读用户目录 bank.yaml），禁止顶层静态引入
+- **基础设施层**（lib）→ LLM adapter、SQLite 封装；**不依赖 engine/stores**（此方向为硬约束，新增违反即为缺陷）
 - **后端层**（src-tauri）→ Rust 命令，通过 invoke 暴露给前端
 
 ## 常用命令

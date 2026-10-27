@@ -56,12 +56,12 @@
 
 ## 4.2 当前状态快照
 
-- **分支**：`main`（本地 HEAD `c6661fe`；远端真实 HEAD 同点，本地 `origin/main` 跟踪引用滞后至 `960f32d`——Git Data API 推送后未刷新，`git status` 会误报 ahead 14，跑 `git fetch origin` 即可消除）
-- **最近提交**：`c6661fe` docs(agents): 坑点 17-19 沉淀写入；标签 `v0.9.0` / `v0.9.1` 齐全
+- **分支**：`main`（本地 HEAD `95a417a`，在 `c6661fe` 之上；**未推送**——`origin/main` 仍停在 `960f32d`，本地 ahead 15 个提交，github.com:443 阻断）
+- **最近提交**：`95a417a` feat(rag): 迁移 @huggingface/transformers v4 并修通 RAG WASM 运行时（14 文件，+1399/−1087）；标签 `v0.9.0` / `v0.9.1` 齐全
 - **工作区状态**：本轮 0.9.2 改动已提交（commit 见 `git log -1`）；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
 - **整体进度**：P0 路线图全清（R01–R07 + 0.9.0/0.9.1 已发布 + CSP 修复 + 大审查修复批）。**0.9.2 主卡已完成并提交**：依赖迁移 + RAG 运行时首次真正跑通 + 异步 wasm 死重剔除（两张卡合并）。未 bump 版本、未发版，按用户决策留待统一发版轮
-- **最后更新时间**：2026-10-27 19:05 (GMT+8)
-- **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。510/510 全绿。
+- **最后更新时间**：2026-10-27 19:15 (GMT+8)
+- **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。④ 分层规则按代码实测校准（大审查 #6 关闭）。510/510 全绿。
 
 ---
 
@@ -234,7 +234,7 @@
 | ~~覆盖率 ratchet 第一轮~~ | `a35efb1` | ✅ lib57/hooks5/components6/stores36；下一轮目标见 P2 |
 | ~~依赖迁移（@xenova → @huggingface/transformers v4）~~ | 本轮未提交 | ✅ 2026-10-27 完成：生产依赖 0 漏洞；同时修通 RAG WASM 运行时（见 4.3） |
 | ~~提交本轮 0.9.2 改动~~ | `git log -1` | ✅ 2026-10-27 已提交（主卡 + 并行卡合并；未 bump 版本，发版轮再动版本号） |
-| 分层规则落文档（大审查 #6） | `AGENTS.md` 分层约束节 | 用户已拍板选 ①：修订为「UI 可调只读类 lib，写操作走 hooks」；一行文档即可关闭该未修项 |
+| ~~分层规则落文档（大审查 #6）~~ | `AGENTS.md` 分层约束节 | ✅ 2026-10-27 完成：按代码实测校准为「UI 可调 hooks/stores/lib/engine 与单步读写；跨组件编排走 hooks」，并记下实测基线（13 直连 lib / 10 直连 engine / 10 用 hooks；lib→engine 0 处） |
 | 0.9.2 发版时 OTA 全链路实测 | release 流程 | 本机 github.com:443 阻断无法完成下载验签安装；0.9.1 已是存量版本，用其客户端实测 |
 | 更新失败文案区分网络/密钥 | `src-tauri/src/commands/updater.rs` 或前端提示 | P3：当前两种原因混为一句 |
 
@@ -255,7 +255,7 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 ## 4.5 重要约束与踩坑记录
 
 ### 项目约定
-- 分层约束：UI 层（components）→ hooks/stores；编排层（hooks）→ engine + stores；引擎层（engine）纯逻辑不依赖 Tauri/React；基础设施层（lib）不依赖 engine/stores。
+- 分层约束（2026-10-27 按代码实测校准）：UI 层（components）可调 hooks/stores/lib/engine 与单步读写，跨界编排走 hooks；engine 不依赖 React，Tauri API 只许 isTauri() 门控的动态 import；**lib 不依赖 engine/stores 是唯一硬约束**（实测 0 处违反）。详见 `AGENTS.md` 分层约束节。
 - TypeScript strict，禁 `any`（必须时加 eslint-disable 说明）；LLM 输出归一化用 `unknown` + 类型守卫。
 - 组件卸载后禁止 setState（mountedRef）；setTimeout 用 ref 跟踪 + useEffect cleanup；Zustand 逐个 selector/useShallow；Store IO 必须 try/catch；剪贴板必须 textarea fallback。
 - 版本号三处 + CHANGELOG 首条必须一致，改版本必跑 `node scripts/check-version.mjs`。
@@ -293,7 +293,7 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 ## 4.6 给下一个 Agent 的提示
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
-2. **当前状态**：P0 路线图全清，**0.9.2 主卡 + 并行卡均已提交**（依赖迁移 + RAG 运行时修通 + asyncify wasm 死重剔除；全质量门绿、510/510、生产依赖 0 漏洞、dist 14.92MB）。**下一个自然节点=统一发版轮**：bump 0.9.2（四处版本号 + CHANGELOG 首条）→ 发版 四处版本 + CHANGELOG → 打标签 → 用 0.9.1 客户端做 OTA 全链路实测（本机 github.com:443 阻断做不了，需未阻断网络）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
-3. **悬而未决问题**：① 分层规则已由用户拍板选「修订 AGENTS 承认 UI 可调只读类 lib，写操作走 hooks」，但**尚未落文档**（一行即可关闭大审查 #6）；② 大审查报告原样 vs 补 4.6 的更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理（当前不在任何卡上）；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore。
+2. **当前状态**：P0 路线图全清，**0.9.2 主卡 + 并行卡均已提交**（`95a417a`，14 文件；依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除；全质量门绿、510/510、生产依赖 0 漏洞、dist 14.92MB）。**未推送**：`origin/main` 仍停在 `960f32d`，本地 ahead 15 个提交；github.com:443 阻断，推送需按 4.5 坑 13 走 Git Data API。**下一个自然节点=统一发版轮**：bump 0.9.2（四处版本号 + CHANGELOG 首条）→ 打标签 → 用 0.9.1 客户端做 OTA 全链路实测（需未阻断网络）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
+3. **悬而未决问题**：① 大审查报告原样 vs 补 4.6 的更新失败文案小卡；② 全量 audit 的 14 条 devDependencies 漏洞是否处理（当前不在任何卡上）；③ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore。分层规则 #6 已于 2026-10-27 落文档关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
 5. **本轮新增两条本机硬约束**（详见 AGENTS 坑点 20/21）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错。
