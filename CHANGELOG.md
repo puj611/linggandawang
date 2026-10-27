@@ -2,6 +2,34 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.9.2] - 2026-10-27 - 依赖迁移 + RAG 运行时首次真正跑通
+
+### 修复
+- **RAG 嵌入的 WASM 运行时从未可用**（重要，回补 0.9.1 及以前所有版本）：`dist/assets` 里从来没有 `.wasm` 文件——v2 的 onnxruntime 在 Web 环境只能从 `cdn.jsdelivr.net` 取运行时，而生产 CSP 既未放行该域、也没有 `'wasm-unsafe-eval'`。后果：**Tauri 安装包内 RAG 向量库首建必然失败**，0.9.1 的 CSP 修复只放行了模型文件域（huggingface.co / cas-bridge），这一环一直缺失且未被发现。现改为**自托管**：`scripts/copy-ort-wasm.mjs` 在 `predev`/`prebuild` 把 `ort-wasm-simd-threaded.{mjs,wasm}` 拷到 `public/ort/`（构建期产物，`.gitignore` 已忽略，14MB 不入库），`vectorStore` 在 `pipeline()` 之前原地覆写 `env.backends.onnx.wasm.wasmPaths` 指向本地，并置 `useWasmCache=false` 避免 `.mjs` 经 blob: URL 动态 import（否则需额外放行 `script-src blob:`）。CSP 仅补 `'wasm-unsafe-eval'`，**未新增 jsdelivr、未使用 `https:` 通配**，攻击面不扩大。路径基准用 `document.baseURI`（`base:'./'` 下 `import.meta.env.BASE_URL` 恒为 `'./'`，按模块 URL 解析会落到 `dist/assets/`）。实测：Playwright + 生产 CSP + 本地模型回放，`dim=384`、`l2=1.0000003`，WASM 仅请求 `/ort/*`，**CDN 请求 0**。
+
+### 变更
+- **依赖迁移 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`**：消除传递链上的 `protobufjs@6.11.6`（critical CVE-2023-36665 原型污染等 5 条）+ `onnxruntime-web@1.14.0` + `sharp@0.32.6`（共 1 critical + 4 high）。`npm audit --omit=dev` 由 **1 critical + 4 high 降至 0 漏洞**。API 适配：`{quantized:true}` → `{dtype:'q8'}`（wasm 设备默认即 q8，取 `onnx/model_quantized.onnx`）；输出 `FeatureExtractionPipeline` 类型化，`embed()` 用 `unknown` + `instanceof Float32Array` 守卫（无 `any`）。删除手写的 `src/types/xenova-transformers.d.ts`（v4 自带完整类型）。
+
+### 性能
+- **剔除 25.62MB 未使用的 WASM 变体**：onnxruntime-web 的 `ort.mjs` 用三元链把各变体写成 `new URL(..., import.meta.url)`，Vite 静态分析不看分支可达性，无条件把 `.asyncify.wasm` emit 进 `assets/`——但运行时永远不会请求它（已在真实 CSP 下端到端证实）。`vite.config.ts` 新增 `dropUnusedOrtWasm()` 插件在 `generateBundle` 阶段按名剔除；真正在用的 `dist/ort/*.wasm` 来自 `public/ort/`、不进 Rollup bundle，物理上不可能被误删。**dist 从 40.54MB 降至 14.92MB**。
+
+### 文档
+- `AGENTS.md` 新增坑点 20（RAG WASM 必须自托管 + CSP 需 `'wasm-unsafe-eval'`）、21（本机沙箱下 esbuild 失败变量是「盘」不是「包」）、22（多 Agent 并行共享工作区的三类事故与对策）。
+- `AGENTS.md` 分层约束按代码实测校准（关闭大审查 #6）：旧规则「UI 不直接调 engine/lib」实为全库违反的死规则（33 个组件中 13 个直连 lib、10 个直连 engine），改为可执行表述——UI 可调 hooks/stores/lib/engine 与单步读写，跨组件编排走 hooks；`lib` 不依赖 `engine/stores` 是唯一硬约束（实测 0 违反）。
+- `README.md` / `README_EN.md` 嵌入依赖行同步。
+
+### 验证
+- `npx tsc --noEmit` exit 0；`npm run lint` exit 0（40 warnings 均为既有文件遗留）
+- `npx vitest run --pool=forks --poolOptions.forks.singleFork=true`：**38 文件 / 510 passed**
+- `npm run test:coverage` exit 0（分层门槛未下调）
+- `npm run build` exit 0；`npm run check:version` OK（四处一致）
+- `npm audit --omit=dev --registry=https://registry.npmjs.org` → **0 漏洞**
+- CI（commit `267cf7a`）：`check`（ubuntu-latest）+ `check-windows` 双 job **success**——确认本机 esbuild 沙箱问题不影响 CI
+- 端到端嵌入：`dim=384`、`l2=1.0000003`、WASM 零 CDN 请求；真实 dist 冒烟 `REQUEST_FAILURES=[]`
+
+### 遗留
+- OTA 全链路（检测→下载→验签→安装）待用 v0.9.1 客户端在 v0.9.2 发布后实测
+- 真实 Tauri 安装包内 RAG 端到端未验（本轮验证到 web 构建 + 自托管 wasm 层）
 ## [0.9.1] - 2026-10-25 - 最小化按钮 + CSP 修复 + R07 质量门
 
 ### 新增
