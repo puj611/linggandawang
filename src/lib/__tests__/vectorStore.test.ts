@@ -2,8 +2,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { cosineSimilarity } from '../vectorStore';
 
-// Mock @xenova/transformers（避免测试时下载模型）
-vi.mock('@xenova/transformers', () => ({
+// Mock @huggingface/transformers（避免测试时下载模型）
+vi.mock('@huggingface/transformers', () => ({
+  env: { backends: { onnx: { wasm: {} } }, useWasmCache: true },
   pipeline: vi.fn().mockResolvedValue(async (_text: string) => ({
     data: new Float32Array([1, 0, 0, 0]), // 4 维 mock 向量
   })),

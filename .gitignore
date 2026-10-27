@@ -8,11 +8,18 @@ dist/
 dist-ssr/
 *.local
 *.tsbuildinfo
+
+# ORT WASM 运行时（scripts/copy-ort-wasm.mjs 构建期生成，14MB 二进制不入库）
+public/ort/
+# 本机构建临时目录（AGENTS 坑点 21：沙箱下 esbuild 需把 TEMP 指到这里）
+.tmp-build/
 *.mjs
 # 例外：MCP server 冒烟脚本需要入库
 !mcp-server/smoke-test.mjs
 # 例外：版本一致性校验脚本需要入库（R03）
 !scripts/check-version.mjs
+# 例外：ORT WASM 拷贝脚本需要入库
+!scripts/copy-ort-wasm.mjs
 
 # 环境变量和敏感文件
 .env

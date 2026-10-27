@@ -96,7 +96,7 @@ Claude Code（项目 `.mcp.json`）或 Cursor（`~/.cursor/mcp.json`）配置：
 | 状态 | Zustand 4 |
 | 桌面 | Tauri 2（Rust 后端） |
 | 存储 | SQLite（tauri-plugin-sql，含迁移脚本）+ keyring（系统凭据管理器） |
-| 嵌入 | @xenova/transformers（all-MiniLM-L6-v2，本地推理，懒加载） |
+| 嵌入 | @huggingface/transformers（all-MiniLM-L6-v2，本地推理，懒加载，WASM 自托管） |
 | LLM（可选） | OpenAI 兼容适配器（DeepSeek / 通义 / OpenAI / 本地 Ollama） |
 | MCP | 手写 JSON-RPC 2.0 stdio server，零额外依赖 |
 

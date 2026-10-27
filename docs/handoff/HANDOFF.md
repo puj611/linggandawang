@@ -19,20 +19,23 @@
   | `src/engine/` | 核心引擎（纯业务逻辑，不依赖 Tauri API/React，17 个模块） |
   | `src/stores/` | Zustand 状态镜像层（11 个） |
   | `src/hooks/` | 编排层（调用 engine + stores） |
-  | `src/lib/` | 基础设施（LLM adapter、sqlite、vectorStore、dataExport 规划中） |
+  | `src/lib/` | 基础设施（LLM adapter、sqlite、vectorStore、dataExport、templateStore、comparisonStore） |
   | `src/question-bank/` | 问题库 YAML（bank.yaml 65 + bank-backend 28 + bank-ppt 15 = 108 条） |
   | `src-tauri/src/commands/` | Rust 命令（updater、sidecar、llm_proxy、project、api_key） |
   | `mcp-server/` | MCP Server（当前 2 个工具：list_questions、generate_prompt） |
   | `docs/` | 文档（PRD、架构、reference 接口契约） |
-  | `scripts/` | 构建/校验脚本（check-version.mjs 等于 2026-10-24 新增） |
+  | `scripts/` | 构建/校验脚本（check-version.mjs 版本守门、copy-ort-wasm.mjs 自托管 WASM 拷贝） |
+  | `public/ort/` | ORT WASM 运行时（prebuild/predev 生成，已 gitignore，14MB 不入库） |
 
 - **环境搭建与运行方式**（完整命令，工作目录 = 项目根 `D:\AI工作平台\灵感大王`）：
 
   ```bash
-  npm install            # 安装依赖（@xenova/transformers@2.17.2 已正式声明，无需 --no-save）
-  npm run dev            # Vite 开发服务器（浏览器模式）
+  # 本机（WorkBuddy 沙箱）构建前必须先指 TEMP，否则 esbuild 失败——见 AGENTS 坑点 21：
+  #   $env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build   （pwsh）
+  npm install            # 安装依赖（@huggingface/transformers@4.3.1 已正式声明，无需 --no-save）
+  npm run dev            # Vite 开发服务器（predev 自动拷 ort wasm 到 public/ort/）
   npx tauri dev          # Tauri 开发模式
-  npm run build          # tsc -b && vite build
+  npm run build          # tsc -b && vite build（prebuild 自动拷 ort wasm）
   npm run lint           # eslint src/
   npm test               # vitest run
   node scripts/check-version.mjs   # 版本一致性校验（R03 新增，要求退出码 0）
@@ -53,16 +56,90 @@
 
 ## 4.2 当前状态快照
 
-- **分支**：`main`
-- **最近提交**：本轮 handoff 提交（见 4.3 最新一轮）；`3dd6f7e` fix(release): productName 改 ASCII + macOS 补 app bundle（内容等同本地 9aa2f6c，经 Git Data API 推送，GitHub 序列化差异见坑点 13）
-- **工作区状态**：干净，`main` 与 `origin/main` 同步；标签 `v0.9.0` 指向 `3dd6f7e`；仅剩未跟踪工具目录 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）
-- **整体进度**：P0 发布链闭环——**v0.9.0 已正式发布**（run 40162757301 三平台全绿 + Publish 生效，`releases/latest` 匿名可查，`latest.json` 更新器端点已对外可用）。R05 变量模板 / R06 导出导入 / R07 质量门待排期；CSP 任务卡已开（见 4.4）。
-- **最后更新时间**：2026-10-25 20:00 (GMT+8)
-- **本轮任务简述**：big-review×PRR 大审查（风险中，78/100，高危 2）→ 立即修复批落地（b6539ea：备份 fail-closed/导入幂等防抖/created_at 对齐/setTimeout 合规/密钥值级扫描），510/510 全绿。剩依赖迁移与分层决策待用户拍板。
+- **分支**：`main`（本地 HEAD `c6661fe`；远端真实 HEAD 同点，本地 `origin/main` 跟踪引用滞后至 `960f32d`——Git Data API 推送后未刷新，`git status` 会误报 ahead 14，跑 `git fetch origin` 即可消除）
+- **最近提交**：`c6661fe` docs(agents): 坑点 17-19 沉淀写入；标签 `v0.9.0` / `v0.9.1` 齐全
+- **工作区状态**：本轮 0.9.2 改动已提交（commit 见 `git log -1`）；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
+- **整体进度**：P0 路线图全清（R01–R07 + 0.9.0/0.9.1 已发布 + CSP 修复 + 大审查修复批）。**0.9.2 主卡已完成并提交**：依赖迁移 + RAG 运行时首次真正跑通 + 异步 wasm 死重剔除（两张卡合并）。未 bump 版本、未发版，按用户决策留待统一发版轮
+- **最后更新时间**：2026-10-27 19:05 (GMT+8)
+- **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。510/510 全绿。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
+
+### 0.9.2 收尾轮（2026-10-27 晚）— 多 Agent 并行事故沉淀 + 提交
+
+**任务目标与用户决策**：用户直接指令「沉淀本次风险；因为可能用不同 agent 并行任务，针对此风险做对策，规则中有部分说明，帮我优化；提交 git；完善交接文档」。
+
+**本轮实际做了什么（3 件事）**：
+
+1. **沉淀事故**：`AGENTS.md` 新增坑点 22「多 Agent 并行会互相踩工作区」。记录本轮三起真实事故：
+   - ① subagent A 收尾时 `Remove-Item -Recurse -Force .tmpbuild,.tmp-build`，把 subagent B 正在用的 `.tmp-build/` 一并删除。**根因是判断依据不成立**——用 `Select-Object -First 10` 只看到 `node-compile-cache/` 就断定「里面只有缓存」，而 `-First N` 只截断显示。实际 B 随后自行重建（18:33–18:38），未造成损失，但属越界。
+   - ② subagent A 把 `vite.config.ts` 的 `dropUnusedOrtWasm()` 插件误判为「第三方并发写入」，一度建议回滚——实为 dispatcher 另派的卡。
+   - ③ 两边先后跑 `npm run build` 会互相覆盖 `dist/`，可能拿对方产物做验收。
+2. **优化全局规则**（`C:\Users\puj\.dsh\AGENTS.md` + `D:\AI工作平台\.dsh\rules\` 归档同步）：
+   - **R7 §6 由 3 条扩为两层**：6.1 交接文档层面（原 3 条 + 新增「记录归属」）、6.2 工作区层面（新增 6 条硬约束：写前勘察 `git status --porcelain`、禁止越界清理、临时目录带任务标识、**禁止用 `-First N`/head 等截断输出判断存在性**、共享产物目录视为可变状态、不认识的文件先问再动）。
+   - **R1 §3 增一条**「[禁止] 越界清理他人工作区」，与既有「未获授权不得并行修改同一路径」并列——原规则只覆盖「改同一路径」，未覆盖「共享工作区/产物目录的破坏性操作」。
+   - 变更记入 `user-CHANGELOG.md`（2026-10-27 条目，含事故依据与拍板人）。
+3. **提交 + 交接**：0.9.2 全部改动（主卡 + 并行卡）一次性提交；本文件 4.2/4.3/4.5/4.6 同步。
+
+**为什么这样改（对策设计依据）**：
+- 原 R1 的「并行修改同一路径」只防「写冲突」，但本轮三起事故**没有一起是写冲突**——都是「读/删/构建」类操作踩到共享可变状态。所以对策重点从「声明路径」转向「勘察 + 边界 + 不越界清理」。
+- `-First N` 那条单独成条，因为它是本轮最具体的错误动作：**工具截断 ≠ 集合大小**，用它做删除决策必然误判。这是可复用的通用教训，不限于本机。
+- 不新增独立规则文件，只扩 R7 §6 与 R1 §3：按 R1 §5「禁止一次性特例入规」，这属于稳定通用约束（多 agent 并行在本机是常态），但也不需要新编号。
+
+**验证方式与结果**：
+- 规则热加载实测：改完后本会话下一轮 `~/.dsh/AGENTS.md` 系统提示已反映新内容（R1 §3 新条目、R7 §6.1/6.2 结构均可见）
+- 归档与正文一致性：`user-rule-1789028871175.md`（R7）、`user-rule-1782302758797.md`（R1）已同步同样文本
+- 项目侧：`AGENTS.md` 坑点 22 落位（L103，总 103 行）
+
+**遗留问题**：
+- 规则改动属全局配置（R2 定级 L3），已按用户直接指令执行；如需回退，改这两处文本即可，无其他耦合
+- 坑点 22 提到的「并行时改用独立 outDir」目前只是建议，未做成强制脚本
+
+### 0.9.2 主卡轮（2026-10-27）— 依赖迁移 + RAG 运行时首次真正跑通
+
+**任务目标与用户决策**：承接大审查未修项 #1（生产依赖链 critical CVE）。用户三项决策（AskUserQuestion 确认）：① **一并修通 RAG 运行时**（不只迁依赖）；② WASM **自托管**走本地，不放行第三方 CDN；③ **只落代码**，版本 bump 留待统一发版轮。
+
+**关键发现（本轮最重要，推翻了 0.9.1 的认知）**：`dist/assets` 里**从来没有 .wasm 文件**；v2 的 onnxruntime 在 Web 环境只能从 `cdn.jsdelivr.net` 取 wasm，而 CSP 既无该域也无 `'wasm-unsafe-eval'` → **RAG 嵌入在 Tauri 生产包里从未真正跑通过**。0.9.1 的 CSP 修复只放行了模型文件域（huggingface.co / cas-bridge），wasm 运行时这一环一直缺。AGENTS 坑点 16 当时把「dev 无 CSP 只能产物级验证」记为环境限制，实际掩盖了这条真缺陷。
+
+**实际完成内容**（改动 11 M/D + 1 新增，未提交）：
+
+| 文件 | 改动 |
+|---|---|
+| `package.json` | 删 `@xenova/transformers`，加 `@huggingface/transformers ^4.3.1`；新增 `predev`/`prebuild` 钩子 |
+| `package-lock.json` | 依赖树重解析（1883 行变动） |
+| `src/lib/vectorStore.ts` | `{quantized:true}`→`{dtype:'q8'}`；新增 `useLocalWasm()` 在 `pipeline()` 前原地覆写 `env.backends.onnx.wasm.wasmPaths` + `env.useWasmCache=false`；单例改 `FeatureExtractionPipeline` 类型；`embed()` 用 `unknown`+`instanceof` 守卫（无 any） |
+| `src/lib/__tests__/vectorStore.test.ts` | mock 模块名同步 + 补 `env` 形状 |
+| `src/types/xenova-transformers.d.ts` | 删除（v4 自带完整类型） |
+| `scripts/copy-ort-wasm.mjs` | **新增**：prebuild/predev 把 `ort-wasm-simd-threaded.{mjs,wasm}` 拷到 `public/ort/`；兼容 npm 提升/嵌套两种布局；同尺寸跳过重写 |
+| `src-tauri/tauri.conf.json` | **仅** `script-src` 加 `'wasm-unsafe-eval'` |
+| `vite.config.ts` | 新增 `dropUnusedOrtWasm()` 插件：`generateBundle` 剔除 25.62MB 未使用的 asyncify wasm 变体 |
+| `.gitignore` | `public/ort/` + `.tmp-build/` 忽略，`!scripts/copy-ort-wasm.mjs` 例外 |
+| `AGENTS.md` | 坑点 20（RAG wasm 自托管）+ 21（沙箱 esbuild 盘变量） |
+| `README.md`/`README_EN.md` | 嵌入依赖行改名 |
+
+**验证方式与结果（dispatcher 独立复跑，非采信自报）**：
+- `npx tsc --noEmit` exit 0；`npm run lint` exit 0（40 warning 全为既有文件遗留）；`npx vitest run --pool=forks --poolOptions.forks.singleFork=true` **38 文件 510/510**；`npm run test:coverage` exit 0（分层门槛未动）；`npm run build` exit 0；`npm run check:version` OK（四处 0.9.1 未变）
+- `npm audit --omit=dev --registry=https://registry.npmjs.org` → **0 漏洞**（迁移前 1 critical + 4 high）。全量 audit 仍 14 条（3 critical/7 high/4 moderate）**全在 devDependencies**（vitest/vite/esbuild/postcss），不在生产包
+- **dist 产物核验**：15 文件 / **14.92 MB**（迁移前 40.54MB）；`*asyncify*` **0 匹配**；`dist/ort/ort-wasm-simd-threaded.wasm` 13.60MB 保留（sha256 `06BA0577…DF9E3`）
+- **端到端实跑**（Playwright + 从 tauri.conf.json 读出的**生产 CSP** + 拦截 huggingface.co 用本地缓存回放模型）：`{"dim":384,"l2":1.000000292803836,"head":[-0.03567689,0.02067922,0.00470460]}`；WASM 只请求 `/ort/ort-wasm-simd-threaded.{mjs,wasm}`；**CDN 请求 0、asyncify 请求 0**。探针产物与真实 dist 的 `transformers.web` chunk、两个 ort 文件 **sha256 逐一相同**，证明测的是同一份生产代码
+- **真实 dist 冒烟**：加载 `dist/index.html`（同生产 CSP）→ title=`灵感大王`、root innerHTML 6034 字符、**REQUEST_FAILURES=[]**
+- **两个对照实验**：① 去掉 `'wasm-unsafe-eval'` → `WebAssembly.instantiate` 被 CSP 拦、嵌入失败（证明该指令必需，非过度授权）；② 删掉 25.6MB asyncify wasm → 嵌入照常成功（证明是死重）
+
+**关键决策及理由**：
+- 选 v4 不选 v3：实测 `3.7.3` 的 sharp@0.34 仍带 2 high（libvips/libheif/librsvg CVE），只有 `4.3.1` 做到 `--omit=dev` 零漏洞
+- wasm 自托管而非放行 jsdelivr：契合「本地优先/数据不出机器」定位，离线可用，CSP 攻击面不扩大
+- `useWasmCache=false`：默认开启会把 `.mjs` 转 blob: URL 再动态 import，需额外放行 `script-src blob:`；关掉后走本地文件，CSP 保持最小
+- 路径基准用 `document.baseURI`：`base:'./'` 下 `import.meta.env.BASE_URL` 恒为 `'./'`，按模块 URL 解析会落到 `dist/assets/` 而非 `dist/`
+- 不改 test 脚本/不加 sourcemap 降级来绕 esbuild 问题：见坑点 21，那是沙箱盘变量，改脚本属误伤
+
+**遗留问题**：
+- **OTA 全链路仍未实测**（0.9.1 已是存量版本，需 0.9.2 发版时用 0.9.1 客户端在未阻断网络环境做）
+- **真实 Tauri 安装包内 RAG e2e 未验**：本轮只到 web 构建 + 自托管 wasm 层（`npx tauri build` 需 Rust 全量编译，耗时超本轮，且不改变 CSP/wasmPaths 正确性结论）
+- 产物 JS 内仍有 6 处 asyncify 文件名字符串（死分支字面量，零网络请求、零体积影响）；升级 onnxruntime-web 后需复核是否出现新的死重变体
+- 全量 audit 的 14 条 devDependencies 漏洞未处理（不在本卡范围）
+- 大审查未修项 #6 分层决策（用户已拍板选 ①「修订 AGENTS 承认 UI 可调只读类 lib，写操作走 hooks」）**尚未落文档**
 
 ### 大审查 + 立即修复轮（2026-10-25 深夜）
 
@@ -146,139 +223,6 @@
 - 运行时最终确认归属 0.9.1 真实使用：Tauri 客户端内产生历史 QA → 自动建索引 → 模型下载成功且 RAG 区显示「已索引 N 条」；若出现新 CDN 域名被拦，追加域名发 0.9.2
 - 本次 `tauri build` 产物（`target/release/bundle/nsis/LingGanDaWang_0.9.0_x64-setup.exe`，本地未签名验证用）未安装，仅作二进制检查；0.9.1 走正式 CI 构建
 
-### 冒烟反馈小卡轮（2026-10-25 下午）— 最小化按钮 + 工具选择持久化确认
-
-**任务目标与用户决策**：装机冒烟后用户反馈「没有最小化按键」，并问「需要按工具区分吗」。用户确认「可以，开始任务」后实施。
-
-**实际完成内容**：
-- **卡 A 最小化按钮**（随 0.9.1 发）：`windowStore.ts` 新增 `minimize` action（`getCurrentWindow().minimize()`，try/catch 静默降级）；`ExpandedCard.tsx` 头部在「收起」左侧新增最小化按钮（`isTauri()` 门控，aria-label="最小化"，title="最小化到任务栏"）。`core:window:allow-minimize` 权限核实已预置于 capabilities，无需改动。头部语义自此完整：收起=变球｜最小化=进任务栏｜✕（即收起图标）在右上角。**注意：头部 ✕ 图标实为「收起」**——用户混淆的根源，本次靠 title 与新增按钮缓解
-- **卡 B 记住工具选择**：核实为 **Task 8 已实现**（`appStore.ts` `loadStoredTargetTool`/`setTargetTool` 读写 localStorage `linggan_target_tool`，带类型守卫），无需开发；已在运行中的 0.9.0 实例实证：选 Codex → 收起成球 → 重新展开仍保持 Codex
-- 质量门全绿：tsc exit 0、eslint（改动文件）0 告警、vitest 422/422、build 2.86s、check-version exit 0
-
-**关键决策及理由**：
-- 不做「关闭」按钮改动、不加二次确认：增量铁律，本轮只解决最小化缺失。
-- 卡 B 转为实证验证而非重复开发：先查代码再动手，避免重复造轮子。
-
-**验证方式与结果**：见上；新按钮的实机视觉验证并入 0.9.1 冒烟（本机不跑 tauri dev 双实例，避免 R04 轮并行实例事故重演）。
-
-**遗留问题**：无新增；0.9.1 主线仍为 CSP 修复 + R07 质量门 + OTA 实测。
-
-### v0.9.0 正式发布轮（2026-10-25 中午）— 发布产物核对、修复重建与 Publish
-
-**任务目标与用户决策**：核对 v0.9.0 draft release 产物并决定发布路线（交接文档 4.6 首要事项）。用户三项决策（AskUserQuestion 确认）：① 产物不完整 → 选「修复后重建 v0.9.0」（productName 改 ASCII + macOS 补 app bundle，强移标签重建、核验后发布）；② 删除根目录 `nul)`；③ 标记历史文档 + 开 CSP 修复任务卡。中途补充指示：终端统一用 PowerShell 7（本机 pwsh 7.4.21 已确认，需 PowerShell 时一律 `pwsh -NoProfile`）。
-
-**实际完成内容**：
-- **核对旧 draft（run 40095231948）发现三问题**：缺 `latest.json`（三平台日志均报 `Signature not found for the updater JSON. Skipping upload...`）；缺 macOS `.app.tar.gz`+`.sig`（`--bundles dmg` 非 updater-enabled target，CI 明确警告）；全部资产名 `_0.9.0_*` 开头。定性根因链：**GitHub 上传资产时剥离非 ASCII 字符**，`灵感大王_0.9.0_…` 被净化为 `_0.9.0_…` → tauri-action 按本地原名在远端资产列表找签名失败 → latest.json 全平台放弃
-- **修复**（commit `9aa2f6c`，内容经 API 推送为 `3dd6f7e`）：`tauri.conf.json` productName「灵感大王」→「LingGanDaWang」（窗口标题仍中文）；`release.yml` macOS `--bundles dmg` → `app,dmg`；`openai-adapter.test.ts` 假密钥改 `join` 构造（解除 Mimosa 钩子误报拦截，26 例全过）；AGENTS.md 坑点 14/15
-- 删除 `nul)`；`docs/后续开发计划/PRD-后续开发.md`、`docs/长期推进计划.md` 头部加「已被 2026-10-24 路线图取代」标记
-- **网络阻断下的推送**：github.com:443 常态阻断（api.github.com 正常；SSH 22 通但无注册密钥，token 无 admin:public_key 不能注册）→ 走 **Git Data API**：6 blob + tree 逐 sha 与本地比对一致；GitHub API 剥 commit 消息尾换行致远端 sha 不同（预期），本地 `git hash-object -t commit` 重建对齐为 `3dd6f7e`；PATCH main 快进 + 删旧 draft（HTTP 204）+ 重建标签引用 → 触发构建
-- **Release run 40162757301 三平台全绿**（rust-cache 命中约 5 分钟）；新 draft 10 资产全 ASCII 名 + `latest.json` 四主平台键（windows-x86_64 / linux-x86_64 / darwin-aarch64 / darwin-x86_64 及 -app/-nsis/-deb/-appimage 别名键）签名真实
-- **Publish 完成**：`releases/latest` 匿名返回 v0.9.0（10 资产）；`latest.json` 匿名 302 可下载；CI（main `3dd6f7e`）success
-
-**关键决策及理由**：
-- productName 用拼音驼峰：GitHub 资产名净化是硬约束，唯一替代方案是「tauri-action 只构建 + 自写上传脚本重命名并组装 latest.json」（约百行需长期维护）；用户权衡后接受安装名变拼音（快捷方式/应用名英文，窗口标题与界面仍中文）。
-- 推送走 Git Data API 而非等待网络恢复：blob/tree/commit 逐 sha 校验保证与本地零差异；token 取自本机 git credential manager（scope repo/workflow/gist），全程未回显、未落盘。
-- 旧 draft 直接删除而非保留：产物名已变（`_0.9.0_*` vs `LingGanDaWang_0.9.0_*`），保留会与新产物混挂。
-
-**验证方式与结果**：
-- Release 三 job success；CI（main）success；check-version exit 0
-- latest.json 逐键核验：version 0.9.0、pub_date、四主平台键签名长度 412–428、URL 全部指向 ASCII 资产
-- 匿名 API 验证发布生效：`releases/latest` = v0.9.0 / draft false / 10 assets；latest.json 资产 302 可下载
-
-**遗留问题**：
-- **更新链路真实验证仍需 0.9.1**：本版无存量客户端，发 0.9.1 时用 0.9.0 客户端实测「检测更新 → 验签 → OTA」
-- 安装后应用/快捷方式名为 LingGanDaWang（拼音）；若需中文安装名走自定义上传方案（见 4.4 CSP 卡下方备注）
-- `.mimosa/`、`.video_agent/` 未跟踪工具目录留在工作区（Mimosa 钩子/本轮工具产物），如碍眼可入 .gitignore
-
-### 发布演练轮（2026-10-24 晚）— v0.9.0 首次三平台构建
-
-**任务目标与用户决策**：配置 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`（用户手动在仓库网页完成；密钥经本机剪贴板传递，全程未进入对话/文件）；推送 main 与发布标签，跑通首次完整发布演练；用户明确授权打标签。
-
-**实际完成内容**：
-- Secret 配置完成（用户操作，列表显示已更新）；`main` 推送 `cac0941..7a6b557`；标签 `v0.9.0` 推送并 force 更新到修复提交 `7d46faf`
-- **首次构建失败 → 定位并修复真实缺陷**：tauri-action 默认执行 `npm run tauri build`，而 `package.json` 缺 `tauri` 脚本 → 三平台同步报 `Missing script: tauri`（exit 1）。修复：新增 `"tauri": "tauri"`（commit `7d46faf`），本地 `npm run tauri -- --version` 验证 tauri-cli 2.11.3
-- **第二次构建三平台全绿**（run 40095231948，约 13 分钟）：windows-latest / ubuntu-latest / macos-latest 均 success，产物上传到 **draft release**
-- `AGENTS.md` 新增坑点 13（tauri 脚本缺失导致发布失败）
-
-**关键决策及理由**：
-- 标签用 `v0.9.0` 而非 `v0.9.0-rc.1`：`release.yml` 的 `tagName: v__VERSION__` 使发布标签取自版本号，推 rc 标签仍会生成名为 v0.9.0 的 release，徒增混乱；`releaseDraft: true` 已保证草稿不公开，草稿阶段本身即演练。
-- 网络多次 502：改用「探测 + 自动重试」后台任务（每 30s 检测，恢复即自动 push main + force tag），避免人工反复尝试；实测第 10 次探测恢复。
-
-**验证方式与结果**：
-- 三平台 job 全 success；CI（main 推送）同时通过（422 测试 + cargo check）
-- 匿名 API 无法列出 draft（`/releases` 与 `/releases/tags/v0.9.0` 均 404，GitHub 权限设计），草稿产物需登录网页核对
-- 待核对清单：Windows `*-setup.exe`、macOS `.dmg`+`.app.tar.gz`、Linux `.deb`+`.AppImage`，各自 `.sig`，以及 `latest.json`
-
-**遗留问题**：
-- 草稿 release 是否 Publish 由用户决定；发布后 `releases/latest/download/latest.json` 才生效
-- **更新链路本次无法验证**：此前从未发版，不存在旧版本客户端；需等下一个版本（0.9.1+）才能真实验证「旧版检测到更新」
-- `nul)` 杂物仍未删（待用户确认）
-
-### R04 轮（2026-10-24 下午）— 前后对比测试 MVP
-
-**任务目标与用户决策**：按路线图 R04 任务卡实现「同一输入两版提示词并排对比并留档」MVP；用户指令「开始下一步」，范围仅此一张卡，不提交由主理人统一收口。
-
-**实际完成内容**（新增 7 文件 + 修改 5 文件，commit `f77e6af`）：
-- 新增 `src/engine/ComparisonEngine.ts`（纯函数：段落贪心前瞻对齐 + 约束条目集合 diff + `isPromptResultLike` 形状守卫）、`src/lib/comparisonStore.ts`（SQLite/localStorage 双路径 + `ensureSchema` 兜底建表建索引）、`src/components/ComparePanel.tsx`（双栏并排/逐段折叠/约束条目 +−/保存·重命名·二态删除/⇄ 交换）、`src-tauri/migrations/0006_create_comparison_runs.sql`、测试三件（31 + 11 + 7 例）
-- 修改 `src-tauri/src/lib.rs`（+6 注册迁移 6）、`src/stores/appStore.ts`（+27/-2 槽位上提）、`src/components/MainWindow.tsx`（+3 挂载）、`src/components/ResultPanel.tsx`（+9「对比」按钮）、`src-tauri/Cargo.lock`（0.1.0→0.9.0 元数据收口）
-
-**关键决策及理由**：
-- **P1 槽位缺陷修复（本轮最重要）**：QA 首轮抓出「A/B 槽位存于组件本地 useState + 面板条件挂载 → 必须关面板才能重新生成 → 一关即丢态 → 验收①不可达、保存按钮恒禁用」。修复为槽位上提 `appStore`（`compareLeft/compareRight` + `setCompareSlot` + `swapCompareSlots`），`closeCompare/collapse/backToExpanded` 均不清空（仅槽位 × 显式清空），并加 store 级回归测试固化契约。
-- 引擎不做字符级 diff / 语义评分：遵循路线图 R04 边界，只做段落对齐 + 新增/缺失标记。
-- 集成走最小增量：ResultPanel 加 1 个按钮、MainWindow 加 1 行挂载，不改既有视觉与交互。
-- Cargo.lock 版本同步纳入本轮提交：R03 升版后 lock 滞后，任何 cargo 命令都会自动刷新。
-
-**验证方式与结果**：
-- **QA Round 1（全新实例）**：自建 24 例独立探针（未照抄工程师用例）证明引擎/存储/迁移正确；质量门 415 测试全绿、cargo check exit 0；发现 P1 阻断 → 路由 Engineer。
-- **QA Round 2（另起只读实例）**：自建 9 例探针，含端到端链路复现（A 载入→关面板→换结果→载入 B→`comparePromptResults` 非 null 且 changedSegments 正确）确认 P1 闭环；422 测试全过、tsc/lint/build/check-version 全 exit 0；Rust 自 Round 1 后零变更；**最终路由 NoOne**。
-- 既有 24 个测试文件零改动（415 + 7 = 422）；lint 39 warnings 全为既有文件遗留，R04 新文件 0 告警。
-- 并发实例事故：两个 QA 实例同时在跑导致一次统计被探针文件污染（28/431），剔除后干净重跑 27/422 一致——**教训：并行验证的探针文件名须带实例后缀，或改为串行**。
-
-**遗留问题**：
-- P2：`openRun` 双侧回填、无法「当前结果 vs 某条历史记录」单侧载入（约 10 行可加 →A/→B）；槽位不跨重启（留档由 comparison_runs 承担，符合验收③）；`openRun` 不保留记录 id，保存产生新记录而非覆盖。
-- P3：无「清空两侧」按钮且 ESC 收起后槽位保留无提示；数据损坏时 `key={runId}` 可能重复 0；`renamingId===0` 静默失效。
-- **建议 RTL（@testing-library/react）列入 R07**：项目无组件测试基建，P1 这类集成缺陷在结构上无法被单测发现。
-
-### P0 三件套轮（2026-10-24 上午）— 发布链止血
-
-#### 任务目标与用户决策
-基于《灵感大王后续开发路线图》（2026-10-24）P0「本周即可执行」前三项任务卡：R01 发布链止血、R02 构建可复现、R03 版本号与 CHANGELOG 治理；用户同时要求做好交接文档。用户决策（2026-10-24 AskUserQuestion 确认）：① 版本统一 **0.9.0**（CHANGELOG 已存在 0.7.0/0.8.0 条目，顺延编号，现有条目不重编号）；② **重新生成**更新签名密钥对；③ 本轮范围仅 R01+R02+R03，不打标签、不提交、不推送。
-
-#### 实际完成内容（9 个已跟踪文件修改 + 1 个新脚本 + 本交接文档）
-
-| 文件 | 改动要点 |
-|---|---|
-| `src-tauri/tauri.conf.json` | endpoints 占位→`https://github.com/puj611/linggandawang/releases/latest/download/latest.json`；pubkey 替换为重新生成密钥对的公钥；version 0.1.0→0.9.0 |
-| `.github/workflows/release.yml` | 删除「Install undeclared runtime dependency」步骤连同 TODO 注释块；注释占位符→puj611 |
-| `package.json` | version→0.9.0；dependencies 新增 `@xenova/transformers@2.17.2`；scripts 新增 `check:version` |
-| `package-lock.json` | @xenova/transformers 依赖树正式入库（onnxruntime-web 等，+895 行）；根版本号两处同步 0.9.0 |
-| `src-tauri/Cargo.toml` | 仅 version→0.9.0 |
-| `CHANGELOG.md` | 顶部新增 0.9.0 条目；重复的 `[0.5.0]-07-15`（M13）/`[0.6.0]-07-15`（P0 体检）合并删除（独有内容以「补录」小节保留）；`[0.7.0]`/`[0.8.0]` 日期修正为 2026-08-20 |
-| `scripts/check-version.mjs` | 新增：零依赖 Node ESM，比对 4 处版本号，不一致 exit 1 并逐项打印 |
-| `.gitignore` | 新增 `!scripts/check-version.mjs` 例外 + `backup/` 忽略规则 |
-| `docs/reference/release-process.md` | endpoints 真实化；pubkey 格式说明与指纹更正；状态段改写 |
-| `docs/audits/2026-08-21-core-modules.md` | 第 67 行 URL 片段同步（占位符零命中验收所需） |
-
-#### 关键决策及理由
-- 选 0.9.0 而非路线图字面的 0.7.0：CHANGELOG 实测存在 0.7.0（RAG）/0.8.0（模板库）两条 legacy 条目（git 实证为 2026-08-20 工作，文中日期 07-15 为补录错误），直接设 0.7.0 会造成重复版本号。路线图文档已同步改标签（原文件备份于 `backup/20261024_153615_roadmap-version-sync/`）。
-- 重新生成密钥而非找回旧私钥：`~/.tauri/` 不存在，commit `755e047` 亦确认 no private key；且仓库无任何 tag、从未发版。
-- **pubkey 格式修正（本轮最重要教训）**：工程师初版把 `.pub` 文件内容又做了一次 base64（204 字符），构成双重编码。主理人用 tauri-plugin-updater 2.10.1 源码定性：`verify_signature` 先 base64 解码配置值，再交 minisign-verify `PublicKey::decode` 解析**两行明文**。Tauri 的 `.pub` 文件内容本身就是 base64(两行明文)，配置值必须**原样使用**（152 字符）。已修正并经 QA 逐字符比对确认。
-- npm test 多 worker 沙箱 EPERM：裁决不改 test 脚本——CI 干净环境不受影响，属 WorkBuddy 沙箱 TEMP 缓存写入限制；本机验证用 `npx vitest run --pool=forks --poolOptions.forks.singleFork=true`。
-- backup/ 入 .gitignore：备份是本地 artifact（规则要求保留 7 天用户手动清理），禁止入库。
-- 仓库根 `nul)` 852B 杂物：保留不动，等用户确认后清理。
-
-#### 验证方式与结果
-- **QA 独立验证（严过关，Round 1，全新实例）**：公钥链路 5/5（含逐字符程序化比对、base64 解码格式、错误值零残留、指纹复算）；质量门 7/7：`npm run lint` exit 0（0 error/39 warnings）、`npx tsc --noEmit` exit 0、vitest 单 worker **373/373 通过（24 文件）**、`npm run build` exit 0（4.79s，transformers chunk 823.20 kB）、`node scripts/check-version.mjs` exit 0、`npm ls @xenova/transformers` 2.17.2 已声明、代码与配置文件中 `你的用户名` 零命中；校验脚本失败路径 3/3（scratch 实测 exit 1 且明确指出 Cargo.toml 差异）；diff 审查逐文件无越界。
-- **Round 2 回归**：工程师修复 package-lock.json 根版本滞后（2 处，0.1.0→0.9.0）、.gitignore 增补 `backup/` 忽略规则、CHANGELOG 两处措辞精确化；QA Round 2 只读回归四项全过（lock diff 仅 2 行版本改动且 yocto-queue 等嵌套依赖未动、backup/ 已被 .gitignore:105 忽略、措辞已精确化、check-version + `npm ci --dry-run` 均 exit 0），**最终路由判定 NoOne**。
-- 测试总数 373 高于 CHANGELOG 0.6.0 记载的 330：08-21/08-25 修复新增，非本轮引入。
-
-#### 遗留问题
-- **待用户手动**：GitHub 仓库 Settings → Secrets → Actions 新增 `TAURI_SIGNING_PRIVATE_KEY`，值为 `C:\Users\puj\.tauri\linggan.key` 文件**完整内容**（base64 文本，空密码无需 PASSWORD secret；内容切勿外传）。配置前打 tag 构建必败（预期门禁）。
-- **已提交**：`cbd277d`（feat/release，10 文件）+ `48146a3`（docs，交接文档 + AGENTS.md 踩坑）；工作区干净，仅剩根目录杂物 `nul)` 未处理。
-- 未打标签：`v0.9.0-rc.1` 发布演练待 Secret 配置后由用户授权执行。
-- CSP 缺 huggingface.co（backlog，见 4.4）；`nul)` 待用户确认删除。
-
----
 
 ## 4.4 待办事项（Backlog）
 
@@ -288,6 +232,9 @@
 | ~~R05 变量模板 MVP~~ | `7bba928` | ✅ 2026-10-25 完成（TemplateComposer/templateStore+迁移0007/TemplateLibrary，25 例） |
 | ~~R06 数据导出与导入~~ | `d1413a6` | ✅ 2026-10-25 完成（dataExport/DataPanel，无密钥/自动备份，12 例） |
 | ~~覆盖率 ratchet 第一轮~~ | `a35efb1` | ✅ lib57/hooks5/components6/stores36；下一轮目标见 P2 |
+| ~~依赖迁移（@xenova → @huggingface/transformers v4）~~ | 本轮未提交 | ✅ 2026-10-27 完成：生产依赖 0 漏洞；同时修通 RAG WASM 运行时（见 4.3） |
+| ~~提交本轮 0.9.2 改动~~ | `git log -1` | ✅ 2026-10-27 已提交（主卡 + 并行卡合并；未 bump 版本，发版轮再动版本号） |
+| 分层规则落文档（大审查 #6） | `AGENTS.md` 分层约束节 | 用户已拍板选 ①：修订为「UI 可调只读类 lib，写操作走 hooks」；一行文档即可关闭该未修项 |
 | 0.9.2 发版时 OTA 全链路实测 | release 流程 | 本机 github.com:443 阻断无法完成下载验签安装；0.9.1 已是存量版本，用其客户端实测 |
 | 更新失败文案区分网络/密钥 | `src-tauri/src/commands/updater.rs` 或前端提示 | P3：当前两种原因混为一句 |
 
@@ -337,12 +284,16 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 12. **GitHub 剥离 release 资产名中的非 ASCII 字符**（2026-10-25 实测，详见 AGENTS.md 坑点 14）：productName 必须全 ASCII，否则资产名变 `_0.9.0_*` 开头且 latest.json 全平台生成被跳过。
 13. **github.com:443 阻断时用 Git Data API 推送**（2026-10-25 实测）：blob → tree → commit → PATCH refs，blob/tree sha 与本地逐一比对；token 取自 git credential manager（`git credential fill`，勿回显）。GitHub API 序列化剥 commit 消息尾换行 → 远端 sha 与本地不同属预期，用 `git hash-object -t commit` 按远端字节重建 + `git update-ref` 对齐，勿 force push。
 14. **Mimosa pre-commit 钩子 fail-closed**（2026-10-25 实测，详见 AGENTS.md 坑点 15）：测试夹具中 `sk-test-` 密钥字面量（含字符串拼接写法）会被判「硬编码凭据」拦截 commit；用 `[a,b].join('-')` 构造可过，行为不变。
+15. **RAG 嵌入的 WASM 运行时长期缺失**（2026-10-27 发现，详见 AGENTS.md 坑点 20）：0.9.1 及以前 `dist/assets` 里没有任何 .wasm，onnxruntime 只能从 cdn.jsdelivr.net 取，而 CSP 既无该域也无 `'wasm-unsafe-eval'` → **打包版里 RAG 嵌入从未跑通过**。坑点 16 当时把「dev 无 CSP 只能产物级验证」记为环境限制，实际掩盖了这条真缺陷。教训：**「产物级验证」要通过，必须真的在浏览器里执行到那条代码路径**（本轮用 Playwright + 生产 CSP + 本地模型回放才暴露），只看二进制里有没有 CSP 明文是不够的。
+16. **esbuild 在沙箱工作区（D: 盘）内必然失败**（2026-10-27 实测，详见 AGENTS.md 坑点 21）：`npm run build` 报 `remove ...\Temp\esbuild-<hash>: Access is denied.`。表面像「文件 >1MB 就失败」，五组对照证明变量是 **esbuild 可执行文件所在的盘**：C: 盘 6/6 OK，D: 盘 6/6 FAIL，同二进制同哈希。`sourcemap=false` 绕不掉。规避：构建前 `$env:TEMP=$PWD\.tmp-build`。**勿为此改 test 脚本或 vite 配置**——那是误伤，与坑点 12 同源。
+17. **多 Agent 并行会互相踩工作区**（2026-10-27 实测事故，详见 AGENTS.md 坑点 22）：多个 agent 共享同一工作区/node_modules/dist/临时目录，且互不可见 transcript。本轮真实事故：越界删除他人 `.tmp-build/`（判断依据用了 `-First 10` 截断输出）、误把他人 `vite.config.ts` 改动当成「第三方写入」、并发 `npm run build` 互相覆盖 `dist/`。对策已入全局规则 R1 §3 + R7 §6.2。
 
 ---
 
 ## 4.6 给下一个 Agent 的提示
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
-2. **当前状态**：**P0 路线图任务全部完成**（R01–R07 + 0.9.1 已发布 + CSP 修复 + 冒烟反馈小卡 + 大审查及立即修复批）。0.9.1 已是存量版本；下一个自然节点是 0.9.2 发版时用 0.9.1 客户端做 OTA 全链路实测（本机网络阻断做不了），**0.9.2 建议主卡=依赖迁移**（@xenova/transformers → @huggingface/transformers v3，消 protobufjs critical CVE，见审查报告 #1）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
-3. **悬而未决问题**：两项待拍板——① 分层规则二选一：修订 AGENTS 承认「UI 可调只读类 lib」vs 新 hooks 封装（审查报告 #6）；② 大审查报告原样 vs 补 4.6 的更新失败文案小卡。坑点 17-19 沉淀已确认写入 ✅（2026-10-25）。可选项：`.mimosa/`、`.video_agent/` 是否入 .gitignore。
+2. **当前状态**：P0 路线图全清，**0.9.2 主卡 + 并行卡均已提交**（依赖迁移 + RAG 运行时修通 + asyncify wasm 死重剔除；全质量门绿、510/510、生产依赖 0 漏洞、dist 14.92MB）。**下一个自然节点=统一发版轮**：bump 0.9.2（四处版本号 + CHANGELOG 首条）→ 发版 四处版本 + CHANGELOG → 打标签 → 用 0.9.1 客户端做 OTA 全链路实测（本机 github.com:443 阻断做不了，需未阻断网络）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
+3. **悬而未决问题**：① 分层规则已由用户拍板选「修订 AGENTS 承认 UI 可调只读类 lib，写操作走 hooks」，但**尚未落文档**（一行即可关闭大审查 #6）；② 大审查报告原样 vs 补 4.6 的更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理（当前不在任何卡上）；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
+5. **本轮新增两条本机硬约束**（详见 AGENTS 坑点 20/21）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错。

@@ -96,7 +96,7 @@ Two tools are provided: `list_questions` (preview the questions that would be as
 | State | Zustand 4 |
 | Desktop | Tauri 2 (Rust backend) |
 | Storage | SQLite (tauri-plugin-sql, with migrations) + keyring (OS credential manager) |
-| Embeddings | @xenova/transformers (all-MiniLM-L6-v2, local inference, lazy-loaded) |
+| Embeddings | @huggingface/transformers (all-MiniLM-L6-v2, local inference, lazy-loaded, self-hosted WASM) |
 | LLM (optional) | OpenAI-compatible adapter (DeepSeek / Qwen / OpenAI / local Ollama) |
 | MCP | Hand-written JSON-RPC 2.0 stdio server, zero extra dependencies |
 

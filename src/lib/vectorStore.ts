@@ -1,10 +1,11 @@
 // src/lib/vectorStore.ts
 // RAG-Lite 向量存储：本地嵌入 + 余弦相似度检索
-// 使用 @xenova/transformers 的 all-MiniLM-L6-v2 模型（~90MB，CPU 可跑）
+// 使用 @huggingface/transformers 的 all-MiniLM-L6-v2 模型（~90MB，CPU 可跑）
 // 用途：将用户历史答案向量化，提问时检索 Top-K 相似历史增强上下文
 // Phase C：持久化升级为 SQLite（Tauri）/ localStorage（浏览器降级）
 
 import type { ContextRecentQA } from '@/types/context';
+import type { env as transformersEnv, FeatureExtractionPipeline } from '@huggingface/transformers';
 import { isTauri } from '@/lib/env';
 
 // 嵌入维度（all-MiniLM-L6-v2 输出 384 维）
@@ -17,23 +18,54 @@ const DEFAULT_TOP_K = 5;
 const SIMILARITY_THRESHOLD = 0.3;
 
 // 嵌入模型单例
-let embedder: unknown = null;
+let embedder: FeatureExtractionPipeline | null = null;
 let embedderLoading = false;
-let embedderPromise: Promise<unknown> | null = null;
+let embedderPromise: Promise<FeatureExtractionPipeline> | null = null;
+
+// WASM 运行时目录（public/ort/，由 scripts/copy-ort-wasm.mjs 在 prebuild/predev 时生成）
+const ORT_WASM_DIR = 'ort/';
+// onnxruntime-web 默认构建的 WASM 运行时文件名
+const ORT_WASM_BASE = 'ort-wasm-simd-threaded';
+
+/** transformers 的 env 对象类型（TransformersEnvironment 未从包根导出，用 typeof 取） */
+type TransformersEnv = typeof transformersEnv;
+
+/**
+ * 把 onnxruntime 的 WASM 运行时从 CDN 改成自托管本地路径（生产 CSP 因此无需放行 jsdelivr）。
+ * v4 在模块求值时就写入 wasmPaths=https://cdn.jsdelivr.net/npm/onnxruntime-web@<ver>/dist/。
+ * env.backends.onnx 是 ONNX_ENV 的浅拷贝，其 .wasm 与 ONNX_ENV.wasm 指向同一对象——
+ * 必须原地改 .wasmPaths 字段（整体替换 env.backends.onnx.wasm 不会传导给 onnxruntime），
+ * 且在 pipeline() 创建 InferenceSession 之前完成。
+ */
+function useLocalWasm(tfEnv: TransformersEnv): void {
+  const wasm = tfEnv.backends.onnx.wasm;
+  if (!wasm) return;
+  // base: './' → 以文档目录为基准解析：dev（vite）与生产（tauri://localhost 或 http://tauri.localhost）都成立
+  const base = typeof document !== 'undefined' ? document.baseURI : undefined;
+  const dir = base ? new URL(ORT_WASM_DIR, base).href : `./${ORT_WASM_DIR}`;
+  wasm.wasmPaths = {
+    mjs: `${dir}${ORT_WASM_BASE}.mjs`,
+    wasm: `${dir}${ORT_WASM_BASE}.wasm`,
+  };
+  // 关闭 wasm 预缓存：预缓存会把 .mjs 转成 blob: URL 再动态 import，需 CSP 额外放行 script-src blob:；
+  // 本地文件加载无网络成本，关掉可保持 CSP 最小化
+  tfEnv.useWasmCache = false;
+}
 
 /**
  * 获取嵌入模型（懒加载，首次调用时下载模型 ~90MB）
  */
-async function getEmbedder(): Promise<unknown> {
+async function getEmbedder(): Promise<FeatureExtractionPipeline> {
   if (embedder) return embedder;
   if (embedderPromise) return embedderPromise;
 
   embedderLoading = true;
   embedderPromise = (async () => {
     try {
-      const { pipeline } = await import('@xenova/transformers');
+      const { env, pipeline } = await import('@huggingface/transformers');
+      useLocalWasm(env);
       const model = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        quantized: true, // 使用量化模型，体积更小
+        dtype: 'q8', // 量化模型，体积更小（v2 的 quantized: true 在 v4 改为 dtype）
       });
       embedder = model;
       embedderLoading = false;
@@ -57,12 +89,14 @@ export async function embed(text: string): Promise<Float32Array> {
   }
 
   const model = await getEmbedder();
-  const result = await (model as (text: string, options: unknown) => Promise<{ data: Float32Array }>)(text, {
-    pooling: 'mean',
-    normalize: true,
-  });
+  const output = await model(text, { pooling: 'mean', normalize: true });
+  const data: unknown = output.data;
+  // v4 的 Tensor.data 是 DataArray（含 BigInt 视图与普通数组），本 pipeline 固定输出 float32
+  if (!(data instanceof Float32Array)) {
+    throw new TypeError('[vectorStore] 嵌入输出不是 Float32Array，无法得到 384 维向量');
+  }
 
-  return new Float32Array(result.data);
+  return new Float32Array(data);
 }
 
 /**
