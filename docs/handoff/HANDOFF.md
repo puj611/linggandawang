@@ -56,11 +56,11 @@
 
 ## 4.2 当前状态快照
 
-- **分支**：`main`（本地 HEAD `95a417a`，在 `c6661fe` 之上；**未推送**——`origin/main` 仍停在 `960f32d`，本地 ahead 15 个提交，github.com:443 阻断）
+- **分支**：`main`，HEAD `267cf7a`，**已推送并与 `origin/main` 同步（0/0）**；github.com:443 于 2026-10-27 19:2x 恢复可达，`git push` 直推成功（c6661fe..267cf7a），无需 Git Data API
 - **最近提交**：`95a417a` feat(rag): 迁移 @huggingface/transformers v4 并修通 RAG WASM 运行时（14 文件，+1399/−1087）；标签 `v0.9.0` / `v0.9.1` 齐全
 - **工作区状态**：本轮 0.9.2 改动已提交（commit 见 `git log -1`）；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
 - **整体进度**：P0 路线图全清（R01–R07 + 0.9.0/0.9.1 已发布 + CSP 修复 + 大审查修复批）。**0.9.2 主卡已完成并提交**：依赖迁移 + RAG 运行时首次真正跑通 + 异步 wasm 死重剔除（两张卡合并）。未 bump 版本、未发版，按用户决策留待统一发版轮
-- **最后更新时间**：2026-10-27 19:15 (GMT+8)
+- **最后更新时间**：2026-10-27 19:30 (GMT+8)
 - **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。④ 分层规则按代码实测校准（大审查 #6 关闭）。510/510 全绿。
 
 ---
@@ -280,7 +280,7 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 8. **tauri-plugin-sql execute 无跨语句事务**：需原子性时用 staging 表 + DROP/RENAME。
 9. **MCP stdio server**：stdout 只写协议消息，日志重定向 stderr，限制单行长度。
 10. **tauri-action 默认执行 `npm run tauri build`**（2026-10-24 首次发布演练实测）：`package.json` 缺 `tauri` 脚本时三平台同步报 `Missing script: tauri` 并 exit 1。已补 `"tauri": "tauri"`；发布前用 `npm run tauri -- --version` 自检。
-11. **终端到 github.com 的通道不稳定**（2026-10-24 实测；2026-10-25 升级为常态阻断）：github.com:443 直连超时，api.github.com / 对象 CDN 正常；SSH 22 端口可达但本机无注册密钥。发布类推送优先直推，失败即走 **Git Data API**（见坑 13），勿反复手工重试。
+11. **终端到 github.com 的通道不稳定**（2026-10-24 实测；2026-10-25 升级为常态阻断）：github.com:443 直连超时，api.github.com / 对象 CDN 正常；SSH 22 端口可达但本机无注册密钥。**2026-10-27 19:2x 实测已恢复可达**（`Test-NetConnection github.com -Port 443` = True，`git fetch` + `git push` 直推成功 c6661fe..267cf7a），故阻断是间歇性而非永久——每次推送前先探一次，通则直推、不通再走 Git Data API。发布类推送优先直推，失败即走 **Git Data API**（见坑 13），勿反复手工重试。
 12. **GitHub 剥离 release 资产名中的非 ASCII 字符**（2026-10-25 实测，详见 AGENTS.md 坑点 14）：productName 必须全 ASCII，否则资产名变 `_0.9.0_*` 开头且 latest.json 全平台生成被跳过。
 13. **github.com:443 阻断时用 Git Data API 推送**（2026-10-25 实测）：blob → tree → commit → PATCH refs，blob/tree sha 与本地逐一比对；token 取自 git credential manager（`git credential fill`，勿回显）。GitHub API 序列化剥 commit 消息尾换行 → 远端 sha 与本地不同属预期，用 `git hash-object -t commit` 按远端字节重建 + `git update-ref` 对齐，勿 force push。
 14. **Mimosa pre-commit 钩子 fail-closed**（2026-10-25 实测，详见 AGENTS.md 坑点 15）：测试夹具中 `sk-test-` 密钥字面量（含字符串拼接写法）会被判「硬编码凭据」拦截 commit；用 `[a,b].join('-')` 构造可过，行为不变。
@@ -293,7 +293,7 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 ## 4.6 给下一个 Agent 的提示
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
-2. **当前状态**：P0 路线图全清，**0.9.2 主卡 + 并行卡均已提交**（`95a417a`，14 文件；依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除；全质量门绿、510/510、生产依赖 0 漏洞、dist 14.92MB）。**未推送**：`origin/main` 仍停在 `960f32d`，本地 ahead 15 个提交；github.com:443 阻断，推送需按 4.5 坑 13 走 Git Data API。**下一个自然节点=统一发版轮**：bump 0.9.2（四处版本号 + CHANGELOG 首条）→ 打标签 → 用 0.9.1 客户端做 OTA 全链路实测（需未阻断网络）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
+2. **当前状态**：P0 路线图全清，**0.9.2 主卡 + 并行卡 + 分层规则校准均已提交并推送**（`95a417a` + `267cf7a`；依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除；全质量门绿、510/510、生产依赖 0 漏洞、dist 14.92MB）。`main` 与 `origin/main` 已同步。**下一个自然节点=统一发版轮**：bump 0.9.2（四处版本号 + CHANGELOG 首条）→ 打标签 → 用 0.9.1 客户端做 OTA 全链路实测（需未阻断网络）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
 3. **悬而未决问题**：① 大审查报告原样 vs 补 4.6 的更新失败文案小卡；② 全量 audit 的 14 条 devDependencies 漏洞是否处理（当前不在任何卡上）；③ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore。分层规则 #6 已于 2026-10-27 落文档关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
 5. **本轮新增两条本机硬约束**（详见 AGENTS 坑点 20/21）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错。
