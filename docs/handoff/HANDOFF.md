@@ -56,17 +56,53 @@
 
 ## 4.2 当前状态快照
 
-- **分支**：`main`，HEAD `267cf7a`，**已推送并与 `origin/main` 同步（0/0）**；github.com:443 于 2026-10-27 19:2x 恢复可达，`git push` 直推成功（c6661fe..267cf7a），无需 Git Data API
-- **最近提交**：`95a417a` feat(rag): 迁移 @huggingface/transformers v4 并修通 RAG WASM 运行时（14 文件，+1399/−1087）；标签 `v0.9.0` / `v0.9.1` 齐全
-- **工作区状态**：本轮 0.9.2 改动已提交（commit 见 `git log -1`）；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
-- **整体进度**：P0 路线图全清（R01–R07 + 0.9.0/0.9.1 已发布 + CSP 修复 + 大审查修复批）。**0.9.2 主卡已完成、提交并推送**：依赖迁移 + RAG 运行时首次真正跑通 + 异步 wasm 死重剔除（两张卡合并）+ 分层规则校准（大审查 #6 关闭）。**CI 双平台全绿**（`check` ubuntu + `check-windows`，commit `267cf7a`）。未 bump 版本、未发版，按用户决策留待统一发版轮
-- **最后更新时间**：2026-10-27 19:30 (GMT+8)
+- **分支**：`main`，HEAD `a433c09`（chore(release): bump 0.9.2），**已推送并与 `origin/main` 同步**；标签 `v0.9.0` / `v0.9.1` / **`v0.9.2`（已发布）**
+- **最近提交**：`a433c09` chore(release): bump 0.9.2（四处版本号 + CHANGELOG）；此前 `95a417a` feat(rag) 为功能主体（14 文件，+1399/−1087）
+- **工作区状态**：干净，`main` 与 `origin/main` 同步；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
+- **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 检测/下载/验签三段已实测通过，安装段受沙箱限制未完成**（详见 4.3）
+- **最后更新时间**：2026-10-27 21:20 (GMT+8)
 - **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。④ 分层规则按代码实测校准（大审查 #6 关闭）。510/510 全绿。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
 
+### v0.9.2 发版轮（2026-10-27 晚）— 三平台发布 + OTA 检测/下载/验签实测
+
+**任务目标与用户决策**：执行 0.9.2 发版（上一轮已定的自然节点）。用户确认：① 打标签并推送；② 本轮就做 OTA 全链路实测；③ Publish v0.9.2。
+
+**实际完成内容**：
+- **版本 bump**（`a433c09`）：四处版本 0.9.1 → 0.9.2（package.json / tauri.conf.json / Cargo.toml / Cargo.lock 的 linggandawang 块）+ CHANGELOG 0.9.2 条目（修复/变更/性能/文档/验证/遗留六节）
+- **打标签**：`v0.9.2` → `a433c09`，推送后触发 Release workflow
+- **三平台构建全绿**：ubuntu（deb+appimage）/ windows / macos（universal app+dmg）三 job 均 success
+- **draft 产物核验**：10 资产全部 uploaded、**全 ASCII 名**；`latest.json` version=0.9.2、**9 个平台键**、4 个主键（windows-x86_64 / linux-x86_64 / darwin-aarch64 / darwin-x86_64）齐全、签名长度 412–428、URL 全指向 ASCII 资产
+- **Publish**：`releases/latest` = v0.9.2，`latest.json` 匿名可下载（HTTP 200 / 5469 字节）
+
+**OTA 实测结果（分四段，如实定性）**：
+
+| 段 | 结果 | 证据 |
+|---|---|---|
+| 检测 | ✅ 通过 | 拉 `releases/latest/download/latest.json` HTTP 200，remote=0.9.2 vs current=0.9.0，版本比较 hasUpdate=true |
+| 下载 | ✅ 通过 | `windows-x86_64` 条目指向 `LingGanDaWang_0.9.2_x64-setup.exe`，实下 8,073,269 字节，sha256 `9FC59558…D49BEBD5` |
+| 验签 | ✅ 通过（密码学级） | 用 Node 原生 Ed25519 对下载文件真实验签：`prehashed-BLAKE2b512: true`（minisign `ED` 算法语义），pubKeyId 与 sigKeyId 均 `f2c2fb0f807a00af`，trusted comment 指向正确文件名。**不是 keyId 比对，是真实签名验证** |
+| 安装 | ❌ 未完成（沙箱限制） | 0.9.2 安装器 `/S` 静默运行 exit 0 但**零文件变更**（`D:\LingGanDaWang-0.9.0-smoke` 版本仍 0.9.0、注册表仍 0.9.0、无残留进程）。排除：安装包是 `asInvoker` 不需提权、子进程写文件正常、LOCALAPPDATA 可写、包内 FileVersion=0.9.2 正确。**推断为 DSH 沙箱拦截了安装器自身的落地写操作**（与 AGENTS 坑点 21 的 esbuild 沙箱现象同源），非产品缺陷 |
+
+**关键决策及理由**：
+- 用 Node 原生 Ed25519 而非装 minisign 做验签：minisign 底层即 Ed25519 + BLAKE2b-512 预哈希，Node `crypto.verify` 能直接复现，避免为一次验证引入新依赖；且比只比 keyId 强得多——keyId 匹配不能证明签名有效
+- Publish 前先完整核验 draft（资产名/数量/latest.json 键/签名长度）：GitHub 剥离非 ASCII 资产名会让 latest.json 生成失败且不易察觉（坑点 14），必须逐项查
+- 安装段受阻后不再强行绕：试过 `/S`、`/D=`、cmd 直调、Job 隔离四种方式均无变更；继续尝试属于猜，成本高于收益，如实记录待非沙箱环境验证
+
+**验证方式与结果**：
+- `npm run check:version` → OK: version 0.9.2 consistent across 4 locations
+- tsc exit 0 / lint exit 0（40 warning 既有遗留）/ **vitest 38 文件 510 passed** / coverage exit 0 / build exit 0 / `cargo check` → `linggandawang v0.9.2` 编译通过
+- CSP 精确核验：`connect-src` 10 个具体 source、**无裸通配**；`script-src` 仅 `'self'` + `'wasm-unsafe-eval'`；无 jsdelivr、无 `script-src blob:`
+- dist 产物：asyncify=0、总 14.92MB、`dist/ort/ort-wasm-simd-threaded.wasm` 13.60MB 保留
+- Release workflow 三平台 job 全 success；CI（main `a433c09`）触发
+
+**遗留问题**：
+- **OTA 安装段未验证**：需在非 DSH 沙箱环境（或用户手动双击安装包）确认「下载→验签→安装→重启」闭环。前 3 段已实证，风险集中在安装器执行
+- 真实 Tauri 安装包内 RAG 端到端仍未验（同上一轮，需实际装 0.9.2 后触发索引）
+- 0.9.0 客户端 CSP 缺 huggingface.co（0.9.2 已含），老用户升级后才能用 RAG
 ### 0.9.2 收尾轮（2026-10-27 晚）— 多 Agent 并行事故沉淀 + 提交
 
 **任务目标与用户决策**：用户直接指令「沉淀本次风险；因为可能用不同 agent 并行任务，针对此风险做对策，规则中有部分说明，帮我优化；提交 git；完善交接文档」。
@@ -184,47 +220,6 @@
 - 更新失败文案区分网络/密钥两种原因（P3）
 - 覆盖率下一轮 ratchet 目标：components 6→15+（ResultPanel/ComparePanel）、hooks 5→15+（useFlow 862 行是主目标）
 
-### R07 质量门轮（2026-10-25 晚）— RTL 基建 + 覆盖率门槛 + CI 增强
-
-**任务目标与用户决策**：执行路线图 R07（用户「继续推进计划」指令）。范围：RTL 组件测试基建、覆盖率门槛、CI 加 Windows job / cargo test / lint / check-version。
-
-**实际完成内容**（+41 例测试，总数 422 → 463）：
-- **RTL 基建**：devDeps 新增 @testing-library/react@16 / jest-dom@6 / user-event@14 / @vitest/coverage-v8@1.6.0；setup.ts 接入 jest-dom；首批组件测试 `src/components/__tests__/ui.test.tsx`（EmptyState/Spinner/ErrorBanner/StartTemplates，13 例，含关闭重置、role 可访问性、seed 映射）
-- **engine 补测到 85%+**：摸底发现 `ScreenshotDiagnoser`（279 行）/`ImagePromptExtractor`（181 行）两个模块零测试、`engine/prompts/*` 22~37%——新增三个测试文件 28 例；engine 行覆盖 73.7% → 85%+（达路线图 G2 要求）
-- **覆盖率门槛**：vite.config.ts `test.coverage` 分层设防（engine 84 / lib 45 / stores 35 / hooks 2 / components 0.5），`npm run test:coverage` 不达标 exit 1；**坑：vitest 对象式门槛中裸数字键只管未被 glob 覆盖的文件，必须用 glob 分区覆盖全部 include 目录**
-- **CI 增强**：Linux job 补 check-version + lint + test:coverage + cargo test（原只有 tsc/vitest/cargo check）；新增 `check-windows` job（tsc + vitest，主用户平台）
-
-**关键决策及理由**：
-- 门槛=实测基线设防而非路线图 75% 直设：组件层 0%、hooks 3% 的现状下 75% 必挂 CI，质量门沦为摆设；分层锁线 + HANDOFF 记录 ratchet 计划（每次补测手动上调）是当下诚实且有效的做法；engine 一层已按路线图要求达到 85%
-- Windows job 不跑 Rust：Windows Rust 编译 15 分钟起，收益低；Windows 特有的 jsdom/路径问题由 tsc+vitest 覆盖
-
-**验证方式与结果**：本地全绿——check-version exit 0、eslint 0 error（新文件 0 告警）、tsc exit 0、vitest 463/463 + 覆盖率门槛 exit 0、cargo check/test ok、build 2.8s。CI 结果待推送后观察。
-
-**遗留问题**：
-- 覆盖率 ratchet 计划：components（0.61%）与 hooks（2.97%）是下两个补测目标；SmartFollowup 46%、QuestionLoader 62% 是 engine 内余量
-- CI 的 Windows job 首跑结果需确认（jsdom 在 windows-latest 的表现）
-
-### CSP 修复轮（2026-10-25 傍晚）— RAG 嵌入模型下载放行
-
-**任务目标与用户决策**：执行 backlog P0 的 CSP 修复任务卡（用户「开始」指令）。此前 vectorStore 运行时下载嵌入模型会被 Tauri CSP connect-src 拦截，Tauri 客户端内 RAG 向量库首建失败。
-
-**实际完成内容**：
-- `tauri.conf.json` connect-src 精确追加 `https://huggingface.co`（transformers.js 默认 remoteHost，源码实证）与 `https://cas-bridge.xethub.hf.co`（HF 模型文件 302 跳转的 CDN 域，预置放行）；未用 `https:` 通配，SSRF 防护边界不变
-- **验证方式演进（本轮最重要教训）**：先走 dev 实例 UI 路径（设置→高级功能→RAG 区），发现两件事：① 空历史时 RAG「就绪」是空库降级态，模型不会加载（`ensureInit`/`reindex` 在 `recentQA.length===0` 时跳过 `indexQABatch`）；② **dev 模式 Vite 返回的 HTML 完全没有 CSP**（Tauri 仅在构建时向产物注入，dev 需配 `devCsp` 才有）——dev 实例根本测不了生产 CSP，UI 路径就此放弃
-- **改为产物级验证**：本地 `npx tauri build`（带签名）→ 对 `target/release/linggandawang.exe` 二进制 grep，**明文提取到完整新 CSP**（含两个新域名）——证明注入链路端到端生效；transformers 默认域名 + CSP 语法静态校验 PASS + 二进制嵌入 = 证据链闭合
-- 顺带实证：新最小化按钮在 dev 实例头部正常渲染（多轮观察确认）
-
-**关键决策及理由**：
-- cas-bridge 域名预置放行而非等实测失败：HF 的 resolve URL 302 到 Xet CDN 是当前已知行为，等 0.9.1 真实用户流量反馈再收窄；若后续出现 `cdn-lfs.huggingface.co` 等其他跳转域，按 0.9.2 迭代补
-- 不在 dev 加 `devCsp`：增量铁律，且 devCsp 与生产 CSP 漂移反而制造假阴性
-
-**验证方式与结果**：CSP 语法静态校验 PASS；vitest 422/422；tsc exit 0；build 2.66s；check-version exit 0；产物二进制含新 CSP（grep 实证）。
-
-**遗留问题**：
-- 运行时最终确认归属 0.9.1 真实使用：Tauri 客户端内产生历史 QA → 自动建索引 → 模型下载成功且 RAG 区显示「已索引 N 条」；若出现新 CDN 域名被拦，追加域名发 0.9.2
-- 本次 `tauri build` 产物（`target/release/bundle/nsis/LingGanDaWang_0.9.0_x64-setup.exe`，本地未签名验证用）未安装，仅作二进制检查；0.9.1 走正式 CI 构建
-
-
 ## 4.4 待办事项（Backlog）
 
 ### P0（阻塞/尽快）
@@ -236,7 +231,9 @@
 | ~~依赖迁移（@xenova → @huggingface/transformers v4）~~ | 本轮未提交 | ✅ 2026-10-27 完成：生产依赖 0 漏洞；同时修通 RAG WASM 运行时（见 4.3） |
 | ~~提交本轮 0.9.2 改动~~ | `git log -1` | ✅ 2026-10-27 已提交（主卡 + 并行卡合并；未 bump 版本，发版轮再动版本号） |
 | ~~分层规则落文档（大审查 #6）~~ | `AGENTS.md` 分层约束节 | ✅ 2026-10-27 完成：按代码实测校准为「UI 可调 hooks/stores/lib/engine 与单步读写；跨组件编排走 hooks」，并记下实测基线（13 直连 lib / 10 直连 engine / 10 用 hooks；lib→engine 0 处） |
-| 0.9.2 发版时 OTA 全链路实测 | release 流程 | 本机 github.com:443 阻断无法完成下载验签安装；0.9.1 已是存量版本，用其客户端实测 |
+| ~~v0.9.2 发版~~ | 标签 `v0.9.2` / commit `a433c09` | ✅ 2026-10-27 已发布：三平台全绿、10 资产全 ASCII、latest.json 9 平台键、`releases/latest` 匿名可查 |
+| **OTA 安装段实测**（检测/下载/验签已通过） | release 流程 | ⚠️ 2026-10-27 实测：检测 ✅、下载 ✅、验签 ✅（真实 Ed25519）、**安装 ❌** —— 0.9.2 安装器 `/S` exit 0 但零变更，推断 DSH 沙箱拦截安装器落地写。需非沙箱环境或手动双击确认闭环 |
+| 真实 Tauri 包内 RAG 端到端 | `src/lib/vectorStore.ts` | 装 0.9.2 后产生历史 QA → 建索引 → 确认「已索引 N 条」；本轮只验到 web 构建 + 自托管 wasm 层 |
 | 更新失败文案区分网络/密钥 | `src-tauri/src/commands/updater.rs` 或前端提示 | P3：当前两种原因混为一句 |
 
 ### P1（v0.10.x，2027 Q1）
@@ -288,13 +285,14 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 15. **RAG 嵌入的 WASM 运行时长期缺失**（2026-10-27 发现，详见 AGENTS.md 坑点 20）：0.9.1 及以前 `dist/assets` 里没有任何 .wasm，onnxruntime 只能从 cdn.jsdelivr.net 取，而 CSP 既无该域也无 `'wasm-unsafe-eval'` → **打包版里 RAG 嵌入从未跑通过**。坑点 16 当时把「dev 无 CSP 只能产物级验证」记为环境限制，实际掩盖了这条真缺陷。教训：**「产物级验证」要通过，必须真的在浏览器里执行到那条代码路径**（本轮用 Playwright + 生产 CSP + 本地模型回放才暴露），只看二进制里有没有 CSP 明文是不够的。
 16. **esbuild 在沙箱工作区（D: 盘）内必然失败**（2026-10-27 实测，详见 AGENTS.md 坑点 21）：`npm run build` 报 `remove ...\Temp\esbuild-<hash>: Access is denied.`。表面像「文件 >1MB 就失败」，五组对照证明变量是 **esbuild 可执行文件所在的盘**：C: 盘 6/6 OK，D: 盘 6/6 FAIL，同二进制同哈希。`sourcemap=false` 绕不掉。规避：构建前 `$env:TEMP=$PWD\.tmp-build`。**勿为此改 test 脚本或 vite 配置**——那是误伤，与坑点 12 同源。CI 侧已实测不受影响（267cf7a 双 job 全绿）。
 17. **多 Agent 并行会互相踩工作区**（2026-10-27 实测事故，详见 AGENTS.md 坑点 22）：多个 agent 共享同一工作区/node_modules/dist/临时目录，且互不可见 transcript。本轮真实事故：越界删除他人 `.tmp-build/`（判断依据用了 `-First 10` 截断输出）、误把他人 `vite.config.ts` 改动当成「第三方写入」、并发 `npm run build` 互相覆盖 `dist/`。对策已入全局规则 R1 §3 + R7 §6.2。
+18. **DSH 沙箱下 NSIS 安装器静默运行无效**（2026-10-27 实测）：0.9.2 安装器 `/S` 退出码 0，但**零文件变更**（目标目录 exe 版本不变、注册表不变、无残留进程、无新增文件）。已排除：安装包 `asInvoker` 不需提权、子进程写文件正常、LOCALAPPDATA 可写、包内 FileVersion=0.9.2 正确、试过 `Start-Process`/`cmd /c`/`Start-Job`/`/D=` 四种方式。推断为沙箱拦截安装器自身的落地写操作（与坑点 21 的 esbuild 现象同源）。**影响：OTA 的「安装」段无法在本沙箱验证，需非沙箱环境或人工双击确认**。教训：验证安装类操作时，**不能只看退出码**——必须比对安装前后的版本/注册表/文件清单三方证据。
 
 ---
 
 ## 4.6 给下一个 Agent 的提示
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
-2. **当前状态**：P0 路线图全清，**0.9.2 主卡 + 并行卡 + 分层规则校准均已提交并推送**（`95a417a` + `267cf7a`；依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除；全质量门绿、510/510、生产依赖 0 漏洞、dist 14.92MB）。`main` 与 `origin/main` 已同步。**下一个自然节点=统一发版轮**：bump 0.9.2（四处版本号 + CHANGELOG 首条）→ 打标签 → 用 0.9.1 客户端做 OTA 全链路实测（需未阻断网络）。之后进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或按需做覆盖率下一轮 ratchet（见 P2 表）。
-3. **悬而未决问题**：① 大审查报告原样 vs 补 4.6 的更新失败文案小卡；② 全量 audit 的 14 条 devDependencies 漏洞是否处理（当前不在任何卡上）；③ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore。分层规则 #6 已于 2026-10-27 落文档关闭 ✅。
+2. **当前状态**：**v0.9.2 已正式发布**（标签 `v0.9.2`、commit `a433c09`；`releases/latest` = v0.9.2）。内容：依赖迁移（生产依赖 0 漏洞）+ RAG WASM 运行时首次跑通 + asyncify wasm 死重剔除（dist 14.92MB）+ 分层规则校准。**OTA 检测/下载/验签三段已实测通过（验签为真实 Ed25519 密码学验证），安装段受 DSH 沙箱限制未完成**——这是唯一未闭环项，需非沙箱环境确认。**下一个节点**：① 补 OTA 安装段实测；② 进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或覆盖率下一轮 ratchet（见 P2 表）。
+3. **悬而未决问题**：① **OTA 安装段实测**（唯一未闭环项，需非沙箱环境）；② 大审查报告原样 vs 补 4.6 的更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore。分层规则 #6 已关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
-5. **本轮新增两条本机硬约束**（详见 AGENTS 坑点 20/21）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错。
+5. **本机硬约束三条**（详见 AGENTS 坑点 20/21/23）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错；③ **验证安装/部署类操作时退出码 0 不等于成功**——本沙箱下 NSIS 安装器静默运行 exit 0 但零变更，必须比对操作前后的版本号 / 注册表 / 文件清单三方证据。
