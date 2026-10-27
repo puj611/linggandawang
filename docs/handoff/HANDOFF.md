@@ -59,7 +59,7 @@
 - **分支**：`main`，HEAD `a433c09`（chore(release): bump 0.9.2），**已推送并与 `origin/main` 同步**；标签 `v0.9.0` / `v0.9.1` / **`v0.9.2`（已发布）**
 - **最近提交**：`a433c09` chore(release): bump 0.9.2（四处版本号 + CHANGELOG）；此前 `95a417a` feat(rag) 为功能主体（14 文件，+1399/−1087）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
-- **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 检测/下载/验签三段已实测通过，安装段受沙箱限制未完成**（详见 4.3）
+- **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 四段（检测/下载/验签/安装）全部实测通过**——0.9.0 客户端已实升 0.9.2 并正常运行（详见 4.3）
 - **最后更新时间**：2026-10-27 21:20 (GMT+8)
 - **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。④ 分层规则按代码实测校准（大审查 #6 关闭）。510/510 全绿。
 
@@ -85,7 +85,7 @@
 | 检测 | ✅ 通过 | 拉 `releases/latest/download/latest.json` HTTP 200，remote=0.9.2 vs current=0.9.0，版本比较 hasUpdate=true |
 | 下载 | ✅ 通过 | `windows-x86_64` 条目指向 `LingGanDaWang_0.9.2_x64-setup.exe`，实下 8,073,269 字节，sha256 `9FC59558…D49BEBD5` |
 | 验签 | ✅ 通过（密码学级） | 用 Node 原生 Ed25519 对下载文件真实验签：`prehashed-BLAKE2b512: true`（minisign `ED` 算法语义），pubKeyId 与 sigKeyId 均 `f2c2fb0f807a00af`，trusted comment 指向正确文件名。**不是 keyId 比对，是真实签名验证** |
-| 安装 | ❌ 未完成（沙箱限制） | 0.9.2 安装器 `/S` 静默运行 exit 0 但**零文件变更**（`D:\LingGanDaWang-0.9.0-smoke` 版本仍 0.9.0、注册表仍 0.9.0、无残留进程）。排除：安装包是 `asInvoker` 不需提权、子进程写文件正常、LOCALAPPDATA 可写、包内 FileVersion=0.9.2 正确。**推断为 DSH 沙箱拦截了安装器自身的落地写操作**（与 AGENTS 坑点 21 的 esbuild 沙箱现象同源），非产品缺陷 |
+| 安装 | ✅ 通过（根因已确证） | 首轮失败：`/S` exit 0 但零变更。**真因不是沙箱**——按坑点 21 把 `$env:TEMP` 指到 D 盘工作区后，NSIS 无法解压自身到 TEMP；用户手动双击时弹出「Error writing temporary file. Make sure your temp folder is valid.」暴露了这一点（我最初「沙箱拦截落地」的诊断是错的）。把 TEMP/TMP 指回 `C:\Users\puj\AppData\Local\Temp` 后 `/S` 安装成功：FileVersion 0.9.0→**0.9.2**、注册表 DisplayVersion **0.9.2**、exe sha256 `8B6D43ED…1E675F8C`、mtime 21:20:22、启动 windowTitle=「灵感大王」正常 |
 
 **关键决策及理由**：
 - 用 Node 原生 Ed25519 而非装 minisign 做验签：minisign 底层即 Ed25519 + BLAKE2b-512 预哈希，Node `crypto.verify` 能直接复现，避免为一次验证引入新依赖；且比只比 keyId 强得多——keyId 匹配不能证明签名有效
@@ -100,7 +100,7 @@
 - Release workflow 三平台 job 全 success；CI（main `a433c09`）触发
 
 **遗留问题**：
-- **OTA 安装段未验证**：需在非 DSH 沙箱环境（或用户手动双击安装包）确认「下载→验签→安装→重启」闭环。前 3 段已实证，风险集中在安装器执行
+- ~~OTA 安装段未验证~~ ✅ 已闭环（2026-10-27 21:20）：`/S` 静默安装成功，FileVersion / 注册表 / exe sha256 三方核验均指向 0.9.2，启动 windowTitle=「灵感大王」正常。首轮失败根因是 D 盘 TEMP 让 NSIS 无法解压自身（见坑点 18），非产品缺陷
 - 真实 Tauri 安装包内 RAG 端到端仍未验（同上一轮，需实际装 0.9.2 后触发索引）
 - 0.9.0 客户端 CSP 缺 huggingface.co（0.9.2 已含），老用户升级后才能用 RAG
 ### 0.9.2 收尾轮（2026-10-27 晚）— 多 Agent 并行事故沉淀 + 提交
@@ -232,7 +232,7 @@
 | ~~提交本轮 0.9.2 改动~~ | `git log -1` | ✅ 2026-10-27 已提交（主卡 + 并行卡合并；未 bump 版本，发版轮再动版本号） |
 | ~~分层规则落文档（大审查 #6）~~ | `AGENTS.md` 分层约束节 | ✅ 2026-10-27 完成：按代码实测校准为「UI 可调 hooks/stores/lib/engine 与单步读写；跨组件编排走 hooks」，并记下实测基线（13 直连 lib / 10 直连 engine / 10 用 hooks；lib→engine 0 处） |
 | ~~v0.9.2 发版~~ | 标签 `v0.9.2` / commit `a433c09` | ✅ 2026-10-27 已发布：三平台全绿、10 资产全 ASCII、latest.json 9 平台键、`releases/latest` 匿名可查 |
-| **OTA 安装段实测**（检测/下载/验签已通过） | release 流程 | ⚠️ 2026-10-27 实测：检测 ✅、下载 ✅、验签 ✅（真实 Ed25519）、**安装 ❌** —— 0.9.2 安装器 `/S` exit 0 但零变更，推断 DSH 沙箱拦截安装器落地写。需非沙箱环境或手动双击确认闭环 |
+| ~~OTA 安装段实测~~ | release 流程 | ✅ 2026-10-27 四段全过：检测 ✅、下载 ✅、验签 ✅（真实 Ed25519）、安装 ✅（0.9.0→0.9.2 静默升级成功，三方核验 + 启动正常）。首轮「安装失败」是 D 盘 TEMP 导致 NSIS 解压失败，已入坑点 18 |
 | 真实 Tauri 包内 RAG 端到端 | `src/lib/vectorStore.ts` | 装 0.9.2 后产生历史 QA → 建索引 → 确认「已索引 N 条」；本轮只验到 web 构建 + 自托管 wasm 层 |
 | 更新失败文案区分网络/密钥 | `src-tauri/src/commands/updater.rs` 或前端提示 | P3：当前两种原因混为一句 |
 
@@ -285,14 +285,14 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 15. **RAG 嵌入的 WASM 运行时长期缺失**（2026-10-27 发现，详见 AGENTS.md 坑点 20）：0.9.1 及以前 `dist/assets` 里没有任何 .wasm，onnxruntime 只能从 cdn.jsdelivr.net 取，而 CSP 既无该域也无 `'wasm-unsafe-eval'` → **打包版里 RAG 嵌入从未跑通过**。坑点 16 当时把「dev 无 CSP 只能产物级验证」记为环境限制，实际掩盖了这条真缺陷。教训：**「产物级验证」要通过，必须真的在浏览器里执行到那条代码路径**（本轮用 Playwright + 生产 CSP + 本地模型回放才暴露），只看二进制里有没有 CSP 明文是不够的。
 16. **esbuild 在沙箱工作区（D: 盘）内必然失败**（2026-10-27 实测，详见 AGENTS.md 坑点 21）：`npm run build` 报 `remove ...\Temp\esbuild-<hash>: Access is denied.`。表面像「文件 >1MB 就失败」，五组对照证明变量是 **esbuild 可执行文件所在的盘**：C: 盘 6/6 OK，D: 盘 6/6 FAIL，同二进制同哈希。`sourcemap=false` 绕不掉。规避：构建前 `$env:TEMP=$PWD\.tmp-build`。**勿为此改 test 脚本或 vite 配置**——那是误伤，与坑点 12 同源。CI 侧已实测不受影响（267cf7a 双 job 全绿）。
 17. **多 Agent 并行会互相踩工作区**（2026-10-27 实测事故，详见 AGENTS.md 坑点 22）：多个 agent 共享同一工作区/node_modules/dist/临时目录，且互不可见 transcript。本轮真实事故：越界删除他人 `.tmp-build/`（判断依据用了 `-First 10` 截断输出）、误把他人 `vite.config.ts` 改动当成「第三方写入」、并发 `npm run build` 互相覆盖 `dist/`。对策已入全局规则 R1 §3 + R7 §6.2。
-18. **DSH 沙箱下 NSIS 安装器静默运行无效**（2026-10-27 实测）：0.9.2 安装器 `/S` 退出码 0，但**零文件变更**（目标目录 exe 版本不变、注册表不变、无残留进程、无新增文件）。已排除：安装包 `asInvoker` 不需提权、子进程写文件正常、LOCALAPPDATA 可写、包内 FileVersion=0.9.2 正确、试过 `Start-Process`/`cmd /c`/`Start-Job`/`/D=` 四种方式。推断为沙箱拦截安装器自身的落地写操作（与坑点 21 的 esbuild 现象同源）。**影响：OTA 的「安装」段无法在本沙箱验证，需非沙箱环境或人工双击确认**。教训：验证安装类操作时，**不能只看退出码**——必须比对安装前后的版本/注册表/文件清单三方证据。
+18. **NSIS 安装器要求 TEMP 在 C: 盘**（2026-10-27 实测，根因已确证）：把 `$env:TEMP` 按坑点 16 指到 D 盘工作区后跑安装器，`/S` **退出码 0 但零变更**；用户手动双击时弹出「Error writing temporary file. Make sure your temp folder is valid.」暴露真因——NSIS 需解压自身到 `%TEMP%`，D 盘 TEMP 下失败。解法：跑安装器前把 TEMP/TMP 指回 `C:\Users\puj\AppData\Local\Temp` → 安装成功（0.9.0→0.9.2 三方核验通过）。**坑点 16 的 TEMP 规避只适用于构建类命令**。另一教训：退出码 0 ≠ 成功，安装类操作必须比对版本号/注册表/文件清单三方证据。另：安装包无 Authenticode 签名，手动双击会触发 SmartScreen，需「更多信息→仍要运行」（已知产品状态，非缺陷）。
 
 ---
 
 ## 4.6 给下一个 Agent 的提示
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
-2. **当前状态**：**v0.9.2 已正式发布**（标签 `v0.9.2`、commit `a433c09`；`releases/latest` = v0.9.2）。内容：依赖迁移（生产依赖 0 漏洞）+ RAG WASM 运行时首次跑通 + asyncify wasm 死重剔除（dist 14.92MB）+ 分层规则校准。**OTA 检测/下载/验签三段已实测通过（验签为真实 Ed25519 密码学验证），安装段受 DSH 沙箱限制未完成**——这是唯一未闭环项，需非沙箱环境确认。**下一个节点**：① 补 OTA 安装段实测；② 进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或覆盖率下一轮 ratchet（见 P2 表）。
-3. **悬而未决问题**：① **OTA 安装段实测**（唯一未闭环项，需非沙箱环境）；② 大审查报告原样 vs 补 4.6 的更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore。分层规则 #6 已关闭 ✅。
+2. **当前状态**：**v0.9.2 已正式发布且 OTA 全链路实测闭环**（标签 `v0.9.2`、commit `a433c09`；`releases/latest` = v0.9.2）。内容：依赖迁移（生产依赖 0 漏洞）+ RAG WASM 运行时首次跑通 + asyncify wasm 死重剔除（dist 14.92MB）+ 分层规则校准。OTA 检测/下载/验签/安装四段全过（验签为真实 Ed25519；本机 0.9.0 已实升 0.9.2）。**下一个节点**：进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或覆盖率下一轮 ratchet（见 P2 表）；另可选做 0.9.2 客户端内 RAG 端到端确认（装好后产生 QA → 建索引 → 「已索引 N 条」）。
+3. **悬而未决问题**：① 0.9.2 客户端内 RAG 端到端确认（需真实使用产生历史 QA）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → 用户下载会遇 SmartScreen 警告，是否购买证书属产品决策。分层规则 #6、OTA 安装段均已关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
-5. **本机硬约束三条**（详见 AGENTS 坑点 20/21/23）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错；③ **验证安装/部署类操作时退出码 0 不等于成功**——本沙箱下 NSIS 安装器静默运行 exit 0 但零变更，必须比对操作前后的版本号 / 注册表 / 文件清单三方证据。
+5. **本机硬约束三条**（详见 AGENTS 坑点 20/21/23）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错；③ **但跑安装器（NSIS）前必须把 TEMP 指回 C 盘**——D 盘 TEMP 会让 NSIS 解压自身失败且静默（exit 0 零变更），见坑点 23。
