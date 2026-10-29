@@ -60,13 +60,55 @@
 - **最近提交**：`a433c09` chore(release): bump 0.9.2（四处版本号 + CHANGELOG）；此前 `95a417a` feat(rag) 为功能主体（14 文件，+1399/−1087）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
 - **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 四段（检测/下载/验签/安装）全部实测通过**——0.9.0 客户端已实升 0.9.2 并正常运行（详见 4.3）
-- **最后更新时间**：2026-10-29 18:50 (GMT+8)
-- **本轮任务简述**：**R08 MCP 扩 5 工具 + beforeDevCommand 去硬编码**（2026-10-29，`bbab922`）——新增 `generate_from_context`（吃代码/报错/路径）、`list_templates`、`get_recent_history`；`mcp-server/localData.ts` 直连 SQLite/context.json（只读、`node:sqlite` 惰性加载）。冒烟 32 项断言全过、单工具 ≤128ms。配置侧把机器相关路径 `c:/Users/puj/.../npm.cmd` 改为 `npm run dev`。**同日早前已完成 RAG 检索修复**（`57d780e`：换 bge 中文模型 + 双闸门 + 补 HF CDN，CSP 待打包验证）。
+- **最后更新时间**：2026-10-29 19:10 (GMT+8)
+- **本轮任务简述**：**覆盖率 ratchet 第二轮完成**（2026-10-29，`bfe6e5b`）——hooks 层 5.2% → **21.04%**，门槛 5 → 20，新增 27 例（`useFlow.pure.test.ts` 18 例覆盖偏好推荐双链路、`useVectorStore.test.tsx` 9 例覆盖空库降级与检索降级）。全量测试 515 → **542**。同日另完成：**R08 MCP 扩 5 工具 + beforeDevCommand 去硬编码**（`bbab922`）、**RAG 检索修复**（`57d780e`：换 bge 中文模型 + 双闸门 + 补 HF CDN，CSP 待打包验证）。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
 
+### 覆盖率 ratchet 第二轮（2026-10-29 晚）— hooks 5% → 21%
+
+**任务目标**：用户「按你的建议做」——上轮我建议先做覆盖率，理由是 R04 那个 P1 阻断缺陷（槽位存组件本地 state，一关面板就丢）在 5% 覆盖率的 hooks 层上必然再次发生。
+
+**结果**（提交 `bfe6e5b`）：
+
+| 指标 | 前 | 后 |
+|---|---|---|
+| hooks 覆盖率 | 5.2% | **21.04%**（4 倍） |
+| hooks 门槛 | 5 | **20**（锁住不回退） |
+| 全量测试 | 515 | **542**（40 文件） |
+
+**新增测试**：
+
+**`useFlow.pure.test.ts`（18 例）**——把 `useFlow` 里三个纯函数导出后单测：
+- `computeRecommendation`：双链路（同题历史画像 / 稳定偏好 tags 匹配）、去重语义（Set）、空格归一化、历史存 label 时回匹配 value、新用户短路、`minCount=1` 生效
+- `extractPreferencesFromEngine`：`PREFERENCE_LABELS` 过滤、同 key 同 value 去重、空 value 跳过、合并 LLM `detected_dimensions`、时间戳 ISO 格式
+
+**`useVectorStore.test.tsx`（9 例，RTL）**：
+- 无历史时不加载模型（**空库降级，AGENTS 坑点 16 的回归保护**）
+- 有历史时索引、初始化失败不阻塞主流程、模块级单例只初始化一次
+- `retrieve` 空查询 / 正常透传 / 异常降级三条路径
+- `reindex` 持久化、`size` 来自 `getVectorStoreStats`
+
+**关键决策及理由**：
+- **为什么不硬渲染 `useFlow` 862 行**：需要 mock 8 个 store + Tauri + LLM，成本高且断言脆弱（改一行实现就碎）。先把可独立验证的纯逻辑抽出来测，占覆盖率提升的大头，性价比最高；`useFlow` 主干的 Promise 链留给下一轮。
+- 抽函数时只加 `export`，不改一行逻辑——零行为风险。
+- 门槛按**实测基线**设防（21.04% 设 20），不按路线图 75% 直设，否则必挂 CI 沦为摆设（延续 R07 的判据）。
+
+**踩到的坑（已入测试注释）**：
+- `useVectorStore` 的 `ensureInit` 是**模块级单例**，测试间必须 `vi.resetModules()` 重新 import，否则后续用例复用上一轮缓存的 promise 会全部误判失败。
+- `reindex` 内部用**动态 import** 取 `clearVectorStore`，静态 mock 抓不到；mock 里缺这个导出会让解构出 `undefined` 直接抛错，表现为「后面的断言全不执行」。
+- 手写 `Question` 夹具时 `type: 'single'` 不是合法字面量（应为 `'single-choice'`），tsc 会拦。
+
+**验证方式与结果**：
+- tsc exit 0 / lint exit 0（40 warning 既有）/ **vitest 40 文件 542 passed** / `npm run test:coverage` exit 0（新门槛 20 生效）/ build exit 0
+- `typecheck:mcp` + `mcp:build` + `mcp:smoke` 全过（未受本轮影响）/ check:version OK
+
+**遗留问题**：
+- **`useFlow.ts` 862 行仍只有 17.26%**（`154-860` 未覆盖）——主干是 `start`/`answer`/`finishAndGenerate` 的长 Promise 链，需要 mock LLM + 引擎 + 存储。这是下一轮最大目标。
+- 其余 hooks 仍 0%：`useDrag`(169) / `useGlobalHotkey`(68) / `useScreenshotPaste`(90) / `useTauriDropFile`(58) / `useUpdater`(95)，合计约 480 行，多为 Tauri 事件绑定，测起来需要较多桩。
+- components 层仍 6%（门槛），是比 hooks 更大的空白（20+ 组件 0%）。
 ### R08 + 配置修复轮（2026-10-29 晚）— MCP 扩 5 工具、beforeDevCommand 去硬编码
 
 **任务目标**：用户选定三项优先级（截图）：SmartScreen 应对 + R11 分发 / R08 MCP 扩 5 工具 / 覆盖率 ratchet 第二轮 / beforeDevCommand 去硬编码。本轮做其中两项低风险高价值的。
@@ -214,36 +256,6 @@
 - ~~OTA 安装段未验证~~ ✅ 已闭环（2026-10-27 21:20）：`/S` 静默安装成功，FileVersion / 注册表 / exe sha256 三方核验均指向 0.9.2，启动 windowTitle=「灵感大王」正常。首轮失败根因是 D 盘 TEMP 让 NSIS 无法解压自身（见坑点 18），非产品缺陷
 - 真实 Tauri 安装包内 RAG 端到端仍未验（同上一轮，需实际装 0.9.2 后触发索引）
 - 0.9.0 客户端 CSP 缺 huggingface.co（0.9.2 已含），老用户升级后才能用 RAG
-### 0.9.2 收尾轮（2026-10-27 晚）— 多 Agent 并行事故沉淀 + 提交
-
-**任务目标与用户决策**：用户直接指令「沉淀本次风险；因为可能用不同 agent 并行任务，针对此风险做对策，规则中有部分说明，帮我优化；提交 git；完善交接文档」。
-
-**本轮实际做了什么（3 件事）**：
-
-1. **沉淀事故**：`AGENTS.md` 新增坑点 22「多 Agent 并行会互相踩工作区」。记录本轮三起真实事故：
-   - ① subagent A 收尾时 `Remove-Item -Recurse -Force .tmpbuild,.tmp-build`，把 subagent B 正在用的 `.tmp-build/` 一并删除。**根因是判断依据不成立**——用 `Select-Object -First 10` 只看到 `node-compile-cache/` 就断定「里面只有缓存」，而 `-First N` 只截断显示。实际 B 随后自行重建（18:33–18:38），未造成损失，但属越界。
-   - ② subagent A 把 `vite.config.ts` 的 `dropUnusedOrtWasm()` 插件误判为「第三方并发写入」，一度建议回滚——实为 dispatcher 另派的卡。
-   - ③ 两边先后跑 `npm run build` 会互相覆盖 `dist/`，可能拿对方产物做验收。
-2. **优化全局规则**（`C:\Users\puj\.dsh\AGENTS.md` + `D:\AI工作平台\.dsh\rules\` 归档同步）：
-   - **R7 §6 由 3 条扩为两层**：6.1 交接文档层面（原 3 条 + 新增「记录归属」）、6.2 工作区层面（新增 6 条硬约束：写前勘察 `git status --porcelain`、禁止越界清理、临时目录带任务标识、**禁止用 `-First N`/head 等截断输出判断存在性**、共享产物目录视为可变状态、不认识的文件先问再动）。
-   - **R1 §3 增一条**「[禁止] 越界清理他人工作区」，与既有「未获授权不得并行修改同一路径」并列——原规则只覆盖「改同一路径」，未覆盖「共享工作区/产物目录的破坏性操作」。
-   - 变更记入 `user-CHANGELOG.md`（2026-10-27 条目，含事故依据与拍板人）。
-3. **提交 + 交接**：0.9.2 全部改动（主卡 + 并行卡）一次性提交；本文件 4.2/4.3/4.5/4.6 同步。
-
-**为什么这样改（对策设计依据）**：
-- 原 R1 的「并行修改同一路径」只防「写冲突」，但本轮三起事故**没有一起是写冲突**——都是「读/删/构建」类操作踩到共享可变状态。所以对策重点从「声明路径」转向「勘察 + 边界 + 不越界清理」。
-- `-First N` 那条单独成条，因为它是本轮最具体的错误动作：**工具截断 ≠ 集合大小**，用它做删除决策必然误判。这是可复用的通用教训，不限于本机。
-- 不新增独立规则文件，只扩 R7 §6 与 R1 §3：按 R1 §5「禁止一次性特例入规」，这属于稳定通用约束（多 agent 并行在本机是常态），但也不需要新编号。
-
-**验证方式与结果**：
-- 规则热加载实测：改完后本会话下一轮 `~/.dsh/AGENTS.md` 系统提示已反映新内容（R1 §3 新条目、R7 §6.1/6.2 结构均可见）
-- 归档与正文一致性：`user-rule-1789028871175.md`（R7）、`user-rule-1782302758797.md`（R1）已同步同样文本
-- 项目侧：`AGENTS.md` 坑点 22 落位（L103，总 103 行）
-
-**遗留问题**：
-- 规则改动属全局配置（R2 定级 L3），已按用户直接指令执行；如需回退，改这两处文本即可，无其他耦合
-- 坑点 22 提到的「并行时改用独立 outDir」目前只是建议，未做成强制脚本
-
 ## 4.4 待办事项（Backlog）
 
 ### P0（阻塞/尽快）
@@ -251,7 +263,8 @@
 |---|---|---|
 | ~~R05 变量模板 MVP~~ | `7bba928` | ✅ 2026-10-25 完成（TemplateComposer/templateStore+迁移0007/TemplateLibrary，25 例） |
 | ~~R06 数据导出与导入~~ | `d1413a6` | ✅ 2026-10-25 完成（dataExport/DataPanel，无密钥/自动备份，12 例） |
-| ~~覆盖率 ratchet 第一轮~~ | `a35efb1` | ✅ lib57/hooks5/components6/stores36；下一轮目标见 P2 |
+| ~~覆盖率 ratchet 第一轮~~ | `a35efb1` | ✅ lib57/hooks5/components6/stores36 |
+| ~~覆盖率 ratchet 第二轮~~ | `bfe6e5b` | ✅ hooks 5→**20**（实测 21.04%），新增 27 例；下一轮目标：useFlow 主干（仍 17%）+ components（仍 6%） |
 | ~~依赖迁移（@xenova → @huggingface/transformers v4）~~ | 本轮未提交 | ✅ 2026-10-27 完成：生产依赖 0 漏洞；同时修通 RAG WASM 运行时（见 4.3） |
 | ~~提交本轮 0.9.2 改动~~ | `git log -1` | ✅ 2026-10-27 已提交（主卡 + 并行卡合并；未 bump 版本，发版轮再动版本号） |
 | ~~分层规则落文档（大审查 #6）~~ | `AGENTS.md` 分层约束节 | ✅ 2026-10-27 完成：按代码实测校准为「UI 可调 hooks/stores/lib/engine 与单步读写；跨组件编排走 hooks」，并记下实测基线（13 直连 lib / 10 直连 engine / 10 用 hooks；lib→engine 0 处） |
@@ -320,6 +333,6 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
 2. **当前状态**：**v0.9.2 已正式发布且 OTA 全链路实测闭环**（标签 `v0.9.2`、commit `a433c09`；`releases/latest` = v0.9.2）。内容：依赖迁移（生产依赖 0 漏洞）+ RAG WASM 运行时首次跑通 + asyncify wasm 死重剔除（dist 14.92MB）+ 分层规则校准。OTA 检测/下载/验签/安装四段全过（验签为真实 Ed25519；本机 0.9.0 已实升 0.9.2）。**下一个节点**：进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或覆盖率下一轮 ratchet（见 P2 表）；另可选做 0.9.2 客户端内 RAG 端到端确认（装好后产生 QA → 建索引 → 「已索引 N 条」）。
-3. **悬而未决问题**：① **CSP 改动待打包验证**（RAG 修复的关键一环，见 4.4）；①b **覆盖率 ratchet 第二轮未做**（hooks 5%→15+，主目标 `useFlow.ts` 862 行）、**SmartScreen 应对 + R11 分发未做**（用户本轮点名的另两项，见 4.4）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → SmartScreen 警告，购买证书属产品决策。分层规则 #6、OTA 安装段、RAG 端到端、RAG 阈值失效均已关闭 ✅。
+3. **悬而未决问题**：① **CSP 改动待打包验证**（RAG 修复的关键一环，见 4.4）；② **SmartScreen 应对 + R11 分发未做**（用户点名项中唯一剩下的，属产品决策，需先定落地页位置/是否买证书/首发社区）；③ 覆盖率第三轮目标：`useFlow.ts` 主干（仍 17.26%，`154-860` 未覆盖）+ components 层（仍 6%）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → SmartScreen 警告，购买证书属产品决策。分层规则 #6、OTA 安装段、RAG 端到端、RAG 阈值失效均已关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
 5. **本机硬约束三条**（详见 AGENTS 坑点 20/21/23）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错；③ **但跑安装器（NSIS）前必须把 TEMP 指回 C 盘**——D 盘 TEMP 会让 NSIS 解压自身失败且静默（exit 0 零变更），见坑点 23。
