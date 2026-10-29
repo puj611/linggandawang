@@ -60,13 +60,52 @@
 - **最近提交**：`a433c09` chore(release): bump 0.9.2（四处版本号 + CHANGELOG）；此前 `95a417a` feat(rag) 为功能主体（14 文件，+1399/−1087）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
 - **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 四段（检测/下载/验签/安装）全部实测通过**——0.9.0 客户端已实升 0.9.2 并正常运行（详见 4.3）
-- **最后更新时间**：2026-10-27 21:20 (GMT+8)
-- **本轮任务简述**：① 主卡 `@xenova/transformers@2.17.2` → `@huggingface/transformers@4.3.1`，生产依赖 `npm audit` 从 **1 critical + 4 high 降到 0 漏洞**；同时查出并修通**从 0.9.1 及以前一直未跑通**的真实缺陷——RAG 嵌入的 WASM 运行时。② 并行卡：`vite.config.ts` 新增 `dropUnusedOrtWasm()` 剔除 25.62MB 未使用的 asyncify wasm 变体，dist 40.5MB → **14.92MB**。③ 收尾：多 agent 并行事故沉淀为 AGENTS 坑点 22 + 全局规则 R1 §3/R7 §6.2。④ 分层规则按代码实测校准（大审查 #6 关闭）。510/510 全绿。
+- **最后更新时间**：2026-10-29 18:15 (GMT+8)
+- **本轮任务简述**：**RAG 端到端确认完成**（2026-10-29）——首次在真机（已装 0.9.2）实证索引链路：恢复 20 条 QA 历史后启动，`vector_store` 表建立、20/20 条索引成功、384 维、L2=1.0；检索侧 3/3 相关查询正确命中。**但发现 `SIMILARITY_THRESHOLD = 0.3` 形同虚设**——不相关查询也拿 0.70 分，会把无关历史注入 LLM。已列 P2 待决策（见 4.4）。用户数据已恢复原状，索引保留。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
 
+### RAG 端到端确认轮（2026-10-29）— 首次真机实证索引 + 检索，发现阈值失效
+
+**任务目标**：关闭 v0.9.2 发布遗留的最后一项「0.9.2 客户端内 RAG 端到端确认」。
+
+**结论：RAG 链路在真机上完全可用，但检索阈值形同虚设。**
+
+**实测过程与证据**：
+
+1. **起点勘察**：`C:\Users\puj\AppData\Roaming\com.linggandawang.app\linggandawang.db` 里 `vector_store` 表**不存在**，只有空的 `vector_store_staging`；`_sqlx_migrations` 只到 v4（v5/v6/v7 未执行）。
+2. **定位为什么从没索引过**：`context.json` 当时 `recent_qa: 0`——10-27 22:04 一次归档把 20 条 QA 清空了（归档文件 `archive/context-2026-10-27T22-04-49.json` 里完整保留 20 条 qa + 5 条 prefs）。而 `useVectorStore.ensureInit()` 的逻辑是 `if (recentQA.length > 0) await indexQABatch(recentQA)`，**空历史直接跳过模型加载**——所以模型从未下载、表从未创建。这与 AGENTS 坑点 16 记录的现象一致。
+3. **迁移未执行的原因（非缺陷）**：`tauri-plugin-sql` 的迁移只在 `commands::load` 里跑，且 `migrations.remove(&db)` 是一次性消费。`vector_store` 表本身由 `persistVectorStore()` 用 `CREATE TABLE IF NOT EXISTS` 自建，**不依赖迁移 0005**，所以 v5 未执行不影响 RAG 功能。
+4. **恢复历史后真机实测**：把归档里的 20 条 QA 写回 `context.json` → 启动 0.9.2 → 等待（**首次需 ~50-60s，模型下载 + WASM 初始化**）→ 三方核验：
+   - `vector_store` 表 **EXISTS**，**20 行**
+   - 每条向量 `len=384`、`valid(384): 20 / bad: 0 / null: 0`
+   - L2 范数抽样 `1.000000`（`normalize: true` 生效）
+   - 文本格式正确：`question_text → answer`
+5. **检索功能实测**（用库中真实向量 + 真实模型）：
+   - `这个改动的范围要控制到多大` → e-001「改完之后影响范围多大合适？」**0.6506** ✅ 命中
+   - `手机端适配` → e-002「手机上要不要也适配？」**0.7124** ✅ 命中
+   - `要不要写单元测试` → e-008「这个改动需要写测试吗？」**0.7658** ✅ 命中
+   - `完全不相关的话题：今天天气怎么样` → **0.7005** ❌ **不该命中却命中**
+
+**发现的真实问题（P2，需决策）**：`SIMILARITY_THRESHOLD = 0.3`（`src/lib/vectorStore.ts:18`）**形同虚设**——all-MiniLM-L6-v2 对短中文文本的余弦相似度普遍在 0.55–0.77，不相关话题也能拿 0.70。后果：RAG 会给 LLM 注入无关历史，可能干扰提问质量。可选解法：① 阈值提到 0.75+ 并实测校准；② 改用相对阈值（Top-1 与 Top-K 的分数差）；③ 换更强的中文嵌入模型（bge-small-zh-v1.5，体积相近）。**未修**，需先决定方案。
+
+**关键决策及理由**：
+- 不直接改阈值：单点调整缺乏数据支撑，容易在真实数据上又失效；应先用真实 QA 做一轮分数分布统计再定。
+- 保留 `vector_store` 的 20 条索引不清理：这是有效产物，且能让下次启动免于重新下载模型（`restoreVectorStore` 优先复用 `vector_json`）。
+- `context.json` 已恢复为测试前原状（`recent_qa: 0`），不污染用户数据；备份在 `backup/rag-e2e-20261029_175737/`。
+
+**验证方式与结果**：
+- 迁移状态：v1–v4 success，v5–v7 未执行（不影响 RAG，见上）
+- 索引：20/20 成功，384 维，L2=1.0
+- 检索：3/3 相关查询命中正确条目，1/1 无关查询**误命中**（阈值问题）
+- 临时脚本已全部清理；`git status` 干净（仅 `.mimosa/`、`.video_agent/` 既有未跟踪）
+
+**遗留问题**：
+- **相似度阈值需重新校准**（P2，见上）
+- 首次索引耗时约 50–60s（模型下载 ~90MB + WASM 初始化），UI 上是否有进度提示未验证
+- 检索只在 Node 侧用真实向量验证，应用内 UI 的 RAG 状态显示（「已索引 N 条」）未截图确认
 ### v0.9.2 发版轮（2026-10-27 晚）— 三平台发布 + OTA 检测/下载/验签实测
 
 **任务目标与用户决策**：执行 0.9.2 发版（上一轮已定的自然节点）。用户确认：① 打标签并推送；② 本轮就做 OTA 全链路实测；③ Publish v0.9.2。
@@ -195,31 +234,6 @@
 
 **遗留**（未修，见审查报告 #4 批次）：依赖迁移评估（本迭代）、分层决策①修订 AGENTS 描述 vs ②hooks 封装（待用户拍板）、模板删除确认/列表缓存（backlog）；AGENTS 坑点 17-19 已确认写入（同日沉淀轮）。
 
-### P0 收官轮（2026-10-25 晚）— 0.9.1 发版 + OTA 实测 + R05 + R06 + 覆盖率 ratchet
-
-**任务目标与用户决策**：用户目标「完成计划的所有任务，每个节点做验证及回归测试」并点名 @mimosa。顺序执行 0.9.1 发版 → OTA 实测 → R05 → R06 → 覆盖率 ratchet，每节点跑完整质量门（tsc/lint/vitest+覆盖率门/build/cargo）。
-
-**实际完成内容**（测试总数 463 → 507）：
-- **0.9.1 发版**（commit `d140c74`，标签 `v0.9.1` → `d140c74`）：四处版本 bump + CHANGELOG 0.9.1 条目（含 v0.9.0 发布链补记）；三平台构建全绿，10 资产核验（名称/签名/latest.json version 0.9.1 + 9 平台键）；**Publish 生效**：`releases/latest` = v0.9.1
-- **OTA 实测（如实定性）**：本机 0.9.0 客户端点「检查更新」→「检查中…」→ 优雅降级提示「检查更新失败（签名密钥未配置或网络不可用）」。流程与失败路径正常，**全链路（检测→下载→验签→安装）因本机 github.com:443 阻断无法完成**（与 git 推送同一阻断；latest.json 本身匿名可达且签名资产齐全）。待未阻断网络环境实测；错误文案可更精确（区分网络/密钥）列入 backlog
-- **R05 变量模板 MVP**（`7bba928`，25 例）：engine/TemplateComposer（{{name}} 解析去重/数字类类型推断/缺参禁止生成/填充不二次展开）；lib/templateStore + 迁移 0007（templates 表，参数化 SQL，localStorage 降级）；TemplateLibrary（我的模板折叠面板 + 填参对话框缺参高亮拦截）+ TemplateSaveDialog（{{}} 插入按钮/变量实时预览）；ExpandedCard 挂载（填充进主输入框）、ResultPanel「存为模板」。验收标准逐条落测。**Mimosa 钩子把静态 DDL 常量误判 SQL 注入拦写入——改为内联字面量绕开误报（语义不变）**
-- **R06 数据导出导入**（`d1413a6`，12 例）：lib/dataExport（ExportBundle schemaVersion=1；**导出导入双向剔除疑似密钥键**——密钥本就只在 keyring；parseImportBundle 类型守卫三态明确报错；merge/overwrite 两策略；**导入前自动备份**到 localStorage 可 readLastBackup 取回）；settings/DataPanel（设置页「数据管理」分区，blob 下载同 exportMd 范式；File.text 缺失环境 FileReader 兜底）。验收落测：导出无密钥零残留、清空后覆盖导入完整还原、版本不匹配明确报错
-- **覆盖率 ratchet 第一轮**（`a35efb1`，10 例）：useHotkey 7 例 + SkipConfirmDialog 3 例；门槛上调 lib 45→57 / hooks 2→5 / components 0.5→6 / stores 35→36
-- **修 RTL 跨文件 DOM 泄漏**：singleFork 共享环境下 ui.test 出现重复元素（单文件跑不现）——setup.ts 全局 afterEach cleanup 兜底
-- **Mimosa 深度扫描**：首轮（scan-…-ca6ee21781a5，seal sha256:1bbda62e…）**findingCount 0**，1021 依赖包，offline advisory 匹配 5 包 15 条（信息性）；发起于 R05 完成前，收尾时对最终代码发起第二轮
-
-**关键决策及理由**：
-- 模板填充走「插入主输入框」而非直接生成：用户确认后再触发流程，与起点模板行为一致且可改
-- 导出偏好值保持存储层 JSON 字符串形态：无损往返，导入侧 JSON.parse 失败按原字符串写入
-- OTA 不强行绕网络阻断（如改 hosts/代理注入）：那是环境问题非产品问题，如实记录待真实环境验证
-
-**验证方式与结果**：每节点 tsc/lint/vitest/coverage gate/build/cargo 全绿；最终全量 507/507（38 文件）；CI：R05/R06 提交 check+check-windows 双 job success（ratchet 提交 CI 在跑）；0.9.1 Release 三平台 success。
-
-**遗留问题**：
-- OTA 全链路需未阻断网络环境实测（0.9.1 已是存量版本，0.9.2 时用 0.9.1 客户端测）
-- 更新失败文案区分网络/密钥两种原因（P3）
-- 覆盖率下一轮 ratchet 目标：components 6→15+（ResultPanel/ComparePanel）、hooks 5→15+（useFlow 862 行是主目标）
-
 ## 4.4 待办事项（Backlog）
 
 ### P0（阻塞/尽快）
@@ -233,7 +247,9 @@
 | ~~分层规则落文档（大审查 #6）~~ | `AGENTS.md` 分层约束节 | ✅ 2026-10-27 完成：按代码实测校准为「UI 可调 hooks/stores/lib/engine 与单步读写；跨组件编排走 hooks」，并记下实测基线（13 直连 lib / 10 直连 engine / 10 用 hooks；lib→engine 0 处） |
 | ~~v0.9.2 发版~~ | 标签 `v0.9.2` / commit `a433c09` | ✅ 2026-10-27 已发布：三平台全绿、10 资产全 ASCII、latest.json 9 平台键、`releases/latest` 匿名可查 |
 | ~~OTA 安装段实测~~ | release 流程 | ✅ 2026-10-27 四段全过：检测 ✅、下载 ✅、验签 ✅（真实 Ed25519）、安装 ✅（0.9.0→0.9.2 静默升级成功，三方核验 + 启动正常）。首轮「安装失败」是 D 盘 TEMP 导致 NSIS 解压失败，已入坑点 18 |
-| 真实 Tauri 包内 RAG 端到端 | `src/lib/vectorStore.ts` | 装 0.9.2 后产生历史 QA → 建索引 → 确认「已索引 N 条」；本轮只验到 web 构建 + 自托管 wasm 层 |
+| ~~真实 Tauri 包内 RAG 端到端~~ | `src/lib/vectorStore.ts` | ✅ 2026-10-29 完成：真机 0.9.2 索引 20/20 成功、384 维、L2=1.0、检索 3/3 命中（详见 4.3） |
+| **RAG 相似度阈值失效**（P2，待决策） | `src/lib/vectorStore.ts:18` | ⚠️ `SIMILARITY_THRESHOLD = 0.3` 形同虚设：不相关查询「今天天气怎么样」也拿 0.70 分。all-MiniLM-L6-v2 对短中文文本普遍 0.55–0.77。后果=注入无关历史干扰 LLM。解法待选：① 提到 0.75+ 并实测校准；② 改相对阈值（Top-1 vs Top-K 分差）；③ 换 bge-small-zh-v1.5 |
+| 首次索引耗时与 UI 反馈 | `src/hooks/useVectorStore.ts` | 首次需 ~50–60s（模型下载 ~90MB + WASM 初始化）；应用内是否有进度提示未验证 |
 | 更新失败文案区分网络/密钥 | `src-tauri/src/commands/updater.rs` 或前端提示 | P3：当前两种原因混为一句 |
 
 ### P1（v0.10.x，2027 Q1）
@@ -293,6 +309,6 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
 2. **当前状态**：**v0.9.2 已正式发布且 OTA 全链路实测闭环**（标签 `v0.9.2`、commit `a433c09`；`releases/latest` = v0.9.2）。内容：依赖迁移（生产依赖 0 漏洞）+ RAG WASM 运行时首次跑通 + asyncify wasm 死重剔除（dist 14.92MB）+ 分层规则校准。OTA 检测/下载/验签/安装四段全过（验签为真实 Ed25519；本机 0.9.0 已实升 0.9.2）。**下一个节点**：进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或覆盖率下一轮 ratchet（见 P2 表）；另可选做 0.9.2 客户端内 RAG 端到端确认（装好后产生 QA → 建索引 → 「已索引 N 条」）。
-3. **悬而未决问题**：① 0.9.2 客户端内 RAG 端到端确认（需真实使用产生历史 QA）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → 用户下载会遇 SmartScreen 警告，是否购买证书属产品决策。分层规则 #6、OTA 安装段均已关闭 ✅。
+3. **悬而未决问题**：① **RAG 相似度阈值失效**（P2，最该先处理——它会实际影响提问质量，方案见 4.4）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → SmartScreen 警告，购买证书属产品决策。分层规则 #6、OTA 安装段、RAG 端到端均已关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
 5. **本机硬约束三条**（详见 AGENTS 坑点 20/21/23）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错；③ **但跑安装器（NSIS）前必须把 TEMP 指回 C 盘**——D 盘 TEMP 会让 NSIS 解压自身失败且静默（exit 0 零变更），见坑点 23。
