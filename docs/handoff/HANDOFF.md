@@ -22,7 +22,7 @@
   | `src/lib/` | 基础设施（LLM adapter、sqlite、vectorStore、dataExport、templateStore、comparisonStore） |
   | `src/question-bank/` | 问题库 YAML（bank.yaml 65 + bank-backend 28 + bank-ppt 15 = 108 条） |
   | `src-tauri/src/commands/` | Rust 命令（updater、sidecar、llm_proxy、project、api_key） |
-  | `mcp-server/` | MCP Server（当前 2 个工具：list_questions、generate_prompt） |
+  | `mcp-server/` | MCP Server（5 个工具：list_questions / generate_prompt / generate_from_context / list_templates / get_recent_history） |
   | `docs/` | 文档（PRD、架构、reference 接口契约） |
   | `scripts/` | 构建/校验脚本（check-version.mjs 版本守门、copy-ort-wasm.mjs 自托管 WASM 拷贝） |
   | `public/ort/` | ORT WASM 运行时（prebuild/predev 生成，已 gitignore，14MB 不入库） |
@@ -60,13 +60,45 @@
 - **最近提交**：`a433c09` chore(release): bump 0.9.2（四处版本号 + CHANGELOG）；此前 `95a417a` feat(rag) 为功能主体（14 文件，+1399/−1087）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
 - **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 四段（检测/下载/验签/安装）全部实测通过**——0.9.0 客户端已实升 0.9.2 并正常运行（详见 4.3）
-- **最后更新时间**：2026-10-29 18:30 (GMT+8)
-- **本轮任务简述**：**RAG 检索修复完成**（2026-10-29，`57d780e`）——标定过程推翻了「阈值设错」的原假设，根因是**模型选错**：`all-MiniLM-L6-v2` 是纯英文模型，中文同义句相似度(0.49) 反而低于无关句(0.53)。换 `bge-small-zh-v1.5`（同义 0.50–0.76 / 无关 0.10–0.44）+ 双闸门阈值（floor 0.45 / band 0.85，标定召回 85%、误报 0%）。连带修出第二个缺陷：HF 已迁 CDN 到 `us.aws.cdn.hf.co`，旧 CSP 未放行导致新模型下载被拦——已补。**CSP 在 Rust 侧，需重新打包才生效，待发版轮验证。**
+- **最后更新时间**：2026-10-29 18:50 (GMT+8)
+- **本轮任务简述**：**R08 MCP 扩 5 工具 + beforeDevCommand 去硬编码**（2026-10-29，`bbab922`）——新增 `generate_from_context`（吃代码/报错/路径）、`list_templates`、`get_recent_history`；`mcp-server/localData.ts` 直连 SQLite/context.json（只读、`node:sqlite` 惰性加载）。冒烟 32 项断言全过、单工具 ≤128ms。配置侧把机器相关路径 `c:/Users/puj/.../npm.cmd` 改为 `npm run dev`。**同日早前已完成 RAG 检索修复**（`57d780e`：换 bge 中文模型 + 双闸门 + 补 HF CDN，CSP 待打包验证）。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
 
+### R08 + 配置修复轮（2026-10-29 晚）— MCP 扩 5 工具、beforeDevCommand 去硬编码
+
+**任务目标**：用户选定三项优先级（截图）：SmartScreen 应对 + R11 分发 / R08 MCP 扩 5 工具 / 覆盖率 ratchet 第二轮 / beforeDevCommand 去硬编码。本轮做其中两项低风险高价值的。
+
+**实际完成内容**（提交 `bbab922`）：
+
+**1. beforeDevCommand 去硬编码**
+- `c:/Users/puj/AppData/Local/Agnes/node/npm.cmd run dev` → `npm run dev`
+- 原路径机器相关，换机即断，也是别人 clone 仓库跑不起来的第一个坑（R11 分发前置）
+
+**2. R08 MCP 工具 2 → 5**
+
+| 工具 | 作用 | 实测耗时 |
+|---|---|---|
+| `list_questions` | 已有：预览问题列表 | 62ms |
+| `generate_prompt` | 已有：生成提示词 | 128ms |
+| `generate_from_context` | **新增**：直接吃代码/报错/文件路径，不必先自己总结成需求 | 23ms |
+| `list_templates` | **新增**：读用户保存的变量模板（支持 query 过滤） | 24ms |
+| `get_recent_history` | **新增**：读提示词历史 + 附带 recent_qa/preferences/project 上下文 | 32ms |
+
+**关键技术决策**：新增 `mcp-server/localData.ts` 直连桌面端写入的 SQLite 与 `context.json`（全只读）。**为什么不复用 `src/lib/*Store`**：那些依赖 `@/lib/sqlite`（走 Tauri invoke），而 MCP 是纯 node 子进程无 Tauri 运行时。`node:sqlite` 用 `createRequire` **惰性加载**——静态 import 会让 `src/mcp-server.test.ts`（jsdom 环境）在 Vite 下解析失败（`Failed to load url sqlite`）。
+
+**验证方式与结果**：
+- tsc 0 / typecheck:mcp 0 / lint 0 error / **vitest 38 文件 515 passed** / coverage 0 / build 0 / cargo check 0 / check:version OK
+- `mcp:smoke` **32 项断言全过**：5 工具注册、每个工具 description > 20 字符（Agent 才能选对）、inputSchema 为 object、`generate_from_context` 不丢上下文原文、只读工具空数据给 `note` 而非报错、未知工具返回 `-32602`
+- 冒烟测试踩坑：一次连发 6 条调用，`list_questions` 返回 24KB 文本导致 `waitFor` 轮询误判超时 → 改为逐条串行 + 120ms 间隔
+
+**遗留问题**：
+- **覆盖率 ratchet 第二轮未做**（hooks 5% → 15+，主目标 `useFlow.ts` 862 行）——这是本轮剩余最大项
+- **SmartScreen 应对 + R11 分发未做**——用户最该先做的产品动作（功能已够用，缺真实用户验证）
+- MCP 的 `list_templates` / `get_recent_history` 在本机返回空（用户没保存过模板、历史在另一 identifier 下），空态路径已验证但**有数据路径未在真机验证**
+- Claude Code 实机接入未验证（路线图 R08 验收要求）
 ### RAG 检索修复轮（2026-10-29 晚）— 根因是模型选错，连带修出 CSP 阻塞缺陷
 
 **任务目标**：用户选「② 相对阈值」修复上一轮发现的检索失效。但标定过程推翻了原假设。
@@ -212,51 +244,6 @@
 - 规则改动属全局配置（R2 定级 L3），已按用户直接指令执行；如需回退，改这两处文本即可，无其他耦合
 - 坑点 22 提到的「并行时改用独立 outDir」目前只是建议，未做成强制脚本
 
-### 0.9.2 主卡轮（2026-10-27）— 依赖迁移 + RAG 运行时首次真正跑通
-
-**任务目标与用户决策**：承接大审查未修项 #1（生产依赖链 critical CVE）。用户三项决策（AskUserQuestion 确认）：① **一并修通 RAG 运行时**（不只迁依赖）；② WASM **自托管**走本地，不放行第三方 CDN；③ **只落代码**，版本 bump 留待统一发版轮。
-
-**关键发现（本轮最重要，推翻了 0.9.1 的认知）**：`dist/assets` 里**从来没有 .wasm 文件**；v2 的 onnxruntime 在 Web 环境只能从 `cdn.jsdelivr.net` 取 wasm，而 CSP 既无该域也无 `'wasm-unsafe-eval'` → **RAG 嵌入在 Tauri 生产包里从未真正跑通过**。0.9.1 的 CSP 修复只放行了模型文件域（huggingface.co / cas-bridge），wasm 运行时这一环一直缺。AGENTS 坑点 16 当时把「dev 无 CSP 只能产物级验证」记为环境限制，实际掩盖了这条真缺陷。
-
-**实际完成内容**（改动 11 M/D + 1 新增，未提交）：
-
-| 文件 | 改动 |
-|---|---|
-| `package.json` | 删 `@xenova/transformers`，加 `@huggingface/transformers ^4.3.1`；新增 `predev`/`prebuild` 钩子 |
-| `package-lock.json` | 依赖树重解析（1883 行变动） |
-| `src/lib/vectorStore.ts` | `{quantized:true}`→`{dtype:'q8'}`；新增 `useLocalWasm()` 在 `pipeline()` 前原地覆写 `env.backends.onnx.wasm.wasmPaths` + `env.useWasmCache=false`；单例改 `FeatureExtractionPipeline` 类型；`embed()` 用 `unknown`+`instanceof` 守卫（无 any） |
-| `src/lib/__tests__/vectorStore.test.ts` | mock 模块名同步 + 补 `env` 形状 |
-| `src/types/xenova-transformers.d.ts` | 删除（v4 自带完整类型） |
-| `scripts/copy-ort-wasm.mjs` | **新增**：prebuild/predev 把 `ort-wasm-simd-threaded.{mjs,wasm}` 拷到 `public/ort/`；兼容 npm 提升/嵌套两种布局；同尺寸跳过重写 |
-| `src-tauri/tauri.conf.json` | **仅** `script-src` 加 `'wasm-unsafe-eval'` |
-| `vite.config.ts` | 新增 `dropUnusedOrtWasm()` 插件：`generateBundle` 剔除 25.62MB 未使用的 asyncify wasm 变体 |
-| `.gitignore` | `public/ort/` + `.tmp-build/` 忽略，`!scripts/copy-ort-wasm.mjs` 例外 |
-| `AGENTS.md` | 坑点 20（RAG wasm 自托管）+ 21（沙箱 esbuild 盘变量） |
-| `README.md`/`README_EN.md` | 嵌入依赖行改名 |
-
-**验证方式与结果（dispatcher 独立复跑，非采信自报）**：
-- `npx tsc --noEmit` exit 0；`npm run lint` exit 0（40 warning 全为既有文件遗留）；`npx vitest run --pool=forks --poolOptions.forks.singleFork=true` **38 文件 510/510**；`npm run test:coverage` exit 0（分层门槛未动）；`npm run build` exit 0；`npm run check:version` OK（四处 0.9.1 未变）
-- `npm audit --omit=dev --registry=https://registry.npmjs.org` → **0 漏洞**（迁移前 1 critical + 4 high）。全量 audit 仍 14 条（3 critical/7 high/4 moderate）**全在 devDependencies**（vitest/vite/esbuild/postcss），不在生产包
-- **dist 产物核验**：15 文件 / **14.92 MB**（迁移前 40.54MB）；`*asyncify*` **0 匹配**；`dist/ort/ort-wasm-simd-threaded.wasm` 13.60MB 保留（sha256 `06BA0577…DF9E3`）
-- **端到端实跑**（Playwright + 从 tauri.conf.json 读出的**生产 CSP** + 拦截 huggingface.co 用本地缓存回放模型）：`{"dim":384,"l2":1.000000292803836,"head":[-0.03567689,0.02067922,0.00470460]}`；WASM 只请求 `/ort/ort-wasm-simd-threaded.{mjs,wasm}`；**CDN 请求 0、asyncify 请求 0**。探针产物与真实 dist 的 `transformers.web` chunk、两个 ort 文件 **sha256 逐一相同**，证明测的是同一份生产代码
-- **真实 dist 冒烟**：加载 `dist/index.html`（同生产 CSP）→ title=`灵感大王`、root innerHTML 6034 字符、**REQUEST_FAILURES=[]**
-- **两个对照实验**：① 去掉 `'wasm-unsafe-eval'` → `WebAssembly.instantiate` 被 CSP 拦、嵌入失败（证明该指令必需，非过度授权）；② 删掉 25.6MB asyncify wasm → 嵌入照常成功（证明是死重）
-- **CI 实证**（2026-10-27 推送后）：commit `267cf7a` 触发 CI，`check`（ubuntu-latest）+ `check-windows` 双 job 均 **success**。这实证了「本机 esbuild 沙箱问题不影响 CI」的推断——两个 runner 都跑了 `npm run build`/tsc/vitest 且全绿
-
-**关键决策及理由**：
-- 选 v4 不选 v3：实测 `3.7.3` 的 sharp@0.34 仍带 2 high（libvips/libheif/librsvg CVE），只有 `4.3.1` 做到 `--omit=dev` 零漏洞
-- wasm 自托管而非放行 jsdelivr：契合「本地优先/数据不出机器」定位，离线可用，CSP 攻击面不扩大
-- `useWasmCache=false`：默认开启会把 `.mjs` 转 blob: URL 再动态 import，需额外放行 `script-src blob:`；关掉后走本地文件，CSP 保持最小
-- 路径基准用 `document.baseURI`：`base:'./'` 下 `import.meta.env.BASE_URL` 恒为 `'./'`，按模块 URL 解析会落到 `dist/assets/` 而非 `dist/`
-- 不改 test 脚本/不加 sourcemap 降级来绕 esbuild 问题：见坑点 21，那是沙箱盘变量，改脚本属误伤
-
-**遗留问题**：
-- **OTA 全链路仍未实测**（0.9.1 已是存量版本，需 0.9.2 发版时用 0.9.1 客户端在未阻断网络环境做）
-- **真实 Tauri 安装包内 RAG e2e 未验**：本轮只到 web 构建 + 自托管 wasm 层（`npx tauri build` 需 Rust 全量编译，耗时超本轮，且不改变 CSP/wasmPaths 正确性结论）
-- 产物 JS 内仍有 6 处 asyncify 文件名字符串（死分支字面量，零网络请求、零体积影响）；升级 onnxruntime-web 后需复核是否出现新的死重变体
-- 全量 audit 的 14 条 devDependencies 漏洞未处理（不在本卡范围）
-- 大审查未修项 #6 分层决策（用户已拍板选 ①「修订 AGENTS 承认 UI 可调只读类 lib，写操作走 hooks」）**尚未落文档**
-
 ## 4.4 待办事项（Backlog）
 
 ### P0（阻塞/尽快）
@@ -282,7 +269,7 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 ### P2 / 技术债
 | 事项 | 备注 |
 |---|---|
-| `tauri.conf.json` 的 `beforeDevCommand` 硬编码 `c:/Users/puj/AppData/Local/Agnes/node/npm.cmd` | 机器相关路径，换机即失效 |
+| ~~`beforeDevCommand` 硬编码路径~~ | ✅ 2026-10-29 改为 `npm run dev`（`bbab922`） |
 | 对比面板：单侧回填（当前结果 vs 某条历史记录）+「清空两侧」按钮 | R04 遗留 P2/P3，约 10–20 行；槽位为内存态不跨重启（留档由 comparison_runs 承担） |
 | 对比面板数据兜底：`key={runId}` 损坏时重复 0、`renamingId===0` 静默失效 | R04 遗留 P3，风险低 |
 | CHANGELOG 补 0.2.0 之前的 0.1.x 细节 | 低优先 |
@@ -333,6 +320,6 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
 2. **当前状态**：**v0.9.2 已正式发布且 OTA 全链路实测闭环**（标签 `v0.9.2`、commit `a433c09`；`releases/latest` = v0.9.2）。内容：依赖迁移（生产依赖 0 漏洞）+ RAG WASM 运行时首次跑通 + asyncify wasm 死重剔除（dist 14.92MB）+ 分层规则校准。OTA 检测/下载/验签/安装四段全过（验签为真实 Ed25519；本机 0.9.0 已实升 0.9.2）。**下一个节点**：进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或覆盖率下一轮 ratchet（见 P2 表）；另可选做 0.9.2 客户端内 RAG 端到端确认（装好后产生 QA → 建索引 → 「已索引 N 条」）。
-3. **悬而未决问题**：① **CSP 改动待打包验证**（RAG 修复的关键一环，见 4.4）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → SmartScreen 警告，购买证书属产品决策。分层规则 #6、OTA 安装段、RAG 端到端、RAG 阈值失效均已关闭 ✅。
+3. **悬而未决问题**：① **CSP 改动待打包验证**（RAG 修复的关键一环，见 4.4）；①b **覆盖率 ratchet 第二轮未做**（hooks 5%→15+，主目标 `useFlow.ts` 862 行）、**SmartScreen 应对 + R11 分发未做**（用户本轮点名的另两项，见 4.4）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → SmartScreen 警告，购买证书属产品决策。分层规则 #6、OTA 安装段、RAG 端到端、RAG 阈值失效均已关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
 5. **本机硬约束三条**（详见 AGENTS 坑点 20/21/23）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错；③ **但跑安装器（NSIS）前必须把 TEMP 指回 C 盘**——D 盘 TEMP 会让 NSIS 解压自身失败且静默（exit 0 零变更），见坑点 23。
