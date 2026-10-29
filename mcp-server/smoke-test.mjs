@@ -70,7 +70,7 @@ async function main() {
     stderrText += d.toString();
   });
 
-  // 依次发送：握手 → 通知 → 工具列表 → 两个工具调用
+  // 握手 + 通知 + 工具列表（可并发）
   proc.stdin.write(rpcRequest(1, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
@@ -78,14 +78,27 @@ async function main() {
   }) + '\n');
   proc.stdin.write(rpcNotification('notifications/initialized') + '\n');
   proc.stdin.write(rpcRequest(2, 'tools/list') + '\n');
-  proc.stdin.write(rpcRequest(3, 'tools/call', {
-    name: 'generate_prompt',
-    arguments: { seed: SEED },
-  }) + '\n');
-  proc.stdin.write(rpcRequest(4, 'tools/call', {
-    name: 'list_questions',
-    arguments: { seed: SEED },
-  }) + '\n');
+
+  // 工具调用逐个串行发送：list_questions 返回 ~24KB 文本，
+  // 一次性连发多条会让响应在同一个 chunk 里堆积，等待逻辑容易误判超时。
+  const CALLS = [
+    [3, 'generate_prompt', { seed: SEED }],
+    [4, 'list_questions', { seed: SEED }],
+    [5, 'generate_from_context', {
+      context: 'TypeError: Cannot read properties of undefined (reading \'map\')\n    at renderList (List.tsx:42)',
+      goal: '修掉这个报错',
+      context_type: 'error',
+    }],
+    [6, 'list_templates', {}],
+    [7, 'get_recent_history', { limit: 3 }],
+    // 负例：未知工具应返回协议层错误 -32602
+    [8, 'no_such_tool', {}],
+  ];
+  for (const [id, name, args] of CALLS) {
+    proc.stdin.write(rpcRequest(id, 'tools/call', { name, arguments: args }) + '\n');
+    // 给每条调用留出处理时间，避免堆积
+    await new Promise((r) => setTimeout(r, 120));
+  }
 
   try {
     const init = await waitFor(responses, 1);
@@ -96,10 +109,28 @@ async function main() {
 
     const tools = await waitFor(responses, 2);
     const toolNames = (tools.result?.tools ?? []).map((t) => t.name).sort();
+    const EXPECTED_TOOLS = [
+      'generate_from_context',
+      'generate_prompt',
+      'get_recent_history',
+      'list_questions',
+      'list_templates',
+    ];
     assert(
-      JSON.stringify(toolNames) === JSON.stringify(['generate_prompt', 'list_questions']),
-      `tools/list 返回工具：${toolNames.join(', ')}`,
+      JSON.stringify(toolNames) === JSON.stringify(EXPECTED_TOOLS),
+      `tools/list 返回 5 个工具：${toolNames.join(', ')}`,
     );
+    // 每个工具都必须有非空 description 与合法 inputSchema，否则 Agent 无法正确选择
+    for (const t of tools.result?.tools ?? []) {
+      assert(
+        typeof t.description === 'string' && t.description.length > 20,
+        `${t.name} 有可读 description（${t.description?.length ?? 0} 字符）`,
+      );
+      assert(
+        t.inputSchema?.type === 'object',
+        `${t.name} inputSchema 为 object`,
+      );
+    }
 
     const gen = await waitFor(responses, 3);
     const markdown = gen.result?.content?.[0]?.text ?? '';
@@ -112,6 +143,52 @@ async function main() {
     const list = await waitFor(responses, 4);
     const questions = list.result?.structuredContent?.questions ?? [];
     assert(questions.length > 0, `list_questions 返回 ${questions.length} 个问题（scene=${list.result?.structuredContent?.scene}）`);
+
+    // generate_from_context：应把报错上下文拼进 seed 并生成提示词
+    const fromCtx = await waitFor(responses, 5);
+    const ctxMd = fromCtx.result?.content?.[0]?.text ?? '';
+    assert(fromCtx.result?.isError !== true, 'generate_from_context 未返回工具级错误');
+    assert(ctxMd.length > 100, `generate_from_context 返回非空 markdown（${ctxMd.length} 字符）`);
+    assert(
+      ctxMd.includes('TypeError') || ctxMd.includes('renderList'),
+      'markdown 含报错上下文原文（未丢失）',
+    );
+    const ctxMeta = fromCtx.result?.structuredContent ?? {};
+    assert(ctxMeta.context_type === 'error', `context_type 回传为 error（实际=${ctxMeta.context_type}）`);
+    assert(
+      typeof ctxMeta.composed_seed_chars === 'number' && ctxMeta.composed_seed_chars > 0,
+      `composed_seed_chars 回传（${ctxMeta.composed_seed_chars}）`,
+    );
+
+    // list_templates：无数据时应是空列表 + note，而不是错误
+    const tpl = await waitFor(responses, 6);
+    assert(tpl.result?.isError !== true, 'list_templates 未返回工具级错误（无数据是正常态）');
+    const tplData = tpl.result?.structuredContent ?? {};
+    assert(Array.isArray(tplData.items), 'list_templates 返回 items 数组');
+    assert(
+      typeof tplData.total_in_store === 'number',
+      `list_templates 回传 total_in_store（${tplData.total_in_store}）`,
+    );
+    if (tplData.total_in_store === 0) {
+      assert(typeof tplData.note === 'string', 'list_templates 空数据时给出 note 说明');
+    }
+
+    // get_recent_history：同上
+    const hist = await waitFor(responses, 7);
+    assert(hist.result?.isError !== true, 'get_recent_history 未返回工具级错误');
+    const histData = hist.result?.structuredContent ?? {};
+    assert(Array.isArray(histData.items), 'get_recent_history 返回 items 数组');
+    assert(
+      histData.include_markdown === false,
+      'get_recent_history 默认不返回完整 markdown',
+    );
+
+    // 未知工具：协议层错误 -32602
+    const unknown = await waitFor(responses, 8);
+    assert(
+      unknown.error?.code === -32602,
+      `未知工具返回 -32602（实际=${unknown.error?.code ?? 'no error'}）`,
+    );
 
     assert(nonJsonLines.length === 0, `stdout 协议纯净（非 JSON 行数=${nonJsonLines.length}）`);
   } catch (e) {

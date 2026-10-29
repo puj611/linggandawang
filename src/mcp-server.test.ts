@@ -57,15 +57,35 @@ describe('MCP 协议层（JSON-RPC 2.0）', () => {
     expect(res.result).toEqual({});
   });
 
-  it('tools/list 返回两个工具且 schema 完整', async () => {
+  it('tools/list 返回 5 个工具且 schema 完整', async () => {
     const res = await rpc('tools/list');
     const tools = (res.result as { tools: Array<Record<string, unknown>> }).tools;
-    expect(tools.map((t) => t.name).sort()).toEqual(['generate_prompt', 'list_questions']);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'generate_from_context',
+      'generate_prompt',
+      'get_recent_history',
+      'list_questions',
+      'list_templates',
+    ]);
     for (const tool of tools) {
       const schema = tool.inputSchema as { type: string; required?: string[] };
       expect(schema.type).toBe('object');
-      expect(schema.required).toContain('seed');
       expect(typeof tool.description).toBe('string');
+      // 描述要足够长，否则 Agent 无法判断该用哪个工具（路线图 R08 风险点）
+      expect((tool.description as string).length).toBeGreaterThan(20);
+    }
+    // 只有以 seed 为入口的两个工具强制要求 seed；新增的上下文/只读工具不需要
+    const byName = new Map(tools.map((t) => [t.name as string, t]));
+    for (const name of ['generate_prompt', 'list_questions']) {
+      const schema = byName.get(name)!.inputSchema as { required?: string[] };
+      expect(schema.required).toContain('seed');
+    }
+    const ctxSchema = byName.get('generate_from_context')!.inputSchema as { required?: string[] };
+    expect(ctxSchema.required).toContain('context');
+    // 两个只读工具无必填参数
+    for (const name of ['list_templates', 'get_recent_history']) {
+      const schema = byName.get(name)!.inputSchema as { required?: string[] };
+      expect(schema.required).toBeUndefined();
     }
   });
 
