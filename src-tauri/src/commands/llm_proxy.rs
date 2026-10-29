@@ -11,7 +11,8 @@ use serde::Deserialize;
 use std::net::IpAddr;
 
 const KEYRING_SERVICE: &str = "linggandawang";
-const ALLOWED_PROVIDERS: &[&str] = &["openai", "deepseek", "tongyi", "custom", "local"];
+/// 服务商白名单（单一来源）：api_key.rs 也引用本常量，避免两处漂移
+pub const ALLOWED_PROVIDERS: &[&str] = &["openai", "deepseek", "tongyi", "custom", "local"];
 
 #[derive(Deserialize, serde::Serialize)]
 pub struct ProxyMessage {

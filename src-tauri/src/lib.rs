@@ -102,6 +102,7 @@ pub fn run() {
             image::read_image_file,
             // API Key commands
             api_key::save_api_key,
+            api_key::has_api_key,
             api_key::load_api_key,
             api_key::delete_api_key,
             // LLM 代理命令（密钥注入 + SSRF 校验）

@@ -49,8 +49,9 @@ export class RequirementSyncer {
       return this.decomposeLocal(description, project, intentTags);
     }
 
-    const apiKey = await useApiKeyStore.getState().getApiKey();
-    if (!apiKey) return this.decomposeLocal(description, project, intentTags);
+    // 安全（2026-10-29 审查 H1）：不取明文 key；Tauri 下由 Rust 代理注入
+    if (!hasApiKey) return this.decomposeLocal(description, project, intentTags);
+    const apiKey = '';
 
     const adapter = getAdapter(config.provider);
     const mappedTags = intentTags?.map((t) => ({ label: t.label, value: t.value }));

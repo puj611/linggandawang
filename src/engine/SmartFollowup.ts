@@ -194,10 +194,11 @@ export async function generateFollowupQuestion(
     return generateRuleBasedFollowup(decision);
   }
 
-  const apiKey = await useApiKeyStore.getState().getApiKey();
-  if (!apiKey) {
+  // 安全（2026-10-29 审查 H1）：不取明文 key；Tauri 下由 Rust 代理注入
+  if (!hasApiKey) {
     return generateRuleBasedFollowup(decision);
   }
+  const apiKey = '';
 
   const adapter = getAdapter(config.provider);
   const messages = buildFollowupMessages(decision.promptInput);

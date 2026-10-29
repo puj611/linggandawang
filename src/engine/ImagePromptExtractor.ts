@@ -106,10 +106,12 @@ export class ImagePromptExtractor {
       );
     }
 
-    const apiKey = await useApiKeyStore.getState().getApiKey();
-    if (!apiKey) {
-      throw new Error('无法获取 API Key，请重新配置');
+    // 安全（2026-10-29 审查 H1）：不再取明文 key。Tauri 下 chat 走 Rust 代理，
+    // key 由 Rust 从 keyring 注入；这里只需判断「是否已配置」。
+    if (!hasApiKey) {
+      throw new Error('未配置 API Key，请先在设置中配置');
     }
+    const apiKey = '';
 
     const userContent: ContentPart[] = [
       {

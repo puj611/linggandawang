@@ -80,19 +80,37 @@ describe('analyzeIntent - P0 用例 T08-T09 降级测试', () => {
     expect(mockGetAdapter).not.toHaveBeenCalled();
   });
 
-  it('T08.3: getApiKey 返回 null 返回 null', async () => {
+  it('T08.3: 未配置 API Key（hasApiKey=false）返回 null，不调用 adapter', async () => {
+    mockApiKeyState.config = {
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o-mini',
+    };
+    // 2026-10-29 审查 H1：判定依据从「getApiKey 有无值」改为 hasApiKey 标志，
+    // 引擎层不再取明文 key（Tauri 下由 Rust 代理注入）。
+    mockApiKeyState.hasApiKey = false;
+
+    const result = await analyzeIntent('test');
+
+    expect(result).toBeNull();
+    expect(mockGetAdapter).not.toHaveBeenCalled();
+  });
+
+  it('T08.3b: 引擎层不调用 getApiKey（明文 key 不得回流，H1 回归）', async () => {
     mockApiKeyState.config = {
       provider: 'openai',
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-4o-mini',
     };
     mockApiKeyState.hasApiKey = true;
-    mockApiKeyState.getApiKey.mockResolvedValue(null);
+    mockApiKeyState.getApiKey.mockClear();
+    mockGetAdapter.mockReturnValue({
+      chat: vi.fn().mockResolvedValue({ content: '{}', model: 'gpt-4o-mini' }),
+    });
 
-    const result = await analyzeIntent('test');
+    await analyzeIntent('test');
 
-    expect(result).toBeNull();
-    expect(mockGetAdapter).not.toHaveBeenCalled();
+    expect(mockApiKeyState.getApiKey).not.toHaveBeenCalled();
   });
 
   it('T08.4: 熔断中（shouldAttempt=false）直接返回 null，不调用 adapter', async () => {
@@ -330,7 +348,6 @@ describe('analyzeIntent - P0 用例 T08-T09 降级测试', () => {
       model: 'gpt-4o-mini',
     };
     mockApiKeyState.hasApiKey = true;
-    mockApiKeyState.getApiKey.mockResolvedValue('sk-test-key');
 
     const mockChat = vi.fn().mockResolvedValue({
       content: '{}',
@@ -345,7 +362,9 @@ describe('analyzeIntent - P0 用例 T08-T09 降级测试', () => {
     expect(callArgs[0].temperature).toBe(0.3);
     expect(callArgs[0].max_tokens).toBe(800);
     expect(callArgs[0].model).toBe('gpt-4o-mini');
-    expect(callArgs[1]).toBe('sk-test-key'); // apiKey
+    // 2026-10-29 审查 H1：apiKey 参数恒为空串——Tauri 下 key 由 Rust 代理从 keyring
+    // 注入，前端不再持有明文。断言成 'sk-test-key' 等于把旧的不安全契约固化。
+    expect(callArgs[1]).toBe('');
     expect(callArgs[2]).toBe('https://api.openai.com/v1'); // baseUrl
   });
 });

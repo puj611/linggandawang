@@ -63,10 +63,11 @@ export const useApiKeyStore = create<ApiKeyState>((set, get) => ({
         if (config.provider === 'local') {
           hasApiKey = true;
         } else if (isTauri()) {
-          const key = await invoke<string | null>('load_api_key', {
+          // 安全（2026-10-29 审查）：不再把明文密钥拉进渲染进程，只查存在性
+          const has = await invoke<boolean>('has_api_key', {
             provider: config.provider,
           });
-          hasApiKey = !!key;
+          hasApiKey = has;
         } else {
           hasApiKey = !!sessionStorage.getItem(SS_APIKEY_PREFIX + config.provider);
         }
@@ -98,6 +99,11 @@ export const useApiKeyStore = create<ApiKeyState>((set, get) => ({
     set({ hasApiKey: true });
   },
 
+  /**
+   * @deprecated 安全（2026-10-29 审查 H1）：**不要在生产代码里调用**。
+   * Tauri 模式下 LLM 请求走 Rust 代理，key 由 Rust 从 keyring 注入，前端无需明文。
+   * 保留本方法仅为浏览器模式降级与测试使用；新增调用点会被 code review 拒绝。
+   */
   getApiKey: async () => {
     const { config } = get();
     if (!config) return null;

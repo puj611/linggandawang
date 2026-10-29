@@ -97,8 +97,9 @@ export async function analyzeIntent(
     return null;
   }
 
-  const apiKey = await useApiKeyStore.getState().getApiKey();
-  if (!apiKey) return null;
+  // 安全（2026-10-29 审查 H1）：不取明文 key；Tauri 下由 Rust 代理注入
+  if (!hasApiKey) return null;
+  const apiKey = '';
 
   const adapter = getAdapter(config.provider);
   const messages = buildIntentAnalysisMessages(seed, projectStack, recentQA);
