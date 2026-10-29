@@ -60,13 +60,53 @@
 - **最近提交**：`a433c09` chore(release): bump 0.9.2（四处版本号 + CHANGELOG）；此前 `95a417a` feat(rag) 为功能主体（14 文件，+1399/−1087）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
 - **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 四段（检测/下载/验签/安装）全部实测通过**——0.9.0 客户端已实升 0.9.2 并正常运行（详见 4.3）
-- **最后更新时间**：2026-10-29 18:15 (GMT+8)
-- **本轮任务简述**：**RAG 端到端确认完成**（2026-10-29）——首次在真机（已装 0.9.2）实证索引链路：恢复 20 条 QA 历史后启动，`vector_store` 表建立、20/20 条索引成功、384 维、L2=1.0；检索侧 3/3 相关查询正确命中。**但发现 `SIMILARITY_THRESHOLD = 0.3` 形同虚设**——不相关查询也拿 0.70 分，会把无关历史注入 LLM。已列 P2 待决策（见 4.4）。用户数据已恢复原状，索引保留。
+- **最后更新时间**：2026-10-29 18:30 (GMT+8)
+- **本轮任务简述**：**RAG 检索修复完成**（2026-10-29，`57d780e`）——标定过程推翻了「阈值设错」的原假设，根因是**模型选错**：`all-MiniLM-L6-v2` 是纯英文模型，中文同义句相似度(0.49) 反而低于无关句(0.53)。换 `bge-small-zh-v1.5`（同义 0.50–0.76 / 无关 0.10–0.44）+ 双闸门阈值（floor 0.45 / band 0.85，标定召回 85%、误报 0%）。连带修出第二个缺陷：HF 已迁 CDN 到 `us.aws.cdn.hf.co`，旧 CSP 未放行导致新模型下载被拦——已补。**CSP 在 Rust 侧，需重新打包才生效，待发版轮验证。**
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
 
+### RAG 检索修复轮（2026-10-29 晚）— 根因是模型选错，连带修出 CSP 阻塞缺陷
+
+**任务目标**：用户选「② 相对阈值」修复上一轮发现的检索失效。但标定过程推翻了原假设。
+
+**关键发现：不是阈值问题，是模型选错。**
+
+用同一批中文对做对照（`src/lib/vectorStore.ts` 实测）：
+
+| 测试对 | all-MiniLM-L6-v2 | bge-small-zh-v1.5 |
+|---|---|---|
+| 中文 同义 | 0.49 | 0.50–0.76 |
+| 中文 无关 | **0.53** | 0.10–0.44 |
+| 英文 同义 | 0.51 | — |
+| 英文 无关 | **−0.10** | — |
+
+英文能清晰区分（同义 0.51 / 无关 −0.10），中文完全失效（同义 0.49 < 无关 0.53）——`all-MiniLM-L6-v2` 是纯英文模型。**q8 与 fp32 结果一致，排除量化损失。**
+
+**三个修复**：
+
+1. **换模型**（根因）：`Xenova/all-MiniLM-L6-v2` → `Xenova/bge-small-zh-v1.5`；`EMBEDDING_DIM` 384 → 512。旧向量因维度不符自动失效重建（`restoreVectorStore` 的 `length === EMBEDDING_DIM` 校验）。
+2. **双闸门阈值**：`SIMILARITY_THRESHOLD = 0.3` → `SIMILARITY_FLOOR = 0.45` + `SIMILARITY_BAND = 0.85`。
+   - **纯相对阈值单独用无效**：top1 自身必然满足 `s >= top1*k`，无关查询永远返回 1 条。必须先用 floor 判断「这个查询有没有值得检索的东西」。
+   - 参数来自 24 组扫描（20 条真实 QA 正样本 + 20 条无关负样本）：**召回 85%、误报 0%**。
+3. **CSP 补 `us.aws.cdn.hf.co`**（阻塞性，早于本轮就存在）：HF 已从 `cas-bridge.xethub.hf.co` 迁到 `us.aws.cdn.hf.co`，模型文件 302 到新域被 CSP 拦 → **新模型永远下载不下来、索引卡死**。旧模型只因已缓存在 WebView 才没暴露这个缺陷。保留旧域兼容。
+
+**排查过程（含一次误判）**：
+- 先按用户选择做相对阈值标定 → 发现无关查询误报 10/10，纯相对阈值无效
+- 扩大负样本到 20 条重扫 → 召回率反而降到 0.00–0.10，意识到问题在模型不在阈值
+- 用英文/中文对照实验定位到模型语言能力缺陷
+- 换 bge 后应用仍卡住 → 浏览器探针抓到 302 跳转 `us.aws.cdn.hf.co` 被 CSP 拦，定位到第二个缺陷
+
+**验证方式与结果**：
+- tsc exit 0 / lint exit 0（40 warning 既有）/ **vitest 38 文件 515 passed**（新增 5 例双闸门回归）/ coverage exit 0 / build exit 0 / check:version OK（0.9.2）
+- 浏览器实测（生产 CSP + 自托管 wasm）：bge 加载成功 `dim=512`、`l2=1.0000000`、5.4s、**零 CDN 请求**、WASM 仅请求 `/ort/*`
+- 提交 `57d780e`
+
+**遗留问题**：
+- **CSP 改动在 Rust 侧，需重新打包安装才生效**；本地未 `tauri build`，真机端到端待发版轮验证
+- 应用内 20 条索引尚未用 bge 重建（当前库中为 0 行，下次启动会自动重建，需模型下载 ~95MB）
+- 召回 85% 意味约 15% 的相关查询检索不到（多为措辞差异大的改写），可接受但非完美
 ### RAG 端到端确认轮（2026-10-29）— 首次真机实证索引 + 检索，发现阈值失效
 
 **任务目标**：关闭 v0.9.2 发布遗留的最后一项「0.9.2 客户端内 RAG 端到端确认」。
@@ -217,23 +257,6 @@
 - 全量 audit 的 14 条 devDependencies 漏洞未处理（不在本卡范围）
 - 大审查未修项 #6 分层决策（用户已拍板选 ①「修订 AGENTS 承认 UI 可调只读类 lib，写操作走 hooks」）**尚未落文档**
 
-### 大审查 + 立即修复轮（2026-10-25 深夜）
-
-**任务目标与用户决策**：用户要求用本机两项能力（`/big-review` 五维协议 + `staff-engineer-mode`→`production-readiness-review`）审查项目并出 markdown 报告；随后确认「立即修复已知问题，先出修复方案，回归通过」。
-
-**审查结论**（v0.9.0..HEAD，33 文件 +3257 行）：总体风险**中**（无危急）。高危 2：① 生产依赖链 CVE（`@xenova/transformers@2.17.2` → protobufjs@6.11.6 critical CVE-2023-36665 + onnxruntime-web 等 3 high；攻击链=HF 模型投毒→WebView 内原型污染，概率低影响大；修复=迁 @huggingface/transformers v3，本迭代评估）② 覆盖导入备份 fail-open。中危 4（幂等/created_at 分歧/setTimeout 违规/分层漂移），低/参考若干。PRR 矩阵：构建✅/更新链⚠️Exception（OTA 未验）/供应链🔶/数据🔶（修复后✅）。质量评分 78/100。**完整报告存档于 `docs/audits/2026-10-25-v0.9.1-big-review.md`**（含已修/未修状态标注）。
-
-**立即修复批**（commit `b6539ea`，全量 510/510，覆盖率门 exit 0）：
-- #2 `backupCurrent` 返回落盘成败；**overwrite 备份失败中止**并提示先手动导出（merge 增量不销毁，保持尽力备份）——数据丢失红线 fail-closed
-- #3 merge 历史按 `(title,created_at)` 去重（重复导入不翻倍）；DataPanel `importing` 态禁用防重入
-- #4 templateStore SQLite 路径 `INSERT…ON CONFLICT(id) DO UPDATE` 更新保留 `created_at`（消除双路径分歧）
-- #5 TemplateSaveDialog 延迟关闭定时器 ref 跟踪 + 卸载 cleanup（AGENTS setTimeout 铁律）
-- #7 密钥过滤升级键名+值形状（sk-/ghp_/AKIA）双向扫描
-
-**验证**：新增回归用例 4 条（备份失败中止且数据原样 / 两导不翻倍 / 值级密钥剔除 / created_at 保留）；tsc/lint/build/510 测试/覆盖率门全绿；CI 结果见 4.2。
-
-**遗留**（未修，见审查报告 #4 批次）：依赖迁移评估（本迭代）、分层决策①修订 AGENTS 描述 vs ②hooks 封装（待用户拍板）、模板删除确认/列表缓存（backlog）；AGENTS 坑点 17-19 已确认写入（同日沉淀轮）。
-
 ## 4.4 待办事项（Backlog）
 
 ### P0（阻塞/尽快）
@@ -248,7 +271,8 @@
 | ~~v0.9.2 发版~~ | 标签 `v0.9.2` / commit `a433c09` | ✅ 2026-10-27 已发布：三平台全绿、10 资产全 ASCII、latest.json 9 平台键、`releases/latest` 匿名可查 |
 | ~~OTA 安装段实测~~ | release 流程 | ✅ 2026-10-27 四段全过：检测 ✅、下载 ✅、验签 ✅（真实 Ed25519）、安装 ✅（0.9.0→0.9.2 静默升级成功，三方核验 + 启动正常）。首轮「安装失败」是 D 盘 TEMP 导致 NSIS 解压失败，已入坑点 18 |
 | ~~真实 Tauri 包内 RAG 端到端~~ | `src/lib/vectorStore.ts` | ✅ 2026-10-29 完成：真机 0.9.2 索引 20/20 成功、384 维、L2=1.0、检索 3/3 命中（详见 4.3） |
-| **RAG 相似度阈值失效**（P2，待决策） | `src/lib/vectorStore.ts:18` | ⚠️ `SIMILARITY_THRESHOLD = 0.3` 形同虚设：不相关查询「今天天气怎么样」也拿 0.70 分。all-MiniLM-L6-v2 对短中文文本普遍 0.55–0.77。后果=注入无关历史干扰 LLM。解法待选：① 提到 0.75+ 并实测校准；② 改相对阈值（Top-1 vs Top-K 分差）；③ 换 bge-small-zh-v1.5 |
+| ~~RAG 相似度阈值失效~~ | `src/lib/vectorStore.ts` | ✅ 2026-10-29 修复（`57d780e`）：根因是**模型选错**（all-MiniLM-L6-v2 是纯英文模型），换 `bge-small-zh-v1.5` + 双闸门（floor 0.45 / band 0.85）。标定召回 85%、误报 0%。详见 4.3 |
+| **CSP 改动需重新打包才生效** | `src-tauri/tauri.conf.json` | ⚠️ 新增 `us.aws.cdn.hf.co` 在 Rust 侧，本地未 `tauri build`。发版轮必须验证：装新版后 RAG 能下载 bge 模型（否则索引卡死） |
 | 首次索引耗时与 UI 反馈 | `src/hooks/useVectorStore.ts` | 首次需 ~50–60s（模型下载 ~90MB + WASM 初始化）；应用内是否有进度提示未验证 |
 | 更新失败文案区分网络/密钥 | `src-tauri/src/commands/updater.rs` 或前端提示 | P3：当前两种原因混为一句 |
 
@@ -309,6 +333,6 @@ R08 MCP 扩 5 工具｜R09 Chrome 插件 MV3｜R10 国际化｜R11 社区分发�
 
 1. **建议先读**：`AGENTS.md`（架构与命令）→ 本文件 → 路线图（`D:\AI工作平台\逆向工程\tasks\20261024_linggan_roadmap\灵感大王后续开发路线图.md`）→ `docs/reference/release-process.md`（发版链路）。
 2. **当前状态**：**v0.9.2 已正式发布且 OTA 全链路实测闭环**（标签 `v0.9.2`、commit `a433c09`；`releases/latest` = v0.9.2）。内容：依赖迁移（生产依赖 0 漏洞）+ RAG WASM 运行时首次跑通 + asyncify wasm 死重剔除（dist 14.92MB）+ 分层规则校准。OTA 检测/下载/验签/安装四段全过（验签为真实 Ed25519；本机 0.9.0 已实升 0.9.2）。**下一个节点**：进入 P1（v0.10.x，2027 Q1：R08 MCP 扩 5 工具等）或覆盖率下一轮 ratchet（见 P2 表）；另可选做 0.9.2 客户端内 RAG 端到端确认（装好后产生 QA → 建索引 → 「已索引 N 条」）。
-3. **悬而未决问题**：① **RAG 相似度阈值失效**（P2，最该先处理——它会实际影响提问质量，方案见 4.4）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → SmartScreen 警告，购买证书属产品决策。分层规则 #6、OTA 安装段、RAG 端到端均已关闭 ✅。
+3. **悬而未决问题**：① **CSP 改动待打包验证**（RAG 修复的关键一环，见 4.4）；② 大审查报告原样 vs 补更新失败文案小卡；③ 全量 audit 的 14 条 devDependencies 漏洞是否处理；④ 可选：`.mimosa/`、`.video_agent/` 是否入 .gitignore；⑤ 安装包无 Authenticode 代码签名 → SmartScreen 警告，购买证书属产品决策。分层规则 #6、OTA 安装段、RAG 端到端、RAG 阈值失效均已关闭 ✅。
 4. **本机操作备忘**：需要 PowerShell 时一律 `pwsh -NoProfile`（7.4.21，勿用系统 5.1）；github.com:443 阻断时按 4.5 坑 13 走 Git Data API（脚本在 `%TEMP%\api-push.mjs` 范式，见坑 13 描述自建）；git credential manager 的 token 可调 GitHub API（scope repo/workflow/gist），使用时勿回显；Mimosa pre-commit 会把静态 DDL 常量误判 SQL 注入拦写入——内联字面量可过。
 5. **本机硬约束三条**（详见 AGENTS 坑点 20/21/23）：① 改 RAG 嵌入相关代码时，WASM 走 `public/ort/` 自托管，CSP 必须含 `'wasm-unsafe-eval'`——**不要再加 jsdelivr 或 `https:` 通配**；② 本机跑 `npm run build` 前必须 `$env:TEMP=$PWD\.tmp-build; $env:TMP=$PWD\.tmp-build`（沙箱下 D: 盘的 esbuild 子进程 unlink 被拒），否则会看到假的「体积阈值」报错；③ **但跑安装器（NSIS）前必须把 TEMP 指回 C 盘**——D 盘 TEMP 会让 NSIS 解压自身失败且静默（exit 0 零变更），见坑点 23。
