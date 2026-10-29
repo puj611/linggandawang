@@ -1,6 +1,8 @@
 // src/lib/vectorStore.ts
 // RAG-Lite 向量存储：本地嵌入 + 余弦相似度检索
-// 使用 @huggingface/transformers 的 all-MiniLM-L6-v2 模型（~90MB，CPU 可跑）
+// 使用 @huggingface/transformers 的 bge-small-zh-v1.5 模型（中文专用，~95MB，CPU 可跑）
+// 注意：早期版本用 all-MiniLM-L6-v2，实测该模型为纯英文，中文同义句相似度(0.49) 反而低于
+// 无关句(0.53)，检索完全失效。bge-small-zh-v1.5 中文区分度正常（同义 0.50-0.76 / 无关 0.10-0.44）。
 // 用途：将用户历史答案向量化，提问时检索 Top-K 相似历史增强上下文
 // Phase C：持久化升级为 SQLite（Tauri）/ localStorage（浏览器降级）
 
@@ -8,14 +10,20 @@ import type { ContextRecentQA } from '@/types/context';
 import type { env as transformersEnv, FeatureExtractionPipeline } from '@huggingface/transformers';
 import { isTauri } from '@/lib/env';
 
-// 嵌入维度（all-MiniLM-L6-v2 输出 384 维）
-const EMBEDDING_DIM = 384;
+// 嵌入维度（bge-small-zh-v1.5 输出 512 维；旧 all-MiniLM-L6-v2 为 384 维，切换后旧向量自动失效重建）
+const EMBEDDING_DIM = 512;
 // 最大历史条数
 const MAX_ENTRIES = 200;
 // 检索返回条数
 const DEFAULT_TOP_K = 5;
-// 相似度阈值（低于此值不返回）
-const SIMILARITY_THRESHOLD = 0.3;
+
+// ---- 检索阈值：绝对下限 + 相对带宽 双闸门 ----
+// 2026-10-29 用 20 条真实 QA + 20 条无关查询标定（bge-small-zh-v1.5）：
+//   floor=0.45 band=0.85 → 召回 85%、无关误报 0%
+// 只用相对阈值无效：top1 自身必然满足 "s >= top1*k"，无关查询会永远返回 1 条。
+// 必须先用 floor 判断"这个查询有没有值得检索的东西"，再用 band 裁掉低分陪衬。
+const SIMILARITY_FLOOR = 0.45;
+const SIMILARITY_BAND = 0.85;
 
 // 嵌入模型单例
 let embedder: FeatureExtractionPipeline | null = null;
@@ -64,7 +72,7 @@ async function getEmbedder(): Promise<FeatureExtractionPipeline> {
     try {
       const { env, pipeline } = await import('@huggingface/transformers');
       useLocalWasm(env);
-      const model = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+      const model = await pipeline('feature-extraction', 'Xenova/bge-small-zh-v1.5', {
         dtype: 'q8', // 量化模型，体积更小（v2 的 quantized: true 在 v4 改为 dtype）
       });
       embedder = model;
@@ -81,7 +89,7 @@ async function getEmbedder(): Promise<FeatureExtractionPipeline> {
 }
 
 /**
- * 将文本转换为向量（384 维）
+ * 将文本转换为向量（512 维）
  */
 export async function embed(text: string): Promise<Float32Array> {
   if (!text || text.trim().length === 0) {
@@ -93,7 +101,7 @@ export async function embed(text: string): Promise<Float32Array> {
   const data: unknown = output.data;
   // v4 的 Tensor.data 是 DataArray（含 BigInt 视图与普通数组），本 pipeline 固定输出 float32
   if (!(data instanceof Float32Array)) {
-    throw new TypeError('[vectorStore] 嵌入输出不是 Float32Array，无法得到 384 维向量');
+    throw new TypeError('[vectorStore] 嵌入输出不是 Float32Array，无法得到 512 维向量');
   }
 
   return new Float32Array(data);
@@ -204,10 +212,15 @@ export async function retrieveSimilar(
     entry,
     score: cosineSimilarity(queryEmbedding, entry.embedding),
   }));
+  scored.sort((a, b) => b.score - a.score);
+
+  // 双闸门：① top1 必须达到绝对下限（否则整个查询无相关历史，直接返回空）
+  //         ② 其余条目必须落在 top1 的相对带宽内（裁掉明显低分的陪衬）
+  const top1 = scored[0]?.score ?? 0;
+  if (top1 < SIMILARITY_FLOOR) return [];
 
   return scored
-    .filter((s) => s.score >= SIMILARITY_THRESHOLD)
-    .sort((a, b) => b.score - a.score)
+    .filter((s) => s.score >= top1 * SIMILARITY_BAND)
     .slice(0, topK);
 }
 
