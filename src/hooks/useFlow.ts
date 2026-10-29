@@ -62,7 +62,7 @@ function getEngine(): QuestionEngine {
 }
 
 // v2.1 新增：哪些意图标签视为稳定用户偏好（用于累积到 context.preferences）
-const PREFERENCE_LABELS = new Set([
+export const PREFERENCE_LABELS = new Set([
   '场景',
   '主题',
   '响应式',
@@ -73,8 +73,9 @@ const PREFERENCE_LABELS = new Set([
   '样式方案',
 ]);
 
-/** v2.1 新增：从 engine 的 intentTags + LLM 分析中提取稳定偏好，准备写入 context.preferences */
-function extractPreferencesFromEngine(engine: QuestionEngine): ContextPreference[] {
+/** v2.1 新增：从 engine 的 intentTags + LLM 分析中提取稳定偏好，准备写入 context.preferences
+ *  导出供单测：纯函数，无 IO / 无 React 依赖 */
+export function extractPreferencesFromEngine(engine: QuestionEngine): ContextPreference[] {
   const tags = engine.getIntentTags();
   const now = new Date().toISOString();
   const prefs: ContextPreference[] = [];
@@ -113,7 +114,7 @@ function extractPreferencesFromEngine(engine: QuestionEngine): ContextPreference
  *     （同题一致性 ≥ 60% 才推荐；历史 answer 存的是选项 label 或自定义文本，需解析回 option.value）
  *  ② preferences 稳定偏好 → recommendFromPreferences，按 "key:value" 匹配选项 tags（如 "场景: 修UI"）
  *  返回推荐选项的 value 数组（空数组 = 无推荐）；新用户两源皆空时短路返回，避免无谓的 store 写入 */
-function computeRecommendation(
+export function computeRecommendation(
   question: Question,
   recentQA: ContextRecentQA[],
   prefs: ContextPreference[],

@@ -78,11 +78,15 @@ export default defineConfig({
         // R07 门槛 = 实测基线设防（锁住不回退），路线图 75% 目标由后续版本逐步 ratchet：
         // 每次新增测试后手动上调对应数字。engine 已达路线图 G2 要求的 85%。
         // 2026-10-25 第一轮 ratchet：R05/R06 补测后 lib 45→57、hooks 2→5、components 0.5→6
+        // 2026-10-29 第二轮 ratchet：hooks 5→20（实测 21.04）。
+        //   新增 useFlow.pure.test.ts（18 例，覆盖 computeRecommendation 双链路与
+        //   extractPreferencesFromEngine）+ useVectorStore.test.tsx（9 例，覆盖空库降级、
+        //   索引、检索降级、单例语义）。useFlow 862 行的大量 Promise 链仍未覆盖，是下一轮目标。
         // 注意：vitest 对象式门槛中 glob 键做分区统计，必须覆盖全部 include 目录
         'src/engine/**': { lines: 84 },
         'src/lib/**': { lines: 57 },
         'src/stores/**': { lines: 36 },
-        'src/hooks/**': { lines: 5 },
+        'src/hooks/**': { lines: 20 },
         'src/components/**': { lines: 6 },
         'src/data/**': { lines: 0 },
       },
