@@ -60,13 +60,53 @@
 - **最近提交**：`a433c09` chore(release): bump 0.9.2（四处版本号 + CHANGELOG）；此前 `95a417a` feat(rag) 为功能主体（14 文件，+1399/−1087）
 - **工作区状态**：干净，`main` 与 `origin/main` 同步；未跟踪 `.mimosa/`、`.video_agent/`（本机工具产物，勿入库）、`.tmp-build/`（本机构建 TEMP，已 gitignore）
 - **整体进度**：P0 路线图全清。**v0.9.2 已正式发布**（2026-10-27）：依赖迁移 + RAG 运行时首次跑通 + asyncify wasm 死重剔除 + 分层规则校准（大审查 #6 关闭）。Release 三平台全绿，10 资产全 ASCII，`latest.json` 9 平台键，`releases/latest` = v0.9.2 匿名可查。**OTA 四段（检测/下载/验签/安装）全部实测通过**——0.9.0 客户端已实升 0.9.2 并正常运行（详见 4.3）
-- **最后更新时间**：2026-10-29 19:10 (GMT+8)
-- **本轮任务简述**：**覆盖率 ratchet 第二轮完成**（2026-10-29，`bfe6e5b`）——hooks 层 5.2% → **21.04%**，门槛 5 → 20，新增 27 例（`useFlow.pure.test.ts` 18 例覆盖偏好推荐双链路、`useVectorStore.test.tsx` 9 例覆盖空库降级与检索降级）。全量测试 515 → **542**。同日另完成：**R08 MCP 扩 5 工具 + beforeDevCommand 去硬编码**（`bbab922`）、**RAG 检索修复**（`57d780e`：换 bge 中文模型 + 双闸门 + 补 HF CDN，CSP 待打包验证）。
+- **最后更新时间**：2026-10-29 19:40 (GMT+8)
+- **本轮任务简述**：**提测前大审查 + 高危①修复**（2026-10-29，`069fa59`）——审查约 3000 行/17 文件，0 危急 / 2 高危 / 3 中危 / 5 低危，评分 74/100。高危①「密钥不出前端」承诺不成立已修：新增 `has_api_key` 存在性查询替代明文返回、4 处 engine 不再调 `getApiKey()`、新增分层回归测试。**此前同轮另完成**：覆盖率 ratchet 第二轮（`bfe6e5b`）——hooks 层 5.2% → **21.04%**，门槛 5 → 20，新增 27 例（`useFlow.pure.test.ts` 18 例覆盖偏好推荐双链路、`useVectorStore.test.tsx` 9 例覆盖空库降级与检索降级）。全量测试 515 → **542**。同日另完成：**R08 MCP 扩 5 工具 + beforeDevCommand 去硬编码**（`bbab922`）、**RAG 检索修复**（`57d780e`：换 bge 中文模型 + 双闸门 + 补 HF CDN，CSP 待打包验证）。
 
 ---
 
 ## 4.3 任务记录（最新在前，保留最近 5 轮）
 
+### 提测前大审查 + 高危修复轮（2026-10-29 晚）
+
+**任务目标**：用户四项要求——`/git-commit` 提交、项目大审查、`src/api/` 全量安全审计、review 未提交改动找 bug。
+
+**三项事实校正（先说清楚，避免后续误读）**：
+- **`src/api/` 不存在**：`src/` 下为 components/engine/hooks/lib/stores/types/data/question-bank/styles/test。已按「最接近 API 且安全敏感」改为审 `src-tauri/src/commands/`（13 文件 1916 行）。
+- **无未提交改动**：`git status` 仅 `.mimosa/`、`.video_agent/`（既有工具目录，HANDOFF 标注勿入库）。故「review 未提交改动」改为审最近 3 个提交引入的改动。
+- **`/git-commit`**：用户确认只提交审查报告。
+
+**审查结论**（约 3000 行 / 17 文件，报告 `docs/audits/2026-10-29-v0.9.2-preflight.md`）：
+- 总体风险 **中**，0 危急 / **2 高危** / 3 中危 / 5 低危，质量评分 74/100
+- 高危①[B·安全]：「密钥不出前端」承诺不成立——`load_api_key` 返回明文，`chatStream` 不走 Rust 代理，4 处 engine 调 `getApiKey()`
+- 高危②[E·架构]：engine 反向依赖 stores
+- 工具：`npm audit --omit=dev` **0 漏洞**；全量 14 条全在 devDependencies；`cargo test` 8 passed；**cargo-audit 未安装**（Rust 侧依赖 CVE 从未检查，已列待办）
+
+**已修复（提交 `069fa59`，用户确认「先出方案」后按 A 方案实施）**：
+
+根因确证：**Tauri 下 `chat()` 走 `chatViaProxy` 直接 return，根本不读 apiKey 参数** —— 4 处 engine 取明文是纯粹的无用泄露，不取也能正常工作。
+
+| 改动 | 内容 |
+|---|---|
+| `api_key.rs` | 新增 `has_api_key`（只查存在性）；`load_api_key` 标 deprecated；`ALLOWED_PROVIDERS` 统一为单一来源（此前 `api_key` 缺 `local`，两处漂移） |
+| `apiKeyStore.ts` | `load` 改用 `has_api_key`；`getApiKey` 标 `@deprecated` |
+| 4 处 engine | 判定从 `!!apiKey` 改为 `hasApiKey`，`chat` 的 apiKey 传空串 |
+| `layering.test.ts`（新增 5 例） | 源码扫描断言 engine 不新增 `@/stores` 依赖、不调 `getApiKey()`、不 import react、不顶层静态 import `@tauri-apps`；含防空转断言 |
+| `LLMIntentAnalyzer.test.ts` | T08.3 改 `hasApiKey=false` 语义；新增 T08.3b 断言 `getApiKey` 从未被调用；apiKey 断言从 `'sk-test-key'` 改 `''` |
+
+**关键决策**：新加的分层测试抓出了**比我报告更多的违规**（除 `useApiKeyStore` 还有 `useLLMAvailabilityStore` 4 处 × 3 调用点 + `useAppStore.llmModeOverride` 1 处）。用户拍板「本轮只做 A（明文密钥），B（熔断器/模式判定）记 backlog」——测试对 B 加已知例外，价值定位为「锁住不新增」而非「一次清零」。
+
+**验证**：tsc 0 / lint 0 error / **vitest 41 文件 548 passed**（原 547）/ coverage 0 / build 0 / cargo test 8 passed / mcp smoke 0。
+
+**踩坑（重要，已可沉淀）**：
+- **EOL 污染**：`edit` 写入把 5 个文件从 LF 变成 CRLF，导致 diff 从真实的 312/18 膨胀到 1727/1433。仓库 `core.autocrlf: false` 且**全部文件是 LF**，`.gitattributes` 未配置。用 `git show HEAD:file | 检查 \r\n` 对比 blob 字节才定位到。已 amend 修正。**教训：改文件后应比对 blob EOL，否则 diff 不可读。**
+
+**遗留问题**：
+- **engine→stores B 类未解耦**：`useLLMAvailabilityStore`（熔断器）+ `useAppStore.llmModeOverride`，共 5 处 import，正确解法是 hooks 注入，独立重构
+- **`chatStream` 无生产调用但仍是隐患**：未接 Rust 代理，DNS 重绑定防护缺失；建议删除或标注 unused
+- 中低危未修：`image.rs` 白名单逻辑反向（用户目录内完全跳过）、`sanitize()` 非 ASCII panic 隐患、`reqwest::Client` 未池化、`debugReporter` 调试代码残留 + `useFlow` 内 6 处 `#region debug-point` 插桩
+- `cargo-audit` 未装，Rust 侧依赖 CVE 从未检查
+- **推送受阻**：github.com:443 再次阻断（坑点 15 已记录为间歇性），本次 push 失败待重试
 ### 覆盖率 ratchet 第二轮（2026-10-29 晚）— hooks 5% → 21%
 
 **任务目标**：用户「按你的建议做」——上轮我建议先做覆盖率，理由是 R04 那个 P1 阻断缺陷（槽位存组件本地 state，一关面板就丢）在 5% 覆盖率的 hooks 层上必然再次发生。
@@ -220,42 +260,6 @@
 - **相似度阈值需重新校准**（P2，见上）
 - 首次索引耗时约 50–60s（模型下载 ~90MB + WASM 初始化），UI 上是否有进度提示未验证
 - 检索只在 Node 侧用真实向量验证，应用内 UI 的 RAG 状态显示（「已索引 N 条」）未截图确认
-### v0.9.2 发版轮（2026-10-27 晚）— 三平台发布 + OTA 检测/下载/验签实测
-
-**任务目标与用户决策**：执行 0.9.2 发版（上一轮已定的自然节点）。用户确认：① 打标签并推送；② 本轮就做 OTA 全链路实测；③ Publish v0.9.2。
-
-**实际完成内容**：
-- **版本 bump**（`a433c09`）：四处版本 0.9.1 → 0.9.2（package.json / tauri.conf.json / Cargo.toml / Cargo.lock 的 linggandawang 块）+ CHANGELOG 0.9.2 条目（修复/变更/性能/文档/验证/遗留六节）
-- **打标签**：`v0.9.2` → `a433c09`，推送后触发 Release workflow
-- **三平台构建全绿**：ubuntu（deb+appimage）/ windows / macos（universal app+dmg）三 job 均 success
-- **draft 产物核验**：10 资产全部 uploaded、**全 ASCII 名**；`latest.json` version=0.9.2、**9 个平台键**、4 个主键（windows-x86_64 / linux-x86_64 / darwin-aarch64 / darwin-x86_64）齐全、签名长度 412–428、URL 全指向 ASCII 资产
-- **Publish**：`releases/latest` = v0.9.2，`latest.json` 匿名可下载（HTTP 200 / 5469 字节）
-
-**OTA 实测结果（分四段，如实定性）**：
-
-| 段 | 结果 | 证据 |
-|---|---|---|
-| 检测 | ✅ 通过 | 拉 `releases/latest/download/latest.json` HTTP 200，remote=0.9.2 vs current=0.9.0，版本比较 hasUpdate=true |
-| 下载 | ✅ 通过 | `windows-x86_64` 条目指向 `LingGanDaWang_0.9.2_x64-setup.exe`，实下 8,073,269 字节，sha256 `9FC59558…D49BEBD5` |
-| 验签 | ✅ 通过（密码学级） | 用 Node 原生 Ed25519 对下载文件真实验签：`prehashed-BLAKE2b512: true`（minisign `ED` 算法语义），pubKeyId 与 sigKeyId 均 `f2c2fb0f807a00af`，trusted comment 指向正确文件名。**不是 keyId 比对，是真实签名验证** |
-| 安装 | ✅ 通过（根因已确证） | 首轮失败：`/S` exit 0 但零变更。**真因不是沙箱**——按坑点 21 把 `$env:TEMP` 指到 D 盘工作区后，NSIS 无法解压自身到 TEMP；用户手动双击时弹出「Error writing temporary file. Make sure your temp folder is valid.」暴露了这一点（我最初「沙箱拦截落地」的诊断是错的）。把 TEMP/TMP 指回 `C:\Users\puj\AppData\Local\Temp` 后 `/S` 安装成功：FileVersion 0.9.0→**0.9.2**、注册表 DisplayVersion **0.9.2**、exe sha256 `8B6D43ED…1E675F8C`、mtime 21:20:22、启动 windowTitle=「灵感大王」正常 |
-
-**关键决策及理由**：
-- 用 Node 原生 Ed25519 而非装 minisign 做验签：minisign 底层即 Ed25519 + BLAKE2b-512 预哈希，Node `crypto.verify` 能直接复现，避免为一次验证引入新依赖；且比只比 keyId 强得多——keyId 匹配不能证明签名有效
-- Publish 前先完整核验 draft（资产名/数量/latest.json 键/签名长度）：GitHub 剥离非 ASCII 资产名会让 latest.json 生成失败且不易察觉（坑点 14），必须逐项查
-- 安装段受阻后不再强行绕：试过 `/S`、`/D=`、cmd 直调、Job 隔离四种方式均无变更；继续尝试属于猜，成本高于收益，如实记录待非沙箱环境验证
-
-**验证方式与结果**：
-- `npm run check:version` → OK: version 0.9.2 consistent across 4 locations
-- tsc exit 0 / lint exit 0（40 warning 既有遗留）/ **vitest 38 文件 510 passed** / coverage exit 0 / build exit 0 / `cargo check` → `linggandawang v0.9.2` 编译通过
-- CSP 精确核验：`connect-src` 10 个具体 source、**无裸通配**；`script-src` 仅 `'self'` + `'wasm-unsafe-eval'`；无 jsdelivr、无 `script-src blob:`
-- dist 产物：asyncify=0、总 14.92MB、`dist/ort/ort-wasm-simd-threaded.wasm` 13.60MB 保留
-- Release workflow 三平台 job 全 success；CI（main `a433c09`）触发
-
-**遗留问题**：
-- ~~OTA 安装段未验证~~ ✅ 已闭环（2026-10-27 21:20）：`/S` 静默安装成功，FileVersion / 注册表 / exe sha256 三方核验均指向 0.9.2，启动 windowTitle=「灵感大王」正常。首轮失败根因是 D 盘 TEMP 让 NSIS 无法解压自身（见坑点 18），非产品缺陷
-- 真实 Tauri 安装包内 RAG 端到端仍未验（同上一轮，需实际装 0.9.2 后触发索引）
-- 0.9.0 客户端 CSP 缺 huggingface.co（0.9.2 已含），老用户升级后才能用 RAG
 ## 4.4 待办事项（Backlog）
 
 ### P0（阻塞/尽快）
