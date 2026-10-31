@@ -2,6 +2,52 @@
 
 本文件记录灵感大王项目的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [0.9.3] - 2026-10-31 - 安全修复批次 + RAG 中文检索 + MCP 扩 5 工具
+
+### 安全
+- **消除引擎层明文 API Key 取用**（大审查 H1）：`load_api_key` 不再把明文返回给渲染进程，新增 `has_api_key` 只查存在性；4 处 engine（ImagePromptExtractor / LLMIntentAnalyzer / RequirementSyncer / SmartFollowup）改用 `hasApiKey` 标志判定，`chat` 的 apiKey 参数传空串（Tauri 下 key 由 Rust 从 keyring 注入，本就不需要）。此前「密钥不出前端」的承诺与实际调用路径不符。
+- **`image.rs` 路径白名单方向修正**（大审查 L3）：原实现是「不在用户目录 → 查黑名单；在用户目录 → 完全跳过」，导致用户目录内任意文件（含非敏感命名的私人文档）都能被读成 data URL。改为黑名单始终执行 + 路径必须在用户目录/临时目录内（canonicalize 后前缀比较，符号链接穿越安全）。
+- **`sanitize()` 非 ASCII panic 修复**（大审查 L4）：原按字节迭代，遇多字节 UTF-8 字符时 `&str[i..]` 可能落在字符内部而 panic。改为按 `chars` 迭代，并补中文/中英混合回归测试。
+- **移除 release 前残留的调试插桩**（大审查 L5）：清理 `useFlow.ts` 内 26 处 `reportDebug` / `setDebugRunId` 调用与 5 个 `#region debug-point` 标记。
+- **`ALLOWED_PROVIDERS` 统一为单一来源**：此前 `api_key.rs` 与 `llm_proxy.rs` 各有一份且不一致（缺 `local`），现统一引用 `llm_proxy` 的常量。
+
+### 修复
+- **RAG 检索在中文场景完全失效**（根因是模型选错，非阈值）：`all-MiniLM-L6-v2` 是纯英文模型，实测中文同义句相似度 0.49、**无关句反而 0.53**（英文同义 0.51 / 无关 −0.10 才能区分）。换用中文专用 `bge-small-zh-v1.5`（同义 0.50–0.76 / 无关 0.10–0.44），`EMBEDDING_DIM` 384 → 512。**旧的 384 维向量会因维度不符自动失效并重建**，首次使用需重新下载模型（~95MB）。
+- **检索阈值形同虚设**：`SIMILARITY_THRESHOLD = 0.3` 下无关查询也能拿 0.70 分。改为「绝对下限 + 相对带宽」双闸门（`SIMILARITY_FLOOR = 0.45` / `SIMILARITY_BAND = 0.85`），由 20 条真实 QA + 20 条无关负样本、24 组扫描标定，**召回 85% / 误报 0%**。纯相对阈值单独用无效——top1 自身必然满足 `s >= top1*k`，必须配绝对下限。
+- **CSP 缺 HF 新 CDN 导致模型下载被拦**（阻塞性，早于本批次就存在）：HuggingFace 已从 `cas-bridge.xethub.hf.co` 迁至 `us.aws.cdn.hf.co`，模型文件 302 到新域被 CSP 拦截 → 新模型永远下载不下来、索引卡死。已补 `us.aws.cdn.hf.co`（保留旧域兼容），**未使用 `https:` 通配，攻击面不扩大**。
+
+### 新增
+- **MCP 工具从 2 个扩到 5 个（R08）**：
+  - `generate_from_context`：直接吃代码片段 / 报错日志 / 文件路径生成提示词，不必先自己总结成需求；`context_type`（error/code/path/other）决定拼接措辞，回传 `composed_seed_chars` 便于确认拼接。
+  - `list_templates`：读用户保存的变量模板（支持 `query` 子串过滤）。
+  - `get_recent_history`：读提示词历史（可选 `favorite_only` / `include_markdown`），并附带 `recent_qa` / `preferences` / `project` 上下文。
+  - 新增 `mcp-server/localData.ts`：直连桌面端写入的 SQLite 与 `context.json`，**全只读**；`node:sqlite` 用 `createRequire` 惰性加载，避免 jsdom 单测下 Vite 解析失败。
+
+### 变更
+- `beforeDevCommand` 去硬编码：`c:/Users/puj/AppData/Local/Agnes/node/npm.cmd run dev` → `npm run dev`（原路径机器相关，换机即断，也是他人 clone 仓库跑不起来的第一个坑）。
+
+### 测试
+- 覆盖率 ratchet 第二轮：hooks 层 **5.2% → 21.04%**，门槛 5 → 20。新增 `useFlow.pure.test.ts`（18 例）、`useVectorStore.test.tsx`（9 例）、vectorStore 双闸门回归（5 例）。
+- 新增分层架构回归 `engine/__tests__/layering.test.ts`（5 例）：源码扫描断言 engine 不新增 `@/stores` 依赖、不调用 `getApiKey()`、不 import react、不顶层静态 import `@tauri-apps`。
+- 测试总数 510 → **548**（41 文件）；Rust 测试 8 → **9**（新增 sanitize 非 ASCII 用例）。
+
+### 文档
+- 新增 `docs/audits/2026-10-29-v0.9.2-preflight.md`（提测前大审查：0 危急 / 2 高危 / 3 中危 / 5 低危，74/100）。
+- 新增 `docs/audits/2026-10-29-fix-plan-api-key.md`（高危①②修复方案）。
+- `AGENTS.md` 坑点扩充至 23 条。
+
+### 验证
+- tsc exit 0 / lint exit 0（0 error）/ **vitest 41 文件 548 passed** / coverage exit 0 / build exit 0 / check:version OK
+- `cargo check` exit 0；`cargo test` **9 passed**
+- `mcp:build` + `mcp:smoke` **32 项断言全过**
+- `npm audit --omit=dev`（官方源）**0 漏洞**
+
+### 已知遗留
+- engine 仍引用 `useLLMAvailabilityStore`（熔断器）与 `useAppStore`（`llmModeOverride`）共 5 处；正确解法是 hooks 注入，属独立重构（分层测试已锁住「不得新增」）。
+- `chatStream` 无生产调用，但未接 Rust 代理，DNS 重绑定防护缺失。
+- `cargo-audit` 未安装，Rust 侧依赖 CVE 尚未检查。
+- devDependencies 14 条 CVE（3 critical / 7 high / 4 moderate），全在构建链，不影响生产包。
+
 ## [0.9.2] - 2026-10-27 - 依赖迁移 + RAG 运行时首次真正跑通
 
 ### 修复

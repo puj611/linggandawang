@@ -1,6 +1,6 @@
 [package]
 name = "linggandawang"
-version = "0.9.2"
+version = "0.9.3"
 description = "灵感大王 - 桌面悬浮窗，通过反向提问把模糊灵感挤成精准提示词"
 authors = ["灵感大王团队"]
 license = "MIT"
