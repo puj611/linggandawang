@@ -123,16 +123,17 @@ async fn validate_ssrf(base_url: &str) -> Result<(), String> {
 /// 脱敏错误文本，避免 LLM 端点回显的 key 泄露到日志/UI
 /// 审查 P7 修复：除 Bearer 前缀外，裸 key（sk-xxx 等）形态也一并遮蔽。
 /// 手工扫描实现（不引入 regex 依赖）：匹配 sk- 开头 + ≥20 位字母数字。
+/// 2026-10-31 审查 L4：改为按 char 迭代（安全的多字节边界处理）。
 fn sanitize(text: &str) -> String {
     let without_bearer = text.replace("Bearer ", "");
-    let bytes = without_bearer.as_bytes();
     let mut out = String::with_capacity(without_bearer.len());
+    let chars: Vec<char> = without_bearer.chars().collect();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b's' && i + 1 < bytes.len() && bytes[i + 1] == b'k' && i + 2 < bytes.len() && bytes[i + 2] == b'-' {
+    while i < chars.len() {
+        if chars[i] == 's' && i + 1 < chars.len() && chars[i + 1] == 'k' && i + 2 < chars.len() && chars[i + 2] == '-' {
             // 统计 sk- 后连续字母数字长度
             let mut j = i + 3;
-            while j < bytes.len() && (bytes[j] as char).is_ascii_alphanumeric() {
+            while j < chars.len() && chars[j].is_ascii_alphanumeric() {
                 j += 1;
             }
             if j - (i + 3) >= 20 {
@@ -141,8 +142,8 @@ fn sanitize(text: &str) -> String {
                 continue;
             }
         }
-        out.push(without_bearer[i..].chars().next().unwrap());
-        i += without_bearer[i..].chars().next().unwrap().len_utf8();
+        out.push(chars[i]);
+        i += 1;
     }
     out
 }
@@ -321,6 +322,22 @@ mod tests {
         assert_eq!(sanitize("Bearer abc123"), "abc123");
         // 短 sk-（非 key 形态）不误伤
         assert_eq!(sanitize("task-scheduler-xx sk-short"), "task-scheduler-xx sk-short");
+    }
+
+    #[test]
+    fn sanitize_handles_non_ascii_without_panic() {
+        // 2026-10-31 审查 L4：字节索引越界导致的 panic 隐患回归
+        // 原实现按字节迭代 i + 遇多字节 UTF-8 字符时字符边界判定不安全
+        // 现按 chars 迭代，任何非 ASCII 输入都应稳定返回
+        let mixed = "中文文本 sk-abcdefghijklmnopqrstuvwxyz123456 尾部中文";
+        let out = sanitize(mixed);
+        assert_eq!(out, "中文文本 sk-*** 尾部中文");
+        // 纯中文不 panic
+        assert_eq!(sanitize("这是中文报错内容"), "这是中文报错内容");
+        // 中英混合不 panic
+        let mixed2 = "错误：无法读取 sk-12345678901234567890 文件";
+        let out2 = sanitize(mixed2);
+        assert!(out2.contains("sk-***"));
     }
 
     #[test]

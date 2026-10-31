@@ -32,11 +32,7 @@ import { analyzeIntent } from '@/engine/LLMIntentAnalyzer';
 import { evaluateFollowup, generateFollowupQuestion } from '@/engine/SmartFollowup';
 import { retrieveSimilar } from '@/lib/vectorStore';
 import { withTimeoutSafe } from '@/lib/withTimeout';
-// #region debug-instrumentation
-import { reportDebug, setDebugRunId } from '@/lib/debugReporter';
 // 默认 pre；修复后切换为 post
-setDebugRunId('post');
-// #endregion debug-instrumentation
 
 // 模块级单例：所有组件共享同一 engine 实例，避免组件切换时状态丢失
 let engineInstance: QuestionEngine | null = null;
@@ -436,9 +432,6 @@ export function useFlow() {
             // B6：代际校验，过期直接丢弃
             if (sessionSeq !== startSeq) return;
             const followup = followupResult.value;
-            // #region debug-point answer.followup (H5)
-            reportDebug({ point: 'answer.followup.afterAwait', phase: 'info', hypothesisId: 'H5', data: { mounted: mountedRef.current, hasFollowup: !!followup, isComplete: result.isComplete, hasNext: !!result.nextQuestion } });
-            // #endregion debug-point answer.followup (H5)
             // B3 修复：移除 mountedRef 早期 return。setCurrentQuestion/addAsked/setStage
             // 均为 zustand store 动作，卸载后调用安全（非 React setState）。
             // 原实现若在此 return，会在「末题 + 卸载」时跳过下方完成判定，导致用户已答完
@@ -464,9 +457,6 @@ export function useFlow() {
 
       if (result.isComplete || !result.nextQuestion) {
         // v2.3：显式 await，保证 finishAndGenerate 内部的 ctxStore 写入完成
-        // #region debug-point answer.finishAndGenerate (H5)
-        reportDebug({ point: 'answer.callingFinishAndGenerate', phase: 'start', hypothesisId: 'H5', data: { isComplete: result.isComplete, hasNext: !!result.nextQuestion } });
-        // #endregion debug-point answer.finishAndGenerate (H5)
         await finishAndGenerate();
       } else {
         setCanUndo(engine.canUndo());
@@ -541,9 +531,6 @@ export function useFlow() {
     try {
       const engine = getEngine();
       const snap = engine.snapshot();
-      // #region debug-point finishAndGenerate.enter
-      reportDebug({ point: 'finishAndGenerate.enter', phase: 'start', hypothesisId: 'H1', data: { pendingQA: pendingRecentQARef.current.length, hasResult: !!useEngineStore.getState().result, appState: useAppStore.getState().state } });
-      // #endregion debug-point finishAndGenerate.enter
 
       // 读取上下文（合并 persisted + pending，不依赖 appendRecentQAs 先完成）
       const persistedQA = ctxStore.getRecentQA(20);
@@ -557,15 +544,10 @@ export function useFlow() {
       try {
         const seedInput = snap.seedInput;
         if (seedInput && seedInput.trim().length > 2) {
-          // #region debug-point retrieveSimilar (H3)
-          reportDebug({ point: 'retrieveSimilar.start', phase: 'start', hypothesisId: 'H3' });
-          const ragStart = performance.now();
           const results = await Promise.race([
             retrieveSimilar(seedInput, 3),
             new Promise<[]>((resolve) => setTimeout(() => resolve([]), 2000)),
           ]);
-          reportDebug({ point: 'retrieveSimilar.end', phase: 'end', hypothesisId: 'H3', data: { durationMs: Math.round(performance.now() - ragStart), count: results.length } });
-          // #endregion debug-point retrieveSimilar (H3)
           retrievedContext = results.map((r) => ({
             question: r.entry.metadata.questionText,
             answer: r.entry.metadata.answer,
@@ -574,14 +556,11 @@ export function useFlow() {
         }
       } catch (e) {
         console.warn('[useFlow] 向量检索失败，降级到无 RAG 模式', e);
-        reportDebug({ point: 'retrieveSimilar.error', phase: 'error', hypothesisId: 'H3', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
       }
 
       // 生成提示词（同步）— 失败时回退到 expanded 避免永久 loading
       let prompt: PromptResult;
       try {
-        // #region debug-point promptGenerator.generate (H4)
-        reportDebug({ point: 'promptGenerator.generate.start', phase: 'start', hypothesisId: 'H4' });
         prompt = promptGenerator.generate({
           intentTags: snap.intentTags,
           answers: snap.answers,
@@ -598,11 +577,8 @@ export function useFlow() {
           // Task 8：注入用户选择的目标工具（getState 读取，避免订阅导致重渲染）
           targetTool: useAppStore.getState().targetTool,
         });
-        reportDebug({ point: 'promptGenerator.generate.end', phase: 'end', hypothesisId: 'H4' });
-        // #endregion debug-point promptGenerator.generate (H4)
       } catch (genErr) {
         console.error('[useFlow] 提示词生成失败，回退到 expanded', genErr);
-        reportDebug({ point: 'promptGenerator.generate.error', phase: 'error', hypothesisId: 'H4', error: genErr instanceof Error ? `${genErr.name}: ${genErr.message}` : String(genErr) });
         transitioned = true;
         clearTimeout(hardFallback);
         transition('expanded');
@@ -614,7 +590,6 @@ export function useFlow() {
       transitioned = true;
       clearTimeout(hardFallback);
       transition('result');
-      reportDebug({ point: 'finishAndGenerate.transitionResult', phase: 'info', hypothesisId: 'H1', data: { hasResult: true, finalAppState: useAppStore.getState().state } });
 
       // B2 修复：同步捕获 pending QA 快照并立刻清空 ref。
       // 若留到后台 async 里才读取，restart()/directGenerate() 可能先清空
@@ -643,10 +618,8 @@ export function useFlow() {
             await withTimeoutSafe(ctxStore.appendPreferences(newPrefs), 5000, 'appendPreferences', undefined as void);
           }
           pushRecentPrompt(promptGenerator.toMarkdown(prompt));
-          reportDebug({ point: 'finishAndGenerate.backgroundPersist.done', phase: 'end', hypothesisId: 'H2' });
         } catch (e) {
           console.warn('[useFlow] 后台持久化失败', e);
-          reportDebug({ point: 'finishAndGenerate.backgroundPersist.error', phase: 'error', hypothesisId: 'H2', error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) });
         }
       })();
     } catch (e) {

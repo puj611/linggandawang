@@ -56,8 +56,12 @@ pub fn read_image_file(path: String) -> Result<ImageDataResult, String> {
     let canonical = pb.canonicalize().map_err(|e| format!("路径解析失败: {}", e))?;
     let path_str = canonical.to_string_lossy().to_lowercase();
 
-    // 白名单校验
-    if !is_in_user_scope(&canonical) {
+    // 路径安全校验（2026-10-31 审查 L3 修正）
+    // 原结构：「不在用户目录 → 黑名单；在用户目录 → 完全跳过」→ 用户目录内任意文件
+    // （含 Documents/passwords.txt 等非敏感命名）都能被读取。改为：
+    // ① 黑名单始终执行（无论是否在用户目录内）；
+    // ② 仅在用户目录 / 临时目录内才放行（is_in_user_scope 为 canonicalize 后前缀比较）。
+    {
         const BLOCKED_PATHS: &[&str] = &[
             "windows\\system32",
             "windows\\system",
@@ -75,6 +79,9 @@ pub fn read_image_file(path: String) -> Result<ImageDataResult, String> {
                 return Err("无权限读取此路径".to_string());
             }
         }
+    }
+    if !is_in_user_scope(&canonical) {
+        return Err("无权限读取此路径（仅允许用户目录或临时目录下的图片）".to_string());
     }
 
     // 敏感文件校验
